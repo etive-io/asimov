@@ -40,7 +40,10 @@ setup(
     keywords='pe, ligo, asimov',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
+        'Environment :: Console',
         'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering :: Astronomy',
+        'Topic :: Scientific/Engineering :: Information Analysis',
         'License :: OSI Approved :: ISC License (ISCL)',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
@@ -48,6 +51,8 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Operating System :: POSIX :: Linux',
+        
     ],
     test_suite='tests',
     tests_require=test_requirements,

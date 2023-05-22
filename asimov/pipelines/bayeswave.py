@@ -359,11 +359,10 @@ class BayesWave(Pipeline):
         Collect the assets for this job and commit them to the event repository.
         Since this job also generates the PSDs these should be added to the production ledger.
         """
-        results_dir = glob.glob(f"{self.production.rundir}/trigtime_*")[0]
         psds = {}
         for det in self.production.meta["interferometers"]:
             asset = os.path.join(
-                results_dir, "post", "clean", f"glitch_median_PSD_forLI_{det}.dat"
+                self.production.rundir, "post", "clean", f"glitch_median_PSD_forLI_{det}.dat"
             )
             if os.path.exists(asset):
                 psds[det] = asset

@@ -1,2 +1,0 @@
-The Gitlab Ledger Manager
-=========================

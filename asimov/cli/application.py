@@ -12,6 +12,14 @@ import asimov.event
 from asimov import current_ledger as ledger
 from asimov.utils import update
 
+import sys
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
+
+
 logger = logger.getChild("cli").getChild("apply")
 logger.setLevel(LOGGER_LEVEL)
 
@@ -91,6 +99,13 @@ def apply_page(file, event, ledger=ledger):
             )
 
 
+def apply_via_plugin(event, hookname, **kwargs):
+    discovered_hooks = entry_points(group="asimov.hooks.applicator")
+    for hook in discovered_hooks:
+        if hook.name in hookname:
+            hook.load()(ledger).run(event)
+
+
 @click.command()
 @click.option("--file", "-f", help="Location of the file containing the ledger items.")
 @click.option(
@@ -99,5 +114,11 @@ def apply_page(file, event, ledger=ledger):
     help="The event which the ledger items should be applied to (e.g. for analyses)",
     default=None,
 )
-def apply(file, event):
-    apply_page(file, event)
+@click.option(
+    "--plugin", "-p", help="The plugin to use to apply this data", default=None
+)
+def apply(file, event, plugin):
+    if plugin:
+        apply_via_plugin(event, hookname=plugin)
+    elif file:
+        apply_page(file, event)
