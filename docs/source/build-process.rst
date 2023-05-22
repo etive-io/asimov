@@ -90,10 +90,10 @@ This ledger file contains all of the information required to set up three analys
 The metadata contained in sections such as ``quality`` and ``priors`` is then used to create the configuration files for each pipeline using a template.
 Individual productions can overwrite the event metadata for any of the templatable values, allowing asimov, for example, to set up two analyses with different sample-rates.
 
-``olivaw build``
+``asimov build``
 ----------------
 
-The command line utility ``olivaw build`` is used to construct pipeline configurations by combining a configuration template for the pipeline with data from the production ledger.
+The command line utility ``asimov build`` is used to construct pipeline configurations by combining a configuration template for the pipeline with data from the production ledger.
 
 This runs the ``Production.make_config()`` method, which determines the pipeline from the ledger.
 If a template is provided in the metadata for the production (under the ``template`` value) then this template is used to construct the configuration file.
@@ -106,7 +106,7 @@ This allows configurations to be generated in environments which do not have the
 
 The next step is then used to invoke pipeline-specific code.
 
-``olivaw submit``
+``asimov submit``
 -----------------
 
 Once a configuration has been generated it can be used to generate an ``htcondor`` DAG file for execution on a cluster.
@@ -114,7 +114,7 @@ Once a configuration has been generated it can be used to generate an ``htcondor
 The process for this step is different for each analysis pipeline.
 An object for that pipeline is then created with the metadata from the production.
 
-First ``olivaw submit`` determines the correct pipeline for the production from the ``pipeline`` value in the ledger.
+First ``asimov submit`` determines the correct pipeline for the production from the ``pipeline`` value in the ledger.
 
 First the ``build_dag`` method is called on the pipeline object.
 In general each pipeline will then execute the pipeline construction utility and any additional steps required to build a DAG file (for ``bilby``, for example, the ``bilby_pipe`` tool is used to produce the DAG.

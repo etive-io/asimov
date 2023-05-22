@@ -1,3 +1,73 @@
+0.4.0
+=====
+
+We performed the review of asimov developments in preparation for O4.
+The reviewed and signed-off version is tagged ``v0.4.0``. All review
+checks were performed using the (non-static) ``igwn-py39-testing``
+environment on RL8 machines; environment files have been recorded in the
+`review
+repository <https://git.ligo.org/pe/O4/asimov-review/-/tree/main/v0.4.x>`__.
+For completion, it is noted that the setup included the manual
+installation of ``asimov0.4.0rc4`` via pip.
+
+The review covered the workflow generation for bayeswave, bilby and
+pesummary.
+
+Since its previous reviewed version (``v0.3.1``), significant changes to
+the asimov workflow were implemented. The main change pertinent to this
+review concerned reducing the dependence on gitlab. See `this
+MR <https://git.ligo.org/asimov/asimov/-/merge_requests/45>`__ for all
+details. Issues arising from those changes were addressed on the
+`infrastructure-updates
+branch <https://git.ligo.org/asimov/asimov/-/commits/infrastructure-updates>`__
+as part of this review before merged upstream.
+
+We note that neither bayeswave nor bilby are yet reviewed for O4 but in
+order for asimov to work with the O4 sampler review,
+``bilby_pipe version 1.0.7`` and ``bilby version 1.4.1`` were used for
+this review. Due to unresolved condor file transfer issues, file
+transfer for bilby jobs is disabled by default in this version of asimov
+but can be enabled manually if desired.
+
+We used the ``pesummary version 0.13.10`` for this review, as the
+O4-reviewed version is not yet available. The default settings for
+bayeswave, bilby and pesummary were not changed relative to the reviewed
+version for O3 (``v0.3.1``).
+
+We performed end-to-end runs for GW150914 on CIT and LHO as well as for
+two non-vanilla cases: GW191109, which has a different minimum frequency
+in one of the IFOs, and GW190924, which required deglitched data frames.
+The latter did not run to completion due to a recurring `gwpy
+issue <https://github.com/gwpy/gwpy/issues/1582>`__ but the asimov
+workflow and configuration were set up correctly. We reviewed the setup,
+workflow and outputs.
+
+We also reviewed the .YAML files generated from the GitLab ledgers used
+in O3. This included line-by-line review of the `conversion
+script <https://git.ligo.org/asimov/data/-/snippets/157>`__ and review
+of the specific files for: GW150914 (vanilla), GW190814 (different lower
+frequency in L1), GW190924 (deglitched frame for LLO), GW190929
+(different Virgo channel name), GW191109 (vanilla), and GW200115 (NSBH).
+Notes for the review are available
+`here <https://git.ligo.org/pe/O4/asimov-review/-/wikis/Review-of-YAML-generation>`__.
+
+Support for dryrun was added and reviewed. dryrun tests and unit tests
+were also added and reviewed. The documentation was reviewed to improve
+clarity and internal coherence, and now suffices as a mini tutorial for
+users.
+
+We note that this review did not include testing of the OSG or a shared
+account for running asimov analyses. These will be deferred to a later
+version.
+
+The RIFT integration in this version is not reviewed. More development
+is necessary due to changes in RIFT for usage in O4. This is postponed
+to the next reviewed version.
+
+Required inputs from gracedb, pe configurator, calibration, detchar are
+handled as in ``v0.3.1``. Changes will be required to integrate with O4
+updates to those inputs once they become available (TBD).
+
 0.3.0
 =====
 

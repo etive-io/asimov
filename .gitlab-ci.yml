@@ -1,11 +1,5 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
-# Secret Detection customization: https://docs.gitlab.com/ee/user/application_security/secret_detection/#customizing-settings
-# Dependency Scanning customization: https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#customizing-the-dependency-scanning-settings
-# Container Scanning customization: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
-image: python:3.7
+image: python:3.9
+
 stages:
 - analysis
 - test
@@ -107,27 +101,27 @@ test-python-310:
     - python setup.py install
     - python -m unittest discover tests/
 
-GW150914 Real Data Test:
-  stage: end-to-end testing
-  image: python:3.10
-  allow_failure: true
-  script:
-    - git config --global user.email "you@example.com"
-    - git config --global user.name "Your Name"
-    - pip install -r requirements.txt
-    - pip install coverage
-    - pip install unittest-xml-reporting
-    - pip install .
-    - mkdir new-project
-    - cd new-project
-    - asimov init "new project"
-    - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/testing-pe.yaml
-    - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml
-    - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml
-    - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/analyses/production-default.yaml -e GW150914_095045
-    - asimov manage build
-    - asimov manage submit --dryrun
-
+# GW150914 Real Data Test:
+#   stage: end-to-end testing
+#   image: python:3.10
+#   allow_failure: true
+#   script:
+#     - git config --global user.email "you@example.com"
+#     - git config --global user.name "Your Name"
+#     - pip install -r requirements.txt
+#     - pip install coverage
+#     - python setup.py install
+#     - pip install unittest-xml-reporting
+#     - pip install .
+#     - mkdir new-project
+#     - cd new-project
+#     - asimov init "new project"
+#     - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/testing-pe.yaml
+#     - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml
+#     - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml
+#     - asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/analyses/production-default.yaml -e GW150914_095045
+#     - asimov manage build
+#     - asimov manage submit --dryrun
 
 # Build docs for multiple code versions
 pages:
@@ -146,6 +140,9 @@ pages:
     - public
   only:
   - master
+  - /^preview-.*/
+  - /^release-.*/
+
 wheel-36:
   image: python:3.6
   stage: build

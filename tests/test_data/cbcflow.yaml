@@ -1,0 +1,9 @@
+kind: configuration
+hooks:
+   postmonitor:
+     cbcflow:
+       library location: cbcflow-library
+       schema section: ParameterEstimation
+   applicator:
+     cbcflow:
+       library location: cbcflow-library

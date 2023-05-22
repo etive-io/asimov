@@ -1,0 +1,13 @@
+name: JOSS Builder
+on:
+  push:
+    branches: [ joss-paper ]
+  pull_request:
+    branches: [ joss-paper ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open Journals PDF Generator
+        uses: openjournals/openjournals-draft-action@v.1.0

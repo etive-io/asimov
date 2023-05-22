@@ -11,7 +11,7 @@ pytz
 pyyaml
 requests
 gwpy
-lscsoft-glue==2.0.0
-igwn-auth-utils==0.2.1
+lscsoft-glue>=2.0.0
+igwn-auth-utils>=0.2.1
 flask
 tinydb
