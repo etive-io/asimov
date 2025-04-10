@@ -15,12 +15,29 @@ from asimov.event import DescriptionException
 from asimov.pipeline import PipelineException
 from asimov.git import EventRepo
 
+def check_priority_method(production):
+    """         
+    Check the priority method to be used for the production
+                
+    Args:           
+    production: the production to be checked
+                
+    Returns:    
+    the priority method to be used (between vanilla and is_interesting)
+    """             
+    if "needs settings" not in production.meta.keys():
+        return "vanilla"
+    else:   
+        if "condition" in production.meta["needs settings"].keys():
+            return production.meta["needs settings"]["condition"]
+        else:   
+            # if not specified, go back to the default method
+            return "vanilla"
 
 @click.group(chain=True)
 def manage():
     """Perform management tasks such as job building and submission."""
     pass
-
 
 @click.option(
     "--event",
@@ -46,6 +63,15 @@ def build(event, dryrun):
     logger.setLevel(LOGGER_LEVEL)
 
     for analysis in ledger.project_analyses:
+        # MW disabling hanabi and golum_joint unless explicity re-enabled in submit
+        if "hanabi" in analysis.name or "golum_joint" in analysis.name:
+            if analysis.status in {"ready"}:
+                analysis.status = "unready"
+                ledger.update_analysis_in_project_analysis(analysis)
+            elif analysis.status in {"analysis-ready"}:
+                analysis.status = "ready"
+                ledger.update_analysis_in_project_analysis(analysis)
+
         if analysis.status in {"ready"}:
             # Need to ensure a directory exists for these!
             subj_string = "_".join([f"{subject}" for subject in analysis._subjects])
@@ -167,73 +193,91 @@ def submit(event, update, dryrun):
     logger = asimov.logger.getChild("cli").getChild("manage.submit")
     logger.setLevel(LOGGER_LEVEL)
 
-    # this should add the required repository field to the project analysis
-    # with the correct type
-    # FIXME: for now, this only accountd for the case where we have multiple analysis
-    # done but not yet several productions for the same event and pipelines. This would
-    # require extra checks when adding to the dictionary
-    interest_dict = {}
+    # check the interest dictionary if needed
+    # keep only the highest production number for the analyses
+    interest_dict_project_analyses = {}
     for analysis in ledger.project_analyses:
-        if analysis.pipeline.name not in interest_dict.keys():
-            interest_dict[analysis.pipeline.name] = []
+        subj_string = "_".join([f"{subj}" for subj in analysis._subjects])
+        if analysis.pipeline.name not in interest_dict_project_analyses.keys():
+            interest_dict_project_analyses[analysis.pipeline.name] = {}
+        if subj_string not in interest_dict_project_analyses[analysis.pipeline.name].keys():
+            interest_dict_project_analyses[analysis.pipeline.name][subj_string] = {
+                "prod number" : -1, "interest status" : False, "finished": False
+            }
         if "interest status" in analysis.meta.keys():
-            interest_dict[analysis.pipeline.name].append(
-                {
-                    "interest status": analysis.meta["interest status"],
-                    "subjects": set(analysis.subjects),
-                }
-            )
-
+            # check the production number for this event
+            # assuming ProdX is somewhere in the analysis name
+            prod_num = int(analysis.name.split("d")[1].split("_")[0])
+            if prod_num > interest_dict_project_analyses[analysis.pipeline.name][subj_string]["prod number"]:
+                interest_dict_project_analyses[analysis.pipeline.name][subj_string]["prod number"] = prod_num
+                interest_dict_project_analyses[analysis.pipeline.name][subj_string]["interest status"] = analysis.meta["interest status"]
+                if analysis.meta["status"] in {"uploaded", "finished"}:
+                    interest_dict_project_analyses[analysis.pipeline.name][subj_string]["finished"] = True
+    
     for analysis in ledger.project_analyses:
+        # see which events are being analyzed
+        subj_string = "_".join([f"{subj}" for subj in analysis._subjects])
         # need to change the logic of analysis set up as to account for
         # dependencies
         to_analyse = True
         extra_prio = False
-        if analysis.status not in {"ready"}:
+        to_cancel = False
+        if analysis.status not in {"ready", "unready"}:
             to_analyse = False
-        elif analysis._needs:
+        elif analysis.meta['needs']:
             # check if the parent jobs are said to be interesting
-            # this does not account for the old logic in the project analyses
             interested_pipelines = 0
-            for old_analysis in analysis._needs:
-                if old_analysis in interest_dict.keys():
-                    if len(interest_dict[old_analysis]) > 0:
-                        for cases in interest_dict[old_analysis]:
-                            if cases["interest status"] is True and cases[
-                                "subjects"
-                            ] == set(analysis.subjects):
-                                interested_pipelines += 1
-            if interested_pipelines < int(analysis.meta["needs settings"]["minimum"]):
-                to_analyse = False
+            finished_pipelines = 0
+            for old_analysis in analysis.meta['needs']:
+                if old_analysis in interest_dict_project_analyses.keys():
+                    if subj_string in interest_dict_project_analyses[old_analysis].keys():
+                        if interest_dict_project_analyses[old_analysis][subj_string]["interest status"] is True:
+                            interested_pipelines += 1
+                        if interest_dict_project_analyses[old_analysis][subj_string]["finished"] is True:
+                            finished_pipelines += 1
+            # verify if enough parent analyses are interesting
+            if "needs settings" in analysis.meta.keys():
+                if interested_pipelines < int(analysis.meta["needs settings"]["minimum"]):
+                    to_analyse = False
+                    remaining_pipelines = int(len(analysis.meta["needs"]) - finished_pipelines)
+                    remaining_interest_threshold = int(analysis.meta["needs settings"]["minimum"]) - interested_pipelines
+                    if remaining_pipelines < remaining_interest_threshold:
+                        to_cancel = True
 
-            # check if we need to account for extra priority comming from atlenstics
+            # check if we need to account for extra priority comming from any pipeline
             if "extra priority" in analysis.meta["needs settings"].keys():
-                if (
-                    analysis.meta["needs settings"]["extra priority"]
-                    == "atlenstics_compatibility"
-                ):
-                    # we need to verify if extra priority is needed
-                    if "atlenstics_compatibility" in interest_dict.keys():
-                        # need to add a check on the length of the list to avoid some failures
-                        if len(interest_dict["atlenstics_compatibility"]) > 0:
-                            if (
-                                interest_dict["atlenstics_compatibility"][0][
-                                    "interest status"
-                                ]
-                                is True
-                            ):
-                                extra_prio = True
+                extra_prio_pipeline = analysis.meta["needs settings"]["extra priority"]
+                if extra_prio_pipeline in interest_dict_project_analyses.keys():
+                    if subj_string in interest_dict_project_analyses[extra_prio_pipeline].keys():
+                        extra_prio = interest_dict_project_analyses[extra_prio_pipeline][subj_string]["interest status"]
+
         running_and_requiring_priority_check = False
-        if analysis.status in {"running"} and analysis._needs:
+        if analysis.status in {"running"} and analysis.meta['needs']:
             if "needs settings" in analysis.meta.keys():
                 if "logic" in analysis.meta["needs settings"]:
                     if analysis.meta["needs settings"]["logic"] == "add_priority":
                         running_and_requiring_priority_check = True
 
-        if to_analyse:
+        if to_cancel:
+            analysis.status = "cancelled"
+            ledger.update_analysis_in_project_analysis(analysis)
+            click.echo(
+                click.style("●", fg="red")
+                + f" Project analysis {analysis.name} will not run, set to cancelled"
+            )
+
+        elif to_analyse:
+            #MW: Set unready analyses to analysis-ready, i.e. fix for hanabi
+            if analysis.status in {"unready"}:
+                analysis.status = "analysis-ready"
+                ledger.update_analysis_in_project_analysis(analysis)
+                click.echo(
+                    click.style("●", fg="yellow")
+                    + f"Project analysis {analysis.name} set to analysis-ready will be subitted on next pass"
+                )
+                continue
+
             # Need to ensure a directory exists for these!
-            subjects = analysis._subjects
-            subj_string = "_".join([f"{subjects[i]}" for i in range(len(subjects))])
             project_analysis_dir = os.path.join(
                 "checkouts",
                 "project-analyses",
@@ -330,36 +374,25 @@ def submit(event, update, dryrun):
 
             # calculate the priority it is expected to have
             interested_pipelines = 0
-            for old_analysis in analysis._needs:
-                if old_analysis in interest_dict.keys():
-                    if len(interest_dict[old_analysis]) > 0:
-                        if interest_dict[old_analysis][-1]["interest status"] is True:
+            for old_analysis in analysis.meta['needs']:
+                if old_analysis in interest_dict_project_analyses.keys():
+                    if subj_string in interest_dict_project_analyses[old_analysis].keys():
+                        if interest_dict_project_analyses[old_analysis][subj_string]["interest status"] is True:
                             interested_pipelines += 1
-            if interested_pipelines < 2:
+            if interested_pipelines < analysis.meta["needs settings"]["minimum"]:
                 theoretical_prio = 0
             else:
-                theoretical_prio = int((interested_pipelines - 2) * 10)
+                theoretical_prio = int((interested_pipelines-analysis.meta["needs settings"]["minimum"])*10)
             extra_prio = False
             if "extra priority" in analysis.meta["needs settings"].keys():
-                if (
-                    analysis.meta["needs settings"]["extra priority"]
-                    == "atlenstics_compatibility"
-                ):
-                    # we need to verify if extra priority is needed
-                    if "atlenstics_compatibility" in interest_dict.keys():
-                        if len(interest_dict["atlenstics_compatibility"]) > 0:
-                            if (
-                                interest_dict["atlenstics_compatibility"][0][
-                                    "interest status"
-                                ]
-                                is True
-                            ):
-                                extra_prio = True
+                extra_prio_pipeline = analysis.meta["needs settings"]["extra priority"]
+                if extra_prio_pipeline in interest_dict_project_analyses.keys():
+                    if subj_string in interest_dict_project_analyses[extra_prio_pipeline].keys():
+                        extra_prio = interest_dict_project_analyses[extra_prio_pipeline][subj_string]["interest status"]
             if extra_prio:
                 theoretical_prio += 20
 
             # check if we currently have the correct priority or if an adaptation is needed
-
             if theoretical_prio != current_prio:
                 logger.info(
                     f"Adjusting priority of {analysis.name} from {current_prio} to {theoretical_prio}"
@@ -370,6 +403,22 @@ def submit(event, update, dryrun):
                     use_old=False,
                 )
 
+    # deal with single event analysis to also allow for same prior set up
+    interest_dict_single_analysis = {}
+    for ev in ledger.get_event(event):
+        if ev.name not in interest_dict_single_analysis.keys():
+            interest_dict_single_analysis[ev.name] = {}
+        productions = ev.get_all_latest()
+        for production in productions:
+            if production.name not in interest_dict_single_analysis[ev.name].keys():
+                # default value is false to not start the run if the production is not completed
+                interest_dict_single_analysis[ev.name][production.name] = {'interest status' : False,
+                                                                           'done' : False}
+                if "interest status" in production.meta.keys():
+                    interest_dict_single_analysis[ev.name][production.name] = production.meta["interest status"]
+                if production.status in {"finished", "uploaded"}:
+                    interest_dict_single_analysis[ev.name][production.name]['done'] = True
+    
     for event in ledger.get_event(event):
         ready_productions = event.get_all_latest()
         for production in ready_productions:
@@ -406,51 +455,84 @@ def submit(event, update, dryrun):
                 production.status = "running"
             else:
                 pipe = production.pipeline
-                try:
-                    pipe.build_dag(dryrun=dryrun)
-                except PipelineException as e:
-                    logger.error(
-                        "failed to build a DAG file.",
-                    )
-                    logger.exception(e)
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Unable to submit {production.name}"
-                    )
-                except ValueError:
-                    logger.info("Unable to submit an unbuilt production")
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Unable to submit {production.name} as it hasn't been built yet."
-                    )
-                    click.echo("Try running `asimov manage build` first.")
-                try:
-                    pipe.submit_dag(dryrun=dryrun)
-                    if not dryrun:
-                        click.echo(
-                            click.style("●", fg="green")
-                            + f" Submitted {production.event.name}/{production.name}"
+                # check the priority status to see if we need to start 
+                # the analysis
+                to_analyse = True
+                if production.status not in {"ready"}:
+                    to_analyse = False
+                else:
+                    # verify priority method to be used 
+                    priority_method = check_priority_method(production)
+                    if priority_method == "vanilla":
+                        N_ok = 0
+                        for prod in production._needs:
+                            if interest_dict_single_analysis[production.event.name][prod]['done']:
+                                N_ok += 1
+                        if N_ok < len(production._needs):
+                            to_analyse = False
+                    elif priority_method == "is_interesting":
+                        if "minimum" in production.meat["needs settings"].keys():
+                            N_target = int(production.meta["needs settings"]["minimum"])
+                        else:
+                            # all pipelines should indicate the run as interesting
+                            N_target = len(production._needs)
+                        for prod in production._needs:
+                            if interest_dict_single_analysis[production.event.name][prod]['interest status']:
+                                N_ok += 1
+                        if N_ok < N_target:
+                            to_analyse = False
+                    else:
+                        raise ValueError(f"Priority method {priority_method} not recognized")
+                if to_analyse:
+                    try:
+                        pipe.build_dag(dryrun=dryrun)
+                    except PipelineException as e:
+                        logger.error(
+                            "failed to build a DAG file.",
                         )
-                        production.status = "running"
+                        logger.exception(e)
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Unable to submit {production.name}"
+                        )
+                    except ValueError:
+                        logger.info("Unable to submit an unbuilt production")
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Unable to submit {production.name} as it hasn't been built yet."
+                        )
+                        click.echo("Try running `asimov manage build` first.")
+                    try:
+                        pipe.submit_dag(dryrun=dryrun)
+                        if not dryrun:
+                            click.echo(
+                                click.style("●", fg="green")
+                                + f" Submitted {production.event.name}/{production.name}"
+                            )
+                            production.status = "running"
 
-                except PipelineException as e:
-                    production.status = "stuck"
+                    except PipelineException as e:
+                        production.status = "stuck"
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Unable to submit {production.name}"
+                        )
+                        logger.exception(e)
+                        ledger.update_event(event)
+                        logger.error(
+                            f"The pipeline failed to submit the DAG file to the cluster. {e}",
+                        )
+                    if not dryrun:
+                        # Refresh the job list
+                        job_list = condor.CondorJobList()
+                        job_list.refresh()
+                        # Update the ledger
+                        ledger.update_event(event)
+                else:
                     click.echo(
-                        click.style("●", fg="red")
-                        + f" Unable to submit {production.name}"
+                        click.style("●", fg="yellow")
+                        + f"Production {production.name} not ready to submit"
                     )
-                    logger.exception(e)
-                    ledger.update_event(event)
-                    logger.error(
-                        f"The pipeline failed to submit the DAG file to the cluster. {e}",
-                    )
-                if not dryrun:
-                    # Refresh the job list
-                    job_list = condor.CondorJobList()
-                    job_list.refresh()
-                    # Update the ledger
-                    ledger.update_event(event)
-
 
 @click.option(
     "--event",

@@ -367,8 +367,8 @@ def monitor(ctx, event, update, dry_run, chain):
 
         if chain:
             ctx.invoke(report.html)
-    for event in sorted(ledger.get_event(event), key=lambda e: e.name):
 
+    for event in sorted(ledger.get_event(event), key=lambda e: e.name):
         stuck = 0
         running = 0
         finish = 0
@@ -380,9 +380,7 @@ def monitor(ctx, event, update, dry_run, chain):
         ]
 
         for production in on_deck:
-
             logger.debug(f"Available analyses: {event}/{production.name}")
-
             click.echo(
                 "\t- "
                 + click.style(f"{production.name}", bold=True)
