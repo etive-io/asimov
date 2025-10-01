@@ -130,7 +130,7 @@ pages:
     - master
 
 wheel-310:
-  image: python:3.9
+  image: python:3.10
   stage: build
   script:
     - pip install wheel build twine

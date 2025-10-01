@@ -729,19 +729,19 @@ class ProjectAnalysis(Analysis):
             self.status_str = kwargs["status"].lower()
         else:
             self.status_str = "none"
-
+        
         self.pipeline = pipeline  # .lower()
         if isinstance(pipeline, str):
             # try:
             self.pipeline = known_pipelines[str(pipeline).lower()](self)
             # except KeyError:
             self.logger.warning(f"The pipeline {pipeline} could not be found.")
-
+        
         if "needs" in self.meta:
             self._needs = self.meta.pop("needs")
         else:
             self._needs = []
-
+        
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
         else:
@@ -757,6 +757,7 @@ class ProjectAnalysis(Analysis):
                 )
 
         self.meta = update(self.meta, deepcopy(kwargs))
+        
 
     def __repr__(self):
         """
@@ -811,7 +812,7 @@ class ProjectAnalysis(Analysis):
             # matches.remove(self)
             requirements = self._process_dependencies(deepcopy(self._needs))
             analyses = []
-            for subject in self.subjects:
+            for subject in self._subjects:
                 sub = self.ledger.get_event(subject)[0]
                 self._subject_obs.append(sub)
                 for analysis in sub.analyses:

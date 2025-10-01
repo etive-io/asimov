@@ -1,3 +1,18 @@
+0.6.1
+=====
+
+This is a bug-fix release, which does not introduce any new backwards-incompatible features.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!158 <https://git.ligo.org/asimov/asimov/-/merge_requests/158>`_: Fixes a bug with project analysis working directories.
+
 0.6.0
 =====
 
