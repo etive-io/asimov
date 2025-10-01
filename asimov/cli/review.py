@@ -70,6 +70,11 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
                         message=message, status=status, production=production
                     )
                     production.review.add(message)
+                elif status is None:
+                    message = ReviewMessage(
+                        message=message, status=None, production=production
+                    )
+                    production.review.add(message)
                 else:
                     click.echo(
                         click.style("●", fg="red")
@@ -81,10 +86,11 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
                 if hasattr(event, "issue_object"):
                     production.event.update_data()
                 current_ledger.update_event(event)
-                click.echo(
-                    click.style("●", fg="green")
-                    + f" {event.name}/{production.name} {status.lower()}"
-                )
+            if status is not None:
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" {event.name}/{production.name} {status.lower()}"
+                    )
 
     else:
         found = False
@@ -121,6 +127,11 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
                 f"production {production} and subjects {set(subjects)}",
                 fg="red",
             )
+            else:
+                click.echo(
+                    click.style("●", fg="green")
+                    + f" {event.name}/{production.name} Note added"
+                )
 
 
 @click.argument("production", default=None, required=False)

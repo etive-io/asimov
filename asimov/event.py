@@ -331,10 +331,10 @@ class Event:
            The location in the repository for this file.
         """
 
-        if "gid" in self.meta:
-            gid = self.meta["gid"]
+        if "preferred event" in self.meta.get("ligo", {}):
+            gid = self.meta["ligo"]["preferred event"]
         else:
-            raise ValueError("No GID is included in this event's metadata.")
+            raise ValueError("No preferred event GID is included in this event's metadata.")
 
         try:
             client = GraceDb(service_url=config.get("gracedb", "url"))

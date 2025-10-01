@@ -13,7 +13,8 @@ from asimov.analysis import ProjectAnalysis
 from asimov import current_ledger as ledger
 from asimov.ledger import Ledger
 from asimov.utils import update
-
+from copy import deepcopy
+from datetime import datetime
 import sys
 
 if sys.version_info < (3, 10):
@@ -26,7 +27,7 @@ logger = logger.getChild("cli").getChild("apply")
 logger.setLevel(LOGGER_LEVEL)
 
 
-def apply_page(file, event=None, ledger=ledger):
+def apply_page(file, event, ledger=ledger, update_page=False):
     if file[:4] == "http":
         r = requests.get(file)
         if r.status_code == 200:
@@ -47,11 +48,53 @@ def apply_page(file, event=None, ledger=ledger):
             logger.info("Found an event")
             document.pop("kind")
             event = asimov.event.Event.from_yaml(yaml.dump(document))
-            ledger.update_event(event)
-            click.echo(
-                click.style("●", fg="green") + f" Successfully applied {event.name}"
-            )
-            logger.info(f"Added {event.name} to project")
+            # Check if the event is in the ledger already
+            if event.name in ledger.events and update_page is True:
+                old_event = deepcopy(ledger.events[event.name])
+                for key in ["name", "productions", "working directory", "repository", "ledger"]:
+                    old_event.pop(key, None)
+                analyses = [
+                    # I appreciate this looks insane, but the way the yaml stores these
+                    # is poorly designed.
+                    {list(prod.keys())[0]: update(list(prod.values())[0], old_event)}
+                    for prod in ledger.events[event.name]["productions"]
+                ]
+
+                # Add the old version to the history
+                if "history" not in ledger.data:
+                    ledger.data["history"] = {}
+                history = ledger.data["history"].get(event.name, {})
+                version = f"version-{len(history)+1}"
+                history[version] = old_event
+                history[version]["date changed"] = datetime.now()
+
+                ledger.data["history"][event.name] = history
+                ledger.save()
+                update(ledger.events[event.name], event.meta)
+                ledger.events[event.name]["productions"] = analyses
+                ledger.events[event.name].pop("ledger", None)
+
+                click.echo(
+                    click.style("●", fg="green") + f" Successfully updated {event.name}"
+                )
+
+            elif event.name not in ledger.events and update_page is False:
+                ledger.update_event(event)
+                click.echo(
+                    click.style("●", fg="green") + f" Successfully added {event.name}"
+                )
+                logger.info(f"Added {event.name} to project")
+
+            elif event.name not in ledger.events and update_page is True:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" {event.name} cannot be updated as there is no record of it in the project."
+                )
+            else:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" {event.name} already exists in this project."
+                )
 
         elif document["kind"] == "analysis":
             logger.info("Found an analysis")
@@ -199,8 +242,16 @@ def apply_via_plugin(event, hookname, **kwargs):
 @click.option(
     "--plugin", "-p", help="The plugin to use to apply this data", default=None
 )
-def apply(file, event, plugin):
+@click.option(
+    "--update",
+    "-U",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Update the project with this blueprint rather than adding a new record.",
+)
+def apply(file, event, plugin, update):
     if plugin:
         apply_via_plugin(event, hookname=plugin)
     elif file:
-        apply_page(file, event)
+        apply_page(file, event, update_page=update)

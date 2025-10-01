@@ -1,0 +1,79 @@
+[build-system]
+requires = [
+	"setuptools>=61.0",
+	"setuptools_scm[toml]>=3.4.3",
+	"wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+version_scheme = "release-branch-semver"
+local_scheme = "no-local-version"
+
+[project]
+name = "asimov"
+dynamic = ["version"]
+authors = [
+	{ name = "Daniel Williams", email = "daniel.williams@ligo.org" },
+]
+description = "A Python package for managing and interacting with data analysis jobs."
+readme = "README.md"
+license = "MIT" 
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Operating System :: OS Independent",
+        'Development Status :: 5 - Production/Stable',
+        'Environment :: Console',
+        'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering :: Astronomy',
+        'Topic :: Scientific/Engineering :: Information Analysis',
+        'Natural Language :: English',
+]
+requires-python = ">=3.9"
+dependencies = [
+	     "setuptools",
+	     "click",
+	     "gitpython",
+	     "htcondor",
+	     "ligo-gracedb",
+	     "liquidpy",
+	     "networkx",
+	     "numpy",
+	     "otter-report>=0.3.3",
+	     "python-gitlab",
+	     "pytz",
+	     "pyyaml",
+	     "requests",
+	     "gwpy",
+	     "lscsoft-glue>=2.0.0",
+	     "igwn-auth-utils>=0.2.1",
+	     "flask",
+	     "tinydb",
+	     "pillow>=10.2.0"
+]
+
+[project.optional-dependencies]
+docs = [
+	"sphinx",
+	"kentigern >= 0.3.0",
+        "numpydoc",
+	"sphinx-click",
+	"sphinxcontrib-httpdomain",
+	"sphinxcontrib-httpexample",
+	"sphinx-jsonschema",
+	"sphinx-multiversion"
+]
+
+[project.scripts]
+olivaw = "asimov.olivaw:olivaw"
+asimov = "asimov.olivaw:olivaw"
+locutus = "asimov.locutus:cli"
+
+[project.urls]
+"Source code" = "https://git.ligo.org/asimov/asimov"
+
+[tool.setuptools]
+include-package-data = true
+packages = [
+	"asimov",
+]

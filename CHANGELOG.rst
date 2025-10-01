@@ -34,6 +34,45 @@ Merges and fixes
 + `ligo!157 <https://git.ligo.org/asimov/asimov/-/merge_requests/157>`_: Fixes to the interface between asimov and lensingflow
 
 
+
+0.5.10
+======
+
+This is a bug-fix release, which does not introduce any new backwards-incompatible features, which fixes a critical bug when updating an event using the ``asimov apply --upgrade`` interface, where analyses were lost from the updated event.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!166 <https://git.ligo.org/asimov/asimov/-/merge_requests/166>`_: Corrects an issue with application of event updates.
+
+0.5.9
+=====
+
+This is primarily a bug-fix release, which does not introduce any new backwards-incompatible features, but provides a number of small quality-of-life improvements.
+These include a means of better handling updates to analyses by applying updates event-wide to the asimov ledger.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!147 <https://git.ligo.org/asimov/asimov/-/merge_requests/147>`_: Corrects an issue with luminosity distance priors for bilby.
++ `ligo!156 <https://git.ligo.org/asimov/asimov/-/merge_requests/156>`_: Adds units to disk and memory requests for bayewave condor jobs.
++ `ligo!160 <https://git.ligo.org/asimov/asimov/-/merge_requests/160>`_: Improves memory efficiency of the ``asimov monitor`` command.
++ `ligo!162 <https://git.ligo.org/asimov/asimov/-/merge_requests/162>`_: Restores tha ability of asimov to retrieve coinc.xml files from graceDB.
++ `ligo!163 <https://git.ligo.org/asimov/asimov/-/merge_requests/163>`_: Allows blueprints to update existing events.
++ `ligo!164 <https://git.ligo.org/asimov/asimov/-/merge_requests/164>`_: Transitions from setup.py to pyproject.toml for specifying build and install processes.
+
+
+
 0.5.8
 =====
 

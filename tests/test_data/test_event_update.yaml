@@ -1,0 +1,10 @@
+kind: event
+name: S000000
+event time: 909
+priors:
+  luminosity distance:
+    minimum: 10
+    maximum: 1010
+  mass ratio:
+    minimum: 0.1
+    maximum: 1.0

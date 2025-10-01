@@ -1,0 +1,10 @@
+kind: configuration
+pipelines:
+  bilby: {}
+---
+kind: analysis
+name: bilby-IMRPhenomXPHM-QuickTest
+event: S000000
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM

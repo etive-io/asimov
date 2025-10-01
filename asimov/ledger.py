@@ -195,7 +195,9 @@ class YAMLLedger(Ledger):
 
     def get_event(self, event=None):
         if event:
-            return [Event(**self.events[event], ledger=self)]
+            kwargs = self.events[event]
+            kwargs.pop("ledger", None)
+            return [Event(**kwargs, ledger=self)]
         else:
             return self._all_events
 

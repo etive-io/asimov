@@ -104,11 +104,11 @@ class TestIniFileHandling(AsimovTestCase):
 
     def test_detchar_substitution(self):
         event = "Nonstandard fmin"
-
+        
         for pipeline in known_pipelines.keys():
             if pipeline not in exemplar.keys():
                 continue
-            if pipeline == "bilby": continue
+            if pipeline in ["bilby", "gwdata"]: continue
             f = io.StringIO()
             with contextlib.redirect_stdout(f):
 
@@ -131,9 +131,11 @@ class TestIniFileHandling(AsimovTestCase):
                     ledger=self.ledger,
                 )
 
+        for production in self.ledger.get_event(event)[0].productions:
+            pipeline = production.pipeline.name.lower()
+            if pipeline in ["bilby", "gwdata"]: continue
             f = io.StringIO()
             with contextlib.redirect_stdout(f):
-                production = self.ledger.get_event(event)[0].productions[0]
                 with set_directory(
                     os.path.join(
                         "checkouts", event, config.get("general", "calibration_directory")
@@ -148,7 +150,6 @@ class TestIniFileHandling(AsimovTestCase):
                 f"{production.name}.ini",
             )
             self.assertTrue(os.path.exists(ini_location))
-
             # Read the ini file and convert it to a dictionary for easy access
 
             import configparser
@@ -168,7 +169,6 @@ class TestIniFileHandling(AsimovTestCase):
             pipeline_config = {
                 s: dict(pipeline_config.items(s)) for s in pipeline_config.sections()
             }
-
             for name, mapping in mappings[pipeline].items():
                 with self.subTest(name=name, pipeline=pipeline):
                     self.assertEqual(
