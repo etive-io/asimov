@@ -147,6 +147,18 @@ You'll need to copy the following yaml data into a file called, for example, ``c
 .. code-block:: yaml
 
 		kind: configuration
+		data:
+		  channels:
+		    H1: H1:GWOSC-16KHZ_R1_STRAIN
+		    L1: L1:GWOSC-16KHZ_R1_STRAIN
+		    V1: V1:GWOSC-16KHZ_R1_STRAIN
+		  frame types:
+		    H1: H1_GWOSC_16KHZ_R1
+		    L1: L1_GWOSC_16KHZ_R1
+		    V1: V1_GWOSC_16KHZ_R1
+		likelihood:
+		  roll off time: 1.0
+
 		pipelines:
 		  bilby:
 		    quality:
@@ -206,18 +218,12 @@ It feels like we've spent a lot of time getting things set up, but now we're rea
 
 For this guide we'll look at GW150914, which was the first gravitational wave to be detected.
 
-The asimov team maintain a set of YAML files for all of the published events `in a special repository<https://git.ligo.org/asimov/data/-/tree/main/events>`_ .
+The asimov team maintain a set of YAML files for all of the published events `in a special repository <https://git.ligo.org/asimov/data/-/tree/main/events>`_.
 For this event I've copied it onto this page, but you dont need to save this into a file; the command after the YAML file will download it directly from our repository and add it to your project.
 
 .. code-block:: yaml
 
 		data:
-		  channels:
-		    H1: H1:DCS-CALIB_STRAIN_C02
-		    L1: L1:DCS-CALIB_STRAIN_C02
-		  frame types:
-		    H1: H1_HOFT_C02
-		    L1: L1_HOFT_C02
 		  segment length: 4
 		event time: 1126259462.391
 		gid: G190047
@@ -256,7 +262,7 @@ To add this event directly from the repository we can just running
 
 .. code-block:: console
 
-		$ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml
+		$ asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
 
 .. note:: While we normally call this event GW150914, its full name is GW150914_095045, and we'll need to use that later when adding analyses.
 
