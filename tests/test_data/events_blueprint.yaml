@@ -1,0 +1,79 @@
+data:
+  channels:
+    H1: H1:DCS-CALIB_STRAIN_C02
+    L1: L1:DCS-CALIB_STRAIN_C02
+  frame types:
+    H1: H1_HOFT_C02
+    L1: L1_HOFT_C02
+  segment length: 4
+event time: 1126259462.391
+interferometers:
+- H1
+- L1
+kind: event
+likelihood:
+  psd length: 4
+  reference frequency: 20
+  sample rate: 2048
+  segment start: 1126259460.391
+  start frequency: 13.333333333333334
+  window length: 4
+name: GW150914_095045
+priors:
+  amplitude order: 1
+  chirp mass:
+    maximum: 41.97447913941358
+    minimum: 21.418182160215295
+  luminosity distance:
+    maximum: 10000
+    minimum: 10
+  mass 1:
+    maximum: 1000
+    minimum: 1
+  mass ratio:
+    maximum: 1.0
+    minimum: 0.05
+quality:
+  minimum frequency:
+    H1: 20
+    L1: 20
+---
+data:
+  channels:
+    H1: H1:DCS-CALIB_STRAIN_C02
+    L1: L1:DCS-CALIB_STRAIN_C02
+  frame types:
+    H1: H1_HOFT_C02
+    L1: L1_HOFT_C02
+  segment length: 8
+event time: 1128678900.444336
+interferometers:
+- H1
+- L1
+kind: event
+likelihood:
+  psd length: 8
+  reference frequency: 20
+  sample rate: 2048
+  segment start: 1128678894.444336
+  start frequency: 13.333333333333334
+  window length: 8
+name: GW151012_095443
+priors:
+  amplitude order: 1
+  chirp mass:
+    maximum: 30.55016955177058
+    minimum: 11.331236548800117
+  luminosity distance:
+    maximum: 10000
+    minimum: 10
+  mass 1:
+    maximum: 1000
+    minimum: 1
+  mass ratio:
+    maximum: 1.0
+    minimum: 0.05
+quality:
+  minimum frequency:
+    H1: 20
+    L1: 20

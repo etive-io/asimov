@@ -1,14 +1,17 @@
 """
 Code for the project ledger.
 """
+
 import yaml
 
 import os
 import shutil
+from functools import reduce
 
 import asimov
 import asimov.database
 from asimov import config
+from asimov.analysis import ProjectAnalysis
 from asimov.event import Event, Production
 from asimov.utils import update, set_directory
 
@@ -28,15 +31,6 @@ class Ledger:
 
         elif engine in {"tinydb", "mongodb"}:
             DatabaseLedger.create()
-        elif engine == "gitlab":
-            raise NotImplementedError(
-                "This hasn't been ported to the new interface yet. Stay tuned!"
-            )
-
-        elif engine == "gitlab":
-            raise NotImplementedError(
-                "This hasn't been ported to the new interface yet. Stay tuned!"
-            )
 
 
 class YAMLLedger(Ledger):
@@ -51,11 +45,11 @@ class YAMLLedger(Ledger):
             update(self.get_defaults(), event, inplace=False)
             for event in self.data["events"]
         ]
+
         self.events = {ev["name"]: ev for ev in self.data["events"]}
         self._all_events = [
-            Event(**self.events[event], ledger=self)
-            for event in self.events.keys()
-            ]
+            Event(**self.events[event], ledger=self) for event in self.events.keys()
+        ]
         self.data.pop("events")
 
     @classmethod
@@ -66,6 +60,7 @@ class YAMLLedger(Ledger):
         data["asimov"] = {}
         data["asimov"]["version"] = asimov.__version__
         data["events"] = []
+        data["project analyses"] = []
         data["project"] = {}
         data["project"]["name"] = name
         with open(location, "w") as ledger_file:
@@ -76,6 +71,17 @@ class YAMLLedger(Ledger):
         Update an event in the ledger with a changed event object.
         """
         self.events[event.name] = event.to_dict()
+        self.save()
+
+    def update_analysis_in_project_analysis(self, analysis):
+        """
+        Function to update an analysis contained in the project analyses
+        """
+        for i in range(len(self.data["project analyses"])):
+            if self.data["project analyses"][i]["name"] == analysis.name:
+                dict_to_save = analysis.to_dict().copy()
+                dict_to_save["status"] = analysis.status
+                self.data["project analyses"][i] = dict_to_save
         self.save()
 
     def delete_event(self, event_name):
@@ -116,17 +122,50 @@ class YAMLLedger(Ledger):
                 # os.fsync(ledger_file.fileno())
             os.replace(self.location + "_tmp", self.location)
 
-    def add_event(self, event):
+    def add_subject(self, subject):
+        """Add a new subject to the ledger."""
         if "events" not in self.data:
             self.data["events"] = []
 
-        self.events[event.name] = event.to_dict()
+        self.events[subject.name] = subject.to_dict()
+        self.save()
+
+    def add_event(self, event):
+        self.add_subject(subject=event)
+
+    def add_analysis(self, analysis, event=None):
+        """
+        Add an analysis to the ledger.
+
+        This method can accept any of the forms of analysis supported by asimov, and
+        will determine the correct way to add them to the ledger.
+
+        Parameters
+        ----------
+        analysis : `asimov.Analysis`
+           The analysis to be added to the ledger.
+        event : str, optional
+           The name of the event which the analysis should be added to.
+           This is not required for project analyses.
+
+        Examples
+        --------
+        """
+        if isinstance(analysis, ProjectAnalysis):
+            names = [ana["name"] for ana in self.data["project analyses"]]
+            if analysis.name not in names:
+                self.data["project analyses"].append(analysis.to_dict())
+            else:
+                raise ValueError(
+                    "An analysis with that name already exists in the ledger."
+                )
+        else:
+            event.add_production(analysis)
+            self.events[event.name] = event.to_dict()
         self.save()
 
     def add_production(self, event, production):
-        event.add_production(production)
-        self.events[event.name] = event.to_dict()
-        self.save()
+        self.add_analysis(analysis=production, event=event)
 
     def get_defaults(self):
         """
@@ -146,6 +185,13 @@ class YAMLLedger(Ledger):
         if "scheduler" in self.data:
             defaults["scheduler"] = self.data["scheduler"]
         return defaults
+
+    @property
+    def project_analyses(self):
+        return [
+            ProjectAnalysis.from_dict(analysis, ledger=self)
+            for analysis in self.data["project analyses"]
+        ]
 
     def get_event(self, event=None):
         if event:
@@ -184,10 +230,14 @@ class YAMLLedger(Ledger):
 
         def apply_filter(productions, parameter, value):
             productions = filter(
-                lambda x: x.meta[parameter] == value
-                if (parameter in x.meta)
-                else (
-                    getattr(x, parameter) == value if hasattr(x, parameter) else False
+                lambda x: (
+                    x.meta[parameter] == value
+                    if (parameter in x.meta)
+                    else (
+                        getattr(x, parameter) == value
+                        if hasattr(x, parameter)
+                        else False
+                    )
                 ),
                 productions,
             )
@@ -245,45 +295,24 @@ class DatabaseLedger(Ledger):
         event_dict = self.db.query("event", "name", event)[0]
         return Event.from_dict(event_dict)
 
-    def get_productions(self, event=None, filters=None):
-        """Get a list of productions either for a single event or for all events.
-
-        Parameters
-        ----------
-        event : str
-           The name of the event to pull productions from.
-           Optional; if no event is specified then all of the productions are
-           returned.
-
-        filters : dict
-           A dictionary of parameters to filter on.
-
-        Examples
-        --------
-        FIXME: Add docs.
-
+    def get_productions(self, event, filters=None, query=None):
+        """
+        Get all of the productions for a given event.
         """
 
-        if event:
-            productions = self.get_event(event).productions
+        if not filters and not query:
+            productions = self.db.query("production", "event", event)
+
         else:
-            productions = []
-            for event_i in self.get_event():
-                for production in event_i.productions:
-                    productions.append(production)
-
-        def apply_filter(productions, parameter, value):
-            productions = filter(
-                lambda x: x.meta[parameter] == value
-                if (parameter in x.meta)
-                else (
-                    getattr(x, parameter) == value if hasattr(x, parameter) else False
-                ),
-                productions,
+            queries_1 = self.db.Q["event"] == event
+            queries = [
+                self.db.Q[parameter] == value for parameter, value in filters.items()
+            ]
+            productions = self.db.tables["production"].search(
+                queries_1 & reduce(lambda x, y: x & y, queries)
             )
-            return productions
 
-        if filters:
-            for parameter, value in filters.items():
-                productions = apply_filter(productions, parameter, value)
-        return list(productions)
+        event = self.get_event(event)
+        return [
+            Production.from_dict(dict(production), event) for production in productions
+        ]

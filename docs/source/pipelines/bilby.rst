@@ -1,3 +1,5 @@
+.. _bilby-pipelines:
+
 Bilby pipelines
 ===============
 
@@ -37,6 +39,7 @@ These settings affect the behaviour of the bilby likelihood module.
 
 ``marginalization``
 	This section takes a list of types of marginalization to apply to the analysis (see below for an example of the syntax).
+	
 	``distance``
 		Activates distance marginalization.
 	``phase``
@@ -46,6 +49,7 @@ These settings affect the behaviour of the bilby likelihood module.
 		
 ``roq``
 	This section allows ROQs to be defined for the likelihood function.
+
 	``folder``
 		The location of the ROQs.
 		Defaults to None.

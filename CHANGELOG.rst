@@ -1,3 +1,70 @@
+0.6.1
+=====
+
+This is a bug-fix release, which does not introduce any new backwards-incompatible features.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!158 <https://git.ligo.org/asimov/asimov/-/merge_requests/158>`_: Fixes a bug with project analysis working directories.
+
+0.6.0
+=====
+
+This is a major feature release which introduces some change in functionality which may have a minor effect on backwards compatibility.
+
+New features
+------------
+
+*New analysis types*: asimov 0.6.0 introduces two new kinds of analysis: subject analyses, which allow an analysis to access configurations and results from multiple other analyses defined on a given event or subject, and project analyses which allow access to multiple analyses to be accessed across multiple events. These will allow much more complicated workflows than before which allow combinations of large numbers of subsidiary results.
+
+
+Changes
+-------
+
+*Deprecation warnings*: Deprecation warnings have been added to each of the pipelines (bilby, pesummary, lalinference, rift, and bayeswave) which are currently supported "out of the box" by asimov, as these will be removed in asimov 0.7 and replaced with plugins.
+
+*Bilby*: The online pe argument has been removed from the bilby configuration template as this has been deprecated.
+
+*Removal of gitlab interfaces*: More logic related to the disused and deprecated gitlab issue tracker interface has been removed.
+
+*Removal of calibration envelope logic*: We have removed the logic required to find calibration files on the LIGO Scientific Collaboration computing resources. These have been moved to the asimov-gwdata pipeline, which will be used in O4 collaboration analyses.
+
+Deprecation
+-----------
+
++ All pipeline interfaces in the main package have been deprecated, and will be removed in v0.7.0
+
+Merges and fixes
+----------------
+
++ `ligo!120 <https://git.ligo.org/asimov/asimov/-/merge_requests/120>`_: Fixes the event deletion CLI option.
++ `ligo!66 <https://git.ligo.org/asimov/asimov/-/merge_requests/66>`_: Updates the post-processing interface.
++ `ligo!128 <https://git.ligo.org/asimov/asimov/-/merge_requests/128>`_: Updates to the README
++ `ligo!157 <https://git.ligo.org/asimov/asimov/-/merge_requests/157>`_: Fixes to the interface between asimov and lensingflow
+
+
+
+0.5.10
+======
+
+This is a bug-fix release, which does not introduce any new backwards-incompatible features, which fixes a critical bug when updating an event using the ``asimov apply --upgrade`` interface, where analyses were lost from the updated event.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!166 <https://git.ligo.org/asimov/asimov/-/merge_requests/166>`_: Corrects an issue with application of event updates.
+
 0.5.9
 =====
 
@@ -61,7 +128,7 @@ Merges
 + `ligo!133 <https://git.ligo.org/asimov/asimov/-/merge_requests/133>`_: Fix a bug with template discovery for pipeline plugins.
 + `ligo!144 <https://git.ligo.org/asimov/asimov/-/merge_requests/144>`_: Allow the PSD roll-off factor to be specified rather than hardcoded.
 
-  
+
 0.5.6
 =====
 
@@ -76,7 +143,6 @@ Merges
 ------
 
 + `ligo!124 <https://git.ligo.org/asimov/asimov/-/merge_requests/124>`_: Fixes a bug in the disk request for bayeswave_post in bayeswave_pipe.
-
 
 0.5.5
 =====

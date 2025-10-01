@@ -4,28 +4,15 @@ Asimov is a workflow management and automation platform for scientific analyses.
 
 [Documentation](https://asimov.docs.ligo.org/asimov) · [Releases](https://git.ligo.org/asimov/asimov/-/releases) · [Issue Tracker](https://git.ligo.org/asimov/asimov/-/issues)
 
-[![Anaconda-Server Badge](https://anaconda.org/conda-forge/ligo-asimov/badges/version.svg)](https://anaconda.org/conda-forge/ligo-asimov) 
-[![Anaconda-Server Badge](https://anaconda.org/conda-forge/ligo-asimov/badges/installer/conda.svg)](https://conda.anaconda.org/conda-forge)
 
-[![coverage report](https://git.ligo.org/asimov/asimov/badges/infrastructure-updates/coverage.svg)](https://git.ligo.org/asimov/asimov/-/commits/infrastructure-updates)
+[![coverage report](https://git.ligo.org/asimov/asimov/badges/master/coverage.svg)](https://git.ligo.org/asimov/asimov/-/commits/master)
+[![conda-forge version](https://anaconda.org/conda-forge/asimov/badges/version.svg)](https://anaconda.org/conda-forge/asimov/)
+![pypi](https://img.shields.io/pypi/v/asimov.svg)
+![tests](https://git.ligo.org/asimov/asimov/badges/master/pipeline.svg)
 
 Asimov was developed to manage and automate the parameter estimation analyses used by the LIGO, Virgo, and KAGRA collaborations to analyse gravitational wave signals, but it aims to provide tools which can be used for other workflows.
 
 Asimov has been used to organise and run the major catalogue analyses from the third observing run, O3, but it's designed to be flexible enough to allow new pipelines and analyses to be added to the framework.
-
-## Branch notes
-
-These notes relate to in-development features on this branch, and what's described here is only expected to be relevant during development.
-More generally useful documentation will move to the main documentation before moving to production.
-
-### Starting the logging server
-
-Run in ``asimov`` directory:
-
-```
-export FLASK_APP=server
-flask run
-```
 
 ## Features
 
@@ -65,7 +52,7 @@ $ pip install asimov
 ```
 It is also available on conda, and can be installed by running
 ```
-$ conda install -c conda-forge ligo-asimov
+$ conda install -c conda-forge asimov
 ```
 
 Asimov also requires that you have `git` installed on your machine, and that you've set it up by running:
@@ -73,6 +60,7 @@ Asimov also requires that you have `git` installed on your machine, and that you
 $ git config --global user.email "you@example.com"
 $ git config --global user.name "Your Name"
 ```
+
 
 ## Get started
 

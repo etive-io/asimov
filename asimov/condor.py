@@ -6,6 +6,7 @@ An important function of asimov is interaction with condor schedulers in order t
 In order to improve performance the code caches results from the query to the scheduler.
 
 """
+
 import os
 import datetime
 from dateutil import tz
@@ -98,15 +99,15 @@ def collect_history(cluster_id):
             logger.info(f"Found {collector}")
             schedd = htcondor.Schedd(collector)
             HISTORY_CLASSADS = [
-                    "CompletionDate",
-                    "CpusProvisioned",
-                    "GpusProvisioned",
-                    "CumulativeSuspensionTime",
-                    "EnteredCurrentStatus",
-                    "MaxHosts",
-                    "RemoteWallClockTime",
-                    "RequestCpus",
-                ]
+                "CompletionDate",
+                "CpusProvisioned",
+                "GpusProvisioned",
+                "CumulativeSuspensionTime",
+                "EnteredCurrentStatus",
+                "MaxHosts",
+                "RemoteWallClockTime",
+                "RequestCpus",
+            ]
             try:
                 jobs = schedd.history(
                     f"ClusterId == {cluster_id}", projection=HISTORY_CLASSADS
@@ -170,6 +171,9 @@ class CondorJob(yaml.YAMLObject):
         self.command = command
         self.hosts = hosts
         self._status = status
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -353,3 +357,60 @@ class CondorJobList:
 
         with open(os.path.join(".asimov", "_cache_jobs.yaml"), "w") as f:
             f.write(yaml.dump(self.jobs))
+
+
+def get_job_priority(job_id):
+    """
+    Returns the priority of a job given its id.
+    This is useful when some conitioning happens and should lead
+    to a change in the analysis priority compared to other events.
+    This returns None if the information cannot be found.
+
+    Parameters
+    ----------
+    - job_id: the condor job id for which we want to get the priority
+    """
+
+    # make collector to query the info
+    schedd = htcondor.Schedd()
+
+    # query job info
+    job_info = schedd.query(f"ClusterId == {job_id}.0")
+    if job_info:
+        priority = job_info[0].get("JobPrio", None)
+        return priority
+    else:
+        return None
+
+
+def change_job_priority(job_id, extra_priority, use_old=False):
+    """
+    Function to change the job priority for a given job.
+
+    Parameters:
+    -----------
+    - job_id: the condor job id for which we want to change the priority
+    - extra_priority: the extra priority that we want to add to the job
+    - use_old: if True, we add the new priority to the old one. Else, we simply replace it
+    """
+
+    # setup a schedduler to query the priority
+    schedd = htcondor.Schedd()
+    main_job_info = schedd.query(f"ClusterId == {job_id}")
+    all_jobs = schedd.query()
+
+    if main_job_info:
+        # look for all the jobs needing to be updated (also child jobs)
+        jobs_to_update = []
+        for job in all_jobs:
+            if "JobBatchId" in job.keys():
+                if job["JobBatchId"] == main_job_info[0]["JobBatchId"]:
+                    jobs_to_update.append(job["ClusterId"])
+
+        for j_id in jobs_to_update:
+            if use_old:
+                extra_priority += get_job_priority(j_id)
+            schedd.edit(f"ClusterId == {j_id}", {"JobPrio": extra_priority})
+            logger.info(f"Changed the priority of job {j_id} to {extra_priority}")
+    else:
+        logger.warning(f"Unable to adapt the priority for job {job_id}")

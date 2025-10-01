@@ -6,9 +6,9 @@ import subprocess
 import time
 import warnings
 
+import asimov.analysis
+
 warnings.filterwarnings("ignore", module="htcondor")
-
-
 import htcondor  # NoQA
 
 from asimov import utils  # NoQA
@@ -42,15 +42,6 @@ Please fix the error and then remove the `pipeline-error` label from this issue.
 - [ ] Resolved
 """
         return text
-
-    def submit_comment(self):
-        """
-        Submit this exception as a comment on the gitlab
-        issue for the event.
-        """
-        if self.issue:
-            self.issue.add_label("pipeline-error", state=False)
-            self.issue.add_note(self.__repr__())
 
 
 class PipelineLogger:
@@ -94,11 +85,17 @@ class Pipeline:
     def __init__(self, production, category=None):
         self.production = production
 
-        self.category = production.category
+        try:
+            self.category = production.category
+        except AttributeError:
+            self.category = None
 
-        self.logger = logger.getChild(
-            f"analysis.{production.event.name}/{production.name}"
-        )
+        if isinstance(production, asimov.analysis.ProjectAnalysis):
+            full_name = f"ProjectAnalysis/{production.name}"
+        else:
+            full_name = f"analysis.{production.event.name}/{production.name}"
+
+        self.logger = logger.getChild(full_name)
         self.logger.setLevel(LOGGER_LEVEL)
 
     def __repr__(self):
@@ -141,7 +138,10 @@ class Pipeline:
         specific pipeline implementation if required.
         """
         self.production.status = "finished"
-        self.production.meta.pop("job id")
+
+        # Need to determine the correct list of post-processing jobs here
+
+        # self.production.meta.pop("job id")
 
     def collect_assets(self):
         """
@@ -276,6 +276,9 @@ class Pipeline:
         return out
 
     def collect_pages(self):
+        pass
+
+    def build(self):
         pass
 
     def build_report(self, reportformat="html"):
@@ -421,7 +424,7 @@ class PESummaryPipeline(PostPipeline):
             command += [f"{key}:{value}"]
 
         if "keywords" in self.meta:
-            for key, argument in self.meta["keywords"]:
+            for key, argument in self.meta["keywords"].items():
                 if argument is not None and len(key) > 1:
                     command += [f"--{key}", f"{argument}"]
                 elif argument is not None and len(key) == 1:
@@ -444,6 +447,9 @@ class PESummaryPipeline(PostPipeline):
             print("-----------------")
             print(" ".join(command))
 
+        additional_environment = self.meta.get("environment variables", {})
+        additional_environment = " ".join([[f"{key}={value}"] for (key, value) in additional_environment.items()])
+
         submit_description = {
             "executable": config.get("pesummary", "executable"),
             "arguments": " ".join(command),
@@ -451,8 +457,11 @@ class PESummaryPipeline(PostPipeline):
             "error": f"{self.production.rundir}/pesummary.err",
             "log": f"{self.production.rundir}/pesummary.log",
             "request_cpus": self.meta["multiprocess"],
-            "environment": "HDF5_USE_FILE_LOCKING=FAlSE OMP_NUM_THREADS=1 OMP_PROC_BIND=false",
-            "getenv": "CONDA_EXE,USER,LAL*,PATH",
+            "environment":
+            "HDF5_USE_FILE_LOCKING=FAlSE " +
+            "OMP_NUM_THREADS=1 OMP_PROC_BIND=false " +
+            additional_environment,
+            "getenv": "CONDA_EXE,USER,LAL*,PATH,HOME",
             "batch_name": f"PESummary/{self.production.event.name}/{self.production.name}",
             "request_memory": "8192MB",
             # "should_transfer_files": "YES",
@@ -481,7 +490,7 @@ class PESummaryPipeline(PostPipeline):
 
             with utils.set_directory(self.production.rundir):
                 with open("pesummary.sub", "w") as subfile:
-                    subfile.write(hostname_job.__str__())
+                    subfile.write(hostname_job.__str__() + "\nQueue")
 
             try:
                 # There should really be a specified submit node, and if there is, use it.

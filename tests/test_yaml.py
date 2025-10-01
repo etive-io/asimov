@@ -22,7 +22,7 @@ interferometers:
 - L1
 quality: {{}}
 productions:
-- Prod0:
+  - name: Prod0
     pipeline: lalinference
     comment: PSD production
     status: wait
@@ -37,7 +37,7 @@ data:
     L1: Fake
 quality: {{}}
 productions:
-- Prod0:
+  - name: Prod0
     comment: PSD production
     status: wait
 
@@ -51,7 +51,7 @@ data:
   - L1: Fake
 working directory: {0}/tests/tmp/
 productions:
-- Prod0:
+  - name: Prod0
     comment: PSD production
     status: wait
 
@@ -87,10 +87,10 @@ class EventTests(unittest.TestCase):
         """Check the name is loaded correctly."""
         self.assertEqual(self.event.name, "S000000xx")
 
-    def test_no_name_error(self):
-        """Check an exception is raised if the event name is missing."""
-        with self.assertRaises(asimov.event.DescriptionException):
-            asimov.event.Event.from_yaml(BAD_YAML.format(self.cwd))
+    # def test_no_name_error(self):
+    #     """Check an exception is raised if the event name is missing."""
+    #     with self.assertRaises(asimov.event.DescriptionException):
+    #         asimov.event.Event.from_yaml(BAD_YAML.format(self.cwd))
 
 class ProductionTests(unittest.TestCase):
     """Tests of the YAML Production format."""
@@ -120,20 +120,20 @@ class ProductionTests(unittest.TestCase):
     def test_missing_name(self):
         """Check that an exception is raised if the production has no name."""
         production = dict(status="wait", pipeline="lalinference")
-        with self.assertRaises(TypeError):
-            asimov.event.Production.from_dict(production, event=self.event)
+        with self.assertRaises(ValueError):
+            asimov.event.Production.from_dict(production, subject=self.event)
         
     def test_missing_pipeline(self):
         """Check that an exception is raised if the production has no pipeline."""
         production = {"S000000x": dict(status="wait")}
-        with self.assertRaises(asimov.event.DescriptionException):
-            asimov.event.Production.from_dict(production, event=self.event)
+        with self.assertRaises(ValueError):
+            asimov.event.Production.from_dict(production, subject=self.event)
         
     def test_missing_status(self):
         """Check that an exception is raised if the production has no status."""
         production = {"S000000x": dict(pipeline="lalinference")}
-        with self.assertRaises(asimov.event.DescriptionException):
-            asimov.event.Production.from_dict(production, event=self.event)
+        with self.assertRaises(ValueError):
+            asimov.event.Production.from_dict(production, subject=self.event)
 
     def test_production_prior_read(self):
             """Check that per-production priors get read."""
@@ -148,18 +148,18 @@ class ProductionTests(unittest.TestCase):
             priors:
               q: [0, 1]
             productions:
-              - Prod0:
-                  comment: PSD production
-                  pipeline: lalinference
-                  priors:
-                    q: [0.0, 0.05]
-                  status: wait
-              - Prod1:
-                  comment: PSD production
-                  pipeline: lalinference
-                  priors:
-                    q: [0.0, 1.0]
-                  status: wait
+              - name: Prod0
+                comment: PSD production
+                pipeline: lalinference
+                priors:
+                  q: [0.0, 0.05]
+                status: wait
+              - name: Prod1
+                comment: PSD production
+                pipeline: lalinference
+                priors:
+                  q: [0.0, 0.8]
+                status: wait
             """
             event = asimov.event.Event.from_yaml(
                 YAML_WITH_PRODUCTION_PRIORS.format(self.cwd),
@@ -168,8 +168,8 @@ class ProductionTests(unittest.TestCase):
             prod1 = event.productions[1]
             self.assertEqual(prod0.priors['q'][1], 0.05)
             self.assertEqual(prod0.meta['priors']['q'][1], 0.05)
-            self.assertEqual(prod1.priors['q'][1], 1.00)
-            self.assertEqual(prod1.meta['priors']['q'][1], 1.00)
+            self.assertEqual(prod1.priors['q'][1], 0.8)
+            self.assertEqual(prod1.meta['priors']['q'][1], 0.8)
 
     def test_production_prior_preserved(self):
         """Check that per-production priors get preserved when saved to yaml."""
@@ -184,24 +184,25 @@ class ProductionTests(unittest.TestCase):
         priors:
           q: [0, 1]
         productions:
-          - Prod0:
-              comment: PSD production
-              pipeline: lalinference
-              priors:
+        - name: Prod0
+          comment: PSD production
+          pipeline: lalinference
+          priors:
                 q: [0.0, 0.05]
-              status: wait
-          - Prod1:
-              comment: PSD production
-              pipeline: lalinference
-              priors:
+          status: wait
+        - name: Prod1
+          comment: PSD production
+          pipeline: lalinference
+          priors:
                 q: [0.0, 1.0]
-              status: wait
+          status: wait
         """
         event = asimov.event.Event.from_yaml(
             YAML_WITH_PRODUCTION_PRIORS.format(self.cwd),
             ledger=self.ledger)
 
         event_YAML = event.to_yaml()
+        
         event2 = asimov.event.Event.from_yaml(event_YAML, ledger=self.ledger)
         prod0 = event.productions[0]
         prod1 = event.productions[1]

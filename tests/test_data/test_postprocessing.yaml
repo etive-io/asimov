@@ -1,0 +1,25 @@
+kind: postprocessing
+name: standard pe postprocessing
+stages:
+  - name: simple PE summary
+    pipeline: pesummary
+  - name: less simple PE summary
+    pipeline: pesummary
+    needs:
+      - simple PE summary
+---
+kind: analysis
+name: analysis with postprocessing
+event: GW150914_095045
+postprocessing:
+  - standard pe postprocessing
+pipeline: bilby
+---
+kind: postprocessing
+name: combined summary pages for bilby
+subject: all
+analyses:
+  - pipeline:bilby
+stages:
+  - name: combined pages
+    pipeline: pesummary

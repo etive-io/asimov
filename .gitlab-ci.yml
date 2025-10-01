@@ -1,27 +1,33 @@
 image: python:3.9
 
 stages:
-- analysis
-- test
-- end-to-end testing
-- build
-- deploy
+  - analysis
+  - test
+  - end-to-end testing
+  - build
+  - deploy
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Code-Quality.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
 
 documentation-coverage:
   stage: analysis
   allow_failure: true
   script:
-   - pip install docstr-coverage
-   - docstr-coverage -F 60.0 asimov
+    - pip install docstr-coverage
+    - docstr-coverage -F 60.0 asimov
   coverage: '/Total coverage: (\d+\.\d+%)/'
-   
+
 flake8:
   stage: analysis
   script:
-  - pip install flake8 flake8_formatter_junit_xml
-  - flake8 --max-line-length=120 --format junit-xml --verbose asimov > report.xml
+    - pip install flake8 flake8_formatter_junit_xml
+    - flake8 --max-line-length=120 --format junit-xml --verbose asimov > report.xml
   allow_failure: true
-  artifacts:  
+  artifacts:
     reports:
       junit: report.xml
 
@@ -29,8 +35,8 @@ pylint:
   stage: analysis
   allow_failure: True
   script:
-  - pip install pylint pylint-gitlab
-  - pylint --exit-zero --load-plugins=pylint_gitlab --output-format=gitlab-codeclimate asimov > codeclimate.json
+    - pip install pylint pylint-gitlab
+    - pylint --exit-zero --load-plugins=pylint_gitlab --output-format=gitlab-codeclimate asimov > codeclimate.json
   artifacts:
     reports:
       codequality: codeclimate.json
@@ -45,6 +51,7 @@ test-python-39:
     - pip install coverage
     - pip install unittest-xml-reporting
     - pip install .
+    - pip install bilby-pipe
     - coverage run -m xmlrunner discover tests/ -o junit-reports
     - coverage report
     - coverage xml
@@ -67,17 +74,19 @@ test-python-310:
     - git config --global user.name "Your Name"
     - pip install coverage
     - pip install .
+    - pip install bilby-pipe
     - python -m unittest discover tests/
 
 test-python-311:
   stage: test
-  allow_failure: True  
+  allow_failure: True
   image: python:3.11
   script:
     - git config --global user.email "you@example.com"
     - git config --global user.name "Your Name"
     - pip install coverage
     - pip install .
+    - pip install bilby-pipe
     - python -m unittest discover tests/
 
 test-python-312:
@@ -89,6 +98,7 @@ test-python-312:
     - git config --global user.name "Your Name"
     - pip install coverage
     - pip install .
+    - pip install bilby-pipe
     - python -m unittest discover tests/
 
 test-python-313:
@@ -100,31 +110,32 @@ test-python-313:
     - git config --global user.name "Your Name"
     - pip install coverage
     - pip install .
-    - python -m unittest discover tests/    
-    
+    - pip install bilby-pipe
+    - python -m unittest discover tests/
+
 # Build docs for multiple code versions
 pages:
   stage: build
   script:
-  - pip install .[docs]
-  - sphinx-multiversion docs/source public
-  - echo "<!DOCTYPE html><html><head><title>Redirecting to master branch</title><meta
-    charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url=./master/index.html\">    <link
-    rel=\"canonical\" href=\"https://asimov.docs.ligo.org/asimov/master/index.html\"></head></html>"
-    > public/index.html
+    - pip install .[docs]
+    - sphinx-multiversion docs/source public
+    - echo "<!DOCTYPE html><html><head><title>Redirecting to master branch</title><meta
+      charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0; url=./master/index.html\">    <link
+      rel=\"canonical\" href=\"https://asimov.docs.ligo.org/asimov/master/index.html\"></head></html>"
+      > public/index.html
   artifacts:
     paths:
-    - public
+      - public
   only:
-  - master
+    - master
 
 wheel-310:
-  image: python:3.9
+  image: python:3.10
   stage: build
   script:
-  - pip install wheel build twine
-  - python -m build
-  - twine check dist/*
+    - pip install wheel build twine
+    - python -m build
+    - twine check dist/*
   dependencies: []
   artifacts:
     expire_in: 3h
@@ -136,7 +147,7 @@ include:
 - template: Security/SAST.gitlab-ci.yml
 
 include:
-  - template: Security/Dependency-Scanning.gitlab-ci.yml  
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
 
 include:
   - template: Code-Quality.gitlab-ci.yml
@@ -157,9 +168,9 @@ release_job:
   stage: deploy
   image: registry.gitlab.com/gitlab-org/release-cli:latest
   rules:
-    - if: $CI_COMMIT_TAG                 # Run this job when a tag is created
+    - if: $CI_COMMIT_TAG # Run this job when a tag is created
   script:
     - echo "running release_job"
-  release:                               # See https://docs.gitlab.com/ee/ci/yaml/#release for available properties
-    tag_name: '$CI_COMMIT_TAG'
-    description: '$CI_COMMIT_TAG'
+  release: # See https://docs.gitlab.com/ee/ci/yaml/#release for available properties
+    tag_name: "$CI_COMMIT_TAG"
+    description: "$CI_COMMIT_TAG"

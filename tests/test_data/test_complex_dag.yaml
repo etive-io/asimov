@@ -3,13 +3,13 @@ kind: analysis
 name: Prod0
 pipeline: bilby
 comment: PSD production
-status: finished
+status: uploaded
 ---
 kind: analysis
 name: Prod1
 pipeline: bilby
 comment: PSD production
-status: wait
+status: ready
 needs:
   - Prod0
 ---
@@ -17,7 +17,7 @@ kind: analysis
 name: Prod2
 pipeline: bilby
 comment: PSD production
-status: wait
+status: ready
 needs:
   - Prod1
 ---
@@ -25,7 +25,7 @@ kind: analysis
 name: Prod3
 pipeline: lalinference
 comment: PSD production
-status: wait
+status: ready
 needs: 
   - Prod0
 ---
@@ -33,7 +33,7 @@ kind: analysis
 name: Prod4
 pipeline: lalinference
 comment: PSD production
-status: wait
+status: ready
 needs: 
   - Prod2
   - Prod3

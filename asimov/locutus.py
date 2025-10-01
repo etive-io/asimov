@@ -1,6 +1,7 @@
 """
 The locutus script.
 """
+
 import os
 
 import click

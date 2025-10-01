@@ -9,7 +9,9 @@ import yaml
 
 from asimov import LOGGER_LEVEL, logger
 import asimov.event
+from asimov.analysis import ProjectAnalysis
 from asimov import current_ledger as ledger
+from asimov.ledger import Ledger
 from asimov.utils import update
 from copy import deepcopy
 from datetime import datetime
@@ -42,7 +44,6 @@ def apply_page(file, event, ledger=ledger, update_page=False):
     )  # Load as a dictionary so we can identify the object type it contains
 
     for document in quick_parse:
-
         if document["kind"] == "event":
             logger.info("Found an event")
             document.pop("kind")
@@ -50,10 +51,12 @@ def apply_page(file, event, ledger=ledger, update_page=False):
             # Check if the event is in the ledger already
             if event.name in ledger.events and update_page is True:
                 old_event = deepcopy(ledger.events[event.name])
-                for key in ["productions", "working directory", "repository", "ledger"]:
+                for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
                 analyses = [
-                    update(prod, old_event)
+                    # I appreciate this looks insane, but the way the yaml stores these
+                    # is poorly designed.
+                    {list(prod.keys())[0]: update(list(prod.values())[0], old_event)}
                     for prod in ledger.events[event.name]["productions"]
                 ]
 
@@ -67,9 +70,10 @@ def apply_page(file, event, ledger=ledger, update_page=False):
 
                 ledger.data["history"][event.name] = history
                 ledger.save()
-
                 update(ledger.events[event.name], event.meta)
                 ledger.events[event.name]["productions"] = analyses
+                ledger.events[event.name].pop("ledger", None)
+
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event.name}"
                 )
@@ -111,10 +115,11 @@ def apply_page(file, event, ledger=ledger, update_page=False):
                     + f" Could not apply a production, couldn't find the event {event}"
                 )
                 logger.exception(e)
-            production = asimov.event.Production.from_dict(document, event=event_o)
+            production = asimov.event.Production.from_dict(
+                parameters=document, subject=event_o, ledger=ledger
+            )
             try:
-                event_o.add_production(production)
-                ledger.update_event(event_o)
+                ledger.add_analysis(production, event=event_o)
                 click.echo(
                     click.style("●", fg="green")
                     + f" Successfully applied {production.name} to {event_o.name}"
@@ -124,6 +129,78 @@ def apply_page(file, event, ledger=ledger, update_page=False):
                 click.echo(
                     click.style("●", fg="red")
                     + f" Could not apply {production.name} to {event_o.name} as "
+                    + "an analysis already exists with this name"
+                )
+                logger.exception(e)
+
+        elif document["kind"].lower() == "postprocessing":
+            # Handle a project analysis
+            logger.info("Found a postprocessing description")
+            document.pop("kind")
+            if event:
+                event_s = event
+
+            if event:
+                try:
+                    event_o = ledger.get_event(event_s)[0]
+                    level = event_o
+                except KeyError as e:
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Could not apply postprocessing, couldn't find the event {event}"
+                    )
+                    logger.exception(e)
+            else:
+                level = ledger
+            try:
+                if document["name"] in level.data.get("postprocessing stages", {}):
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Could not apply postprocessing, as {document['name']} is already in the ledger."
+                    )
+                    logger.error(
+                        f" Could not apply postprocessing, as {document['name']} is already in the ledger."
+                    )
+                else:
+                    if "postprocessing stages" not in level.data:
+                        level.data["postprocessing stages"] = {}
+                    if isinstance(level, asimov.event.Event):
+                        level.meta["postprocessing stages"][document["name"]] = document
+                    elif isinstance(level, Ledger):
+                        level.data["postprocessing stages"][document["name"]] = document
+                        level.name = "the project"
+                    ledger.save()
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Successfully added {document['name']} to {level.name}."
+                    )
+                    logger.info(f"Added {document['name']}")
+            except ValueError as e:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" Could not apply {document['name']} to project as "
+                    + "a post-process already exists with this name"
+                )
+                logger.exception(e)
+
+        elif document["kind"].lower() == "projectanalysis":
+            # Handle a project analysis
+            logger.info("Found a project analysis")
+            document.pop("kind")
+            analysis = ProjectAnalysis.from_dict(document, ledger=ledger)
+
+            try:
+                ledger.add_analysis(analysis)
+                click.echo(
+                    click.style("●", fg="green")
+                    + f" Successfully added {analysis.name} to this project."
+                )
+                ledger.save()
+                logger.info(f"Added {analysis.name}")
+            except ValueError as e:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" Could not apply {analysis.name} to project as "
                     + "an analysis already exists with this name"
                 )
                 logger.exception(e)
@@ -144,16 +221,12 @@ def apply_via_plugin(event, hookname, **kwargs):
     for hook in discovered_hooks:
         if hook.name in hookname:
             hook.load()(ledger).run(event)
-            click.echo(
-                click.style("●", fg="green")
-                + f"{event} has been applied."
-            )
+            click.echo(click.style("●", fg="green") + f"{event} has been applied.")
 
             break
     else:
         click.echo(
-            click.style("●", fg="red")
-            + f"No hook found matching {hookname}. "
+            click.style("●", fg="red") + f"No hook found matching {hookname}. "
             f"Installed hooks are {', '.join(discovered_hooks.names)}"
         )
 

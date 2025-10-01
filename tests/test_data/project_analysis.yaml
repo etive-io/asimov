@@ -1,0 +1,6 @@
+kind: ProjectAnalysis
+name: TestPA
+pipeline: TestPipeline
+subjects:
+  - GW150914_095045
+  - GW151012_095443

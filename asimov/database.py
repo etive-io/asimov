@@ -16,6 +16,7 @@ just because I want something I can work with easily on a laptop.
 MongoDB would be a better long-term solution.
 
 """
+
 from tinydb import Query, TinyDB
 
 from asimov import config

@@ -62,6 +62,7 @@ class Review:
             messages.append(
                 ReviewMessage.from_dict(dictionary=message, production=production)
             )
+
         review_ob = cls()
         messages = sorted(messages, key=lambda k: k.timestamp)
         review_ob.messages = messages
@@ -94,7 +95,7 @@ class ReviewMessage:
 
         self.message = message
 
-        if status:
+        if status is not None:
             if status.upper() in STATES:
                 self.status = status.upper()
             else:
@@ -117,6 +118,7 @@ class ReviewMessage:
         out["message"] = self.message
         out["timestamp"] = str(self.timestamp)
         out["status"] = self.status
+
         return out
 
     @classmethod

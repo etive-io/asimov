@@ -1,0 +1,55 @@
+kind: ProjectAnalysis
+# This kind of analysis is used where multiple events need to be
+# analysed jointly.
+name: JointTest
+subjects:
+- GW150914_095045
+- GW151226_033853
+analyses:
+  - pipeline:bayeswave
+pipeline: asimov-testing-project
+---
+kind: ProjectAnalysis
+# This kind of analysis is used where multiple events need to be
+# analysed jointly.
+name: JointTestWaveform
+subjects:
+- GW150914_095045
+- GW151226_033853
+analyses:
+  - waveform.approximant:IMRPhenomXPHM
+pipeline: asimov-testing-project
+---
+kind: ProjectAnalysis
+# This kind of analysis is used where multiple events need to be
+# analysed jointly.
+name: JointTestStatus
+subjects:
+- GW150914_095045
+- GW151226_033853
+analyses:
+  - status:uploaded
+pipeline: asimov-testing-project
+---
+kind: ProjectAnalysis
+# This kind of analysis is used where multiple events need to be
+# analysed jointly.
+name: JointTestReview
+subjects:
+- GW150914_095045
+- GW151226_033853
+analyses:
+  - review:approved
+pipeline: asimov-testing-project
+---
+kind: ProjectAnalysis
+# This kind of analysis is used where multiple events need to be
+# analysed jointly.
+name: JointTestReview2
+subjects:
+- GW150914_095045
+- GW151226_033853
+analyses:
+  - review:approved
+  - waveform.approximant:IMRPhenomXPHM
+pipeline: asimov-testing-project

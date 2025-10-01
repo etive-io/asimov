@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+.. _ledger:
+
+=======
+>>>>>>> v0.4-release
 The Asimov Ledger
 =================
 
@@ -99,7 +104,9 @@ Examples
   Files should be provided for each detector, indexed by the detector abbreviation.
 
   For example
+  
   ::
+     
      data:
        calibration:
          H1: /home/cal/H1-calibration.dat
@@ -109,7 +116,9 @@ Examples
   This section defines the data channels which should be used in the analysis.
   These should be provided for each detector.
   For example
+  
   ::
+     
      data:
        channels:
 	 H1: H1:DCS-CALIB_STRAIN_C02
@@ -119,7 +128,9 @@ Examples
   This section defines the frame types which should be used in the analysis.
   These should be provided for each detector.
   For example
+  
   ::
+     
      data:
        frame-types:
 	 H1: H1_HOFT_C02
@@ -129,7 +140,9 @@ Examples
   This section defines the segments which should be used in the analysis.
   These should be provided for each detector.
   For example
+  
   ::
+     
      data:
        segments:
 	 H1: H1:DMT-ANALYSIS_READY:1
@@ -139,7 +152,9 @@ Examples
   This section should define data files which contain the analysis data to be used
   in the analysis, and should be provided for each detector.
   For example
+  
   ::
+     
      data:
        data files:
          H1: ./H1-file.gwf
@@ -183,7 +198,15 @@ Sampler settings
 
 Examples
 ~~~~~~~~
-   
+
+.. code-block:: yaml
+
+		scheduler:
+  		  accounting group: ligo.dev.o4.cbc.pe.bilby
+		  request cpus: 4
+
+
+
 Prior settings
 --------------
 
@@ -241,3 +264,30 @@ Examples
       phase:
 	type: Uniform
 	boundary: periodic
+
+Postprocessing settings
+-----------------------
+
+Examples
+~~~~~~~~
+
+.. code-block:: yaml
+
+
+		postprocessing:
+		  pesummary:
+		    accounting group: ligo.dev.o4.cbc.pe.lalinference
+		    cosmology: Planck15_lal
+		    evolve spins: forward
+		    multiprocess: 4
+		    redshift: exact
+		    regenerate posteriors:
+		    - redshift
+		    - mass_1_source
+		    - mass_2_source
+		    - chirp_mass_source
+		    - total_mass_source
+		    - final_mass_source
+		    - final_mass_source_non_evolved
+		    - radiated_energy
+		    skymap samples: 2000

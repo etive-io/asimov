@@ -12,8 +12,8 @@ from gwdatafind import find_urls
 
 from asimov import config
 from asimov import current_ledger as ledger
-from asimov.utils import find_calibrations, update
-from asimov.event import DescriptionException, Event
+from asimov.utils import update
+from asimov.event import Event
 
 
 @click.group()
@@ -132,38 +132,13 @@ def create(name=None, oldname=None, gid=None, superevent=None, repo=None, search
     ledger.update_event(event)
 
 
-@click.argument("delete")
+@click.argument("event", default=None)
 @event.command()
 def delete(event):
     """
     Delete an event from the ledger.
     """
     ledger.delete_event(event_name=event)
-
-
-# @click.argument("event")
-# @click.option("--yaml", "yaml", default=None)
-# @click.option("--ini", "ini", default=None)
-# @event.command()
-# def populate(event, yaml, ini):
-#     """
-#     Populate an event ledger with data from ini or yaml files.
-#     """
-
-#     event = ledger.get_event(event)
-#     # Check the calibration files for this event
-#     click.echo("Check the calibration.")
-#     click.echo(event.name)
-#     calibration(event=event.name)
-#     # Check the IFOs for this event
-#     click.echo("Check the IFO list")
-#     try:
-#         checkifo(event.name)
-#     except:
-#         pass
-
-#     if yaml:
-#         add_data(event.name, yaml)
 
 
 @click.argument("event", default=None)
@@ -278,35 +253,12 @@ def checkifo(event):
 @click.argument("event")
 @event.command()
 def calibration(event, calibration):
+    """
+    Add calibration files to an event from a filepath.
+    """
     event = ledger.get_event(event)[0]
-    try:
-        event._check_calibration()
-    except DescriptionException:
-        print(event.name)
-        time = event.meta["event time"]
-        if not calibration[0]:
-            try:
-                calibrations = find_calibrations(time)
-            except ValueError:
-                calibrations = {}
-        else:
-            calibrations = {}
-            for cal in calibration:
-                calibrations[cal.split(":")[0]] = cal.split(":")[1]
-        print(calibrations)
-        update(event.meta["data"]["calibration"], calibrations)
-        ledger.update_event(event)
-
-
-# @click.argument("data")
-# @click.argument("event")
-# @event.command()
-# def load(event, data):
-#     event = ledger.get_event(event)
-
-#     with open(data, "r") as datafile:
-#         data = yaml.safe_load(datafile.read())
-
-#         event.meta = update(event.meta, data)
-
-#     ledger.update_event(event)
+    calibrations = {}
+    for cal in calibration:
+        calibrations[cal.split(":")[0]] = cal.split(":")[1]
+    update(event.meta["data"]["calibration"], calibrations)
+    ledger.update_event(event)

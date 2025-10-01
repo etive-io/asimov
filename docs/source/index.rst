@@ -1,3 +1,5 @@
+:page_template: homepage.html
+
 .. raw:: html
 
 	 <div class="px-4 py-5 my-5 text-center">
@@ -122,16 +124,23 @@ Users' guide
 
    getting-started
    installation
-   olivaw/projects
-   olivaw/events
-   olivaw/productions
-   olivaw/running
-   olivaw/monitoring
-   olivaw/reporting
+   user-guide/projects
+   user-guide/events
+   user-guide/productions
+   user-guide/running
+   user-guide/monitoring
+   user-guide/reporting
    storage
    olivaw/review
    citing
+	     
+.. toctree::
+   :maxdepth: 2
+   :caption: The Ledger
 
+   ledger
+      
+   
 .. toctree::
    :maxdepth: 1
    :caption: Pipeline Guides
@@ -165,11 +174,17 @@ Developers' Guide
    contributing.rst
    code-of-conduct.rst
 
+   
    asimov-repository
 
-   ledger
+   code-overview
+	     
+   ledger   
    pipelines-dev
+   hooks
 
+   building-docs
+   
    asimov-repository
 
    code-overview
@@ -203,8 +218,14 @@ Python API
    api/condor
    api/event
    api/git
-   state
-   pipelines
+   api/gitlab
+   api/ini
+   api/ledger
+   api/locutus
+   api/logging
+   api/mattermost
+   api/olivaw
+   api/pipeline
    config
 
 LIGO Analysis Cookbook

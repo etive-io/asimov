@@ -30,14 +30,18 @@ class EventTests(AsimovTestCase):
             event="S000000",
             ledger=self.ledger
             )
+        Nanalyses_before = len(self.ledger.events['S000000']['productions'])
+
         apply_page(
             f"{self.cwd}/tests/test_data/test_event_update.yaml",
             event="S000000",
             ledger=self.ledger,
             update_page=True
         )
+        Nanalyses_after = len(self.ledger.events['S000000']['productions'])
+        self.assertEqual(Nanalyses_before, Nanalyses_after)
         event = self.ledger.events["S000000"]
-        self.assertEqual(event['productions'][0]['event time'], 900)
+        self.assertEqual(event['productions'][0]['bilby-IMRPhenomXPHM-QuickTest']['event time'], 900)
         self.assertEqual(event['event time'], 909)
         self.assertEqual(event['priors']['luminosity distance']['maximum'], 1010)
         self.assertEqual(event['priors']['mass ratio']['maximum'], 1.0)

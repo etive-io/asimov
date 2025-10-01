@@ -32,8 +32,13 @@ class LALInference(Pipeline):
     def __init__(self, production, category=None):
         super(LALInference, self).__init__(production, category)
         self.logger = logger
+        self.logger.warning(
+            "The LALInference interface built into asimov will be removed "
+            "in v0.7 of asimov, and replaced with an integration from an "
+            "external package."
+        )
         if not production.pipeline.lower() == "lalinference":
-            raise PipelineException
+            raise PipelineException("Pipeline mismatch")
 
     def detect_completion(self):
         """
@@ -191,6 +196,8 @@ class LALInference(Pipeline):
         PipelineException
            This will be raised if the pipeline fails to submit the job.
         """
+        if not dryrun:
+            os.chdir(self.production.rundir)
 
         with set_directory(self.production.rundir):
 
@@ -235,7 +242,7 @@ class LALInference(Pipeline):
 
     def after_completion(self):
         cluster = self.run_pesummary()
-        self.production.meta["job id"] = int(cluster)
+        self.production.job_id = int(cluster)
         self.production.status = "processing"
 
     def resurrect(self):

@@ -1,7 +1,8 @@
 import shutil
 import configparser
-import os
 import sys
+import traceback
+import os
 import click
 from copy import deepcopy
 
@@ -31,6 +32,7 @@ def start(dry_run):
     submit_description = {
         "executable": shutil.which("asimov"),
         "arguments": "monitor --chain",
+        "accounting_group": config.get("asimov start", "accounting"),
         "output": os.path.join(".asimov", "asimov_cron.out"),
         "on_exit_remove": "false",
         "universe": "local",
@@ -120,6 +122,252 @@ def monitor(ctx, event, update, dry_run, chain):
         )
         sys.exit()
 
+    # also check the analyses in the project analyses
+    for analysis in ledger.project_analyses:
+        click.secho(f"Subjects: {analysis.subjects}", bold=True)
+
+        if analysis.status.lower() in ACTIVE_STATES:
+            logger.debug(f"Available analyses:  project_analyses/{analysis.name}")
+
+            click.echo(
+                "\t- "
+                + click.style(f"{analysis.name}", bold=True)
+                + click.style(f"[{analysis.pipeline}]", fg="green")
+            )
+
+            # ignore the analysis if it is set to ready as it has not been started yet
+            if analysis.status.lower() == "ready":
+                click.secho(f"  \t  ● {analysis.status.lower()}", fg="green")
+                logger.debug(f"Ready production: project_analyses/{analysis.name}")
+                continue
+
+            # check if there are jobs that need to be stopped
+            if analysis.status.lower() == "stop":
+                pipe = analysis.pipeline
+                logger.debug(f"Stop production project_analyses/{analysis.name}")
+                if not dry_run:
+                    pipe.eject_job()
+                    analysis.status = "stopped"
+                    ledger.update_analysis_in_project_analysis(analysis)
+                    click.secho("   \t Stopped", fg="red")
+                else:
+                    click.echo("\t\t{analysis.name} --> stopped")
+                continue
+
+            # deal with the condor jobs
+            analysis_scheduler = analysis.meta["scheduler"].copy()
+            try:
+                if "job id" in analysis_scheduler:
+                    if not dry_run:
+                        if analysis_scheduler["job id"] in job_list.jobs:
+                            job = job_list.jobs[analysis_scheduler["job id"]]
+                        else:
+                            job = None
+                    else:
+                        logger.debug(
+                            f"Running analysis: {event}/{analysis.name}, cluster {analysis.job_id}"
+                        )
+                        click.echo("\t\tRunning under condor")
+                else:
+                    raise ValueError
+
+                if not dry_run:
+                    if job.status.lower() == "idle":
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "green")
+                            + f" {analysis.name} is in the queue (condor id: {analysis_scheduler['job id']})"
+                        )
+
+                    elif job.status.lower() == "running":
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "green")
+                            + f" {analysis.name} is running (condor id: {analysis_scheduler['job id']})"
+                        )
+                        if "profiling" not in analysis.meta:
+                            analysis.meta["profiling"] = {}
+                        if hasattr(analysis.pipeline, "while_running"):
+                            analysis.pipeline.while_running()
+                        analysis.status = "running"
+                        ledger.update_analysis_in_project_analysis(analysis)
+
+                    elif job.status.lower() == "completed":
+                        pipe.after_completion()
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "green")
+                            + f" {analysis.name} has finished and post-processing has been started"
+                        )
+                        job_list.refresh()
+
+                    elif job.status.lower() == "held":
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "yellow")
+                            + f" {analysis.name} is held on the scheduler"
+                            + f" (condor id: {analysis_scheduler['job id']})"
+                        )
+                        analysis.status = "stuck"
+                        ledger.update_analysis_in_project_analysis(analysis)
+                    else:
+                        continue
+
+            except (ValueError, AttributeError):
+                if analysis.pipeline:
+                    pipe = analysis.pipeline
+                    if analysis.status.lower() == "stop":
+                        pipe.eject_job()
+                        analysis.status = "stopped"
+                        ledger.update_analysis_in_project_analysis(analysis)
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "red")
+                            + f" {analysis.name} has been stopped"
+                        )
+                        job_list.refresh()
+
+                    elif analysis.status.lower() == "finished":
+                        pipe.after_completion()
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "green")
+                            + f" {analysis.name} has finished and post-processing has been started"
+                        )
+                        job_list.refresh()
+
+                    elif analysis.status.lower() == "processing":
+                        if pipe.detect_completion_processing():
+                            try:
+                                pipe.after_processing()
+                                click.echo(
+                                    "  \t  "
+                                    + click.style("●", "green")
+                                    + f" {analysis.name} has been finalised and stored"
+                                )
+                            except ValueError as e:
+                                click.echo(e)
+                        else:
+                            click.echo(
+                                "  \t  "
+                                + click.style("●", "green")
+                                + f" {analysis.name} has finished and post-processing"
+                                + f" is stuck ({analysis_scheduler['job id']})"
+                            )
+
+                    elif (
+                        pipe.detect_completion()
+                        and analysis.status.lower() == "processing"
+                    ):
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "green")
+                            + f" {analysis.name} has finished and post-processing is running"
+                        )
+
+                    elif (
+                        pipe.detect_completion()
+                        and analysis.status.lower() == "running"
+                    ):
+                        if "profiling" not in analysis.meta:
+                            analysis.meta["profiling"] = {}
+
+                        try:
+                            config.get("condor", "scheduler")
+                            analysis.meta["profiling"] = condor.collect_history(
+                                analysis_scheduler["job id"]
+                            )
+                            analysis_scheduler["job id"] = None
+                            ledger.update_analysis_in_project_analysis(analysis)
+                        except (
+                            configparser.NoOptionError,
+                            configparser.NoSectionError,
+                        ):
+                            logger.warning(
+                                "Could not collect condor profiling data as no "
+                                + "scheduler was specified in the config file."
+                            )
+                        except ValueError as e:
+                            logger.error("Could not collect condor profiling data.")
+                            logger.exception(e)
+                            pass
+
+                        analysis.status = "finished"
+                        ledger.update_analysis_in_project_analysis(analysis)
+                        pipe.after_completion()
+                        click.secho(
+                            f"  \t  ● {analysis.name} - Completion detected",
+                            fg="green",
+                        )
+                        job_list.refresh()
+
+                    else:
+                        # job may have been evicted from the clusters
+                        click.echo(
+                            "  \t  "
+                            + click.style("●", "yellow")
+                            + f" {analysis.name} is stuck; attempting a rescue"
+                        )
+                        try:
+                            pipe.resurrect()
+                        except (
+                            Exception
+                        ):  # Sorry, but there are many ways the above command can fail
+                            analysis.status = "stuck"
+                            click.echo(
+                                "  \t  "
+                                + click.style("●", "red")
+                                + f" {analysis.name} is stuck; automatic rescue was not possible"
+                            )
+                            ledger.update_analysis_in_project_analysis(analysis)
+
+                if analysis.status == "stuck":
+                    click.echo(
+                        "  \t  "
+                        + click.style("●", "yellow")
+                        + f" {analysis.name} is stuck"
+                    )
+
+            ledger.update_analysis_in_project_analysis(analysis)
+            ledger.save()
+        if chain:
+            ctx.invoke(report.html)
+
+    all_analyses = set(ledger.project_analyses)
+    complete = {
+        analysis
+        for analysis in ledger.project_analyses
+        if analysis.status in {"finished", "uploaded"}
+    }
+    others = all_analyses - complete
+    if len(others) > 0:
+        click.echo(
+            "There are also these analyses waiting for other analyses to complete:"
+        )
+        for analysis in others:
+            needs = ", ".join(analysis._needs)
+            click.echo(f"\t{analysis.name} which needs {needs}")
+
+    # need to check for post monitor hooks for each of the analyses
+    for analysis in ledger.project_analyses:
+        # check for post monitoring
+        if "hooks" in ledger.data:
+            if "postmonitor" in ledger.data["hooks"]:
+                discovered_hooks = entry_points(group="asimov.hooks.postmonitor")
+
+                for hook in discovered_hooks:
+                    # do not run cbcflow every time
+                    if hook.name in list(
+                        ledger.data["hooks"]["postmonitor"].keys()
+                    ) and hook.name not in ["cbcflow"]:
+                        try:
+                            hook.load()(deepcopy(ledger)).run()
+                        except Exception:
+                            pass
+
+        if chain:
+            ctx.invoke(report.html)
+
     for event in sorted(ledger.get_event(event), key=lambda e: e.name):
         stuck = 0
         running = 0
@@ -130,10 +378,9 @@ def monitor(ctx, event, update, dry_run, chain):
             for production in event.productions
             if production.status.lower() in ACTIVE_STATES
         ]
+
         for production in on_deck:
-
             logger.debug(f"Available analyses: {event}/{production.name}")
-
             click.echo(
                 "\t- "
                 + click.style(f"{production.name}", bold=True)
@@ -160,36 +407,22 @@ def monitor(ctx, event, update, dry_run, chain):
 
             # Get the condor jobs
             try:
-                if "job id" in production.meta:
+                if "job id" in production.meta["scheduler"]:
                     if not dry_run:
-                        if production.meta["job id"] in job_list.jobs:
-                            job = job_list.jobs[production.meta["job id"]]
+                        if production.job_id in job_list.jobs:
+                            job = job_list.jobs[production.job_id]
                         else:
                             job = None
                     else:
                         logger.debug(
-                            f"Running analysis: {event}/{production.name}, cluster {production.meta['job id']}"
+                            f"Running analysis: {event}/{production.name}, cluster {production.job_id}"
                         )
                         click.echo("\t\tRunning under condor")
                 else:
                     raise ValueError  # Pass to the exception handler
 
                 if not dry_run:
-
-                    if (
-                        job.status.lower() == "running"
-                        and production.status == "processing"
-                    ):
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" Postprocessing for {production.name} is running"
-                            + f" (condor id: {production.job_id})"
-                        )
-
-                        production.meta["postprocessing"]["status"] = "running"
-
-                    elif job.status.lower() == "idle":
+                    if job.status.lower() == "idle":
                         click.echo(
                             "  \t  "
                             + click.style("●", "green")
@@ -268,7 +501,6 @@ def monitor(ctx, event, update, dry_run, chain):
                                 + f" {production.name} has finished and post-processing"
                                 + f" is stuck ({production.job_id})"
                             )
-                            production.meta["postprocessing"]["status"] = "stuck"
                     elif (
                         pipe.detect_completion()
                         and production.status.lower() == "processing"
@@ -290,7 +522,7 @@ def monitor(ctx, event, update, dry_run, chain):
                             production.meta["profiling"] = condor.collect_history(
                                 production.job_id
                             )
-                            production.meta["job id"] = None
+                            production.job_id = None
                         except (
                             configparser.NoOptionError,
                             configparser.NoSectionError,
@@ -322,7 +554,9 @@ def monitor(ctx, event, update, dry_run, chain):
                         )
                         try:
                             pipe.resurrect()
-                        except Exception:  # Sorry, but there are many ways the above command can fail
+                        except (
+                            Exception
+                        ):  # Sorry, but there are many ways the above command can fail
                             production.status = "stuck"
                             click.echo(
                                 "  \t  "
@@ -351,19 +585,36 @@ def monitor(ctx, event, update, dry_run, chain):
                 "The event also has these analyses which are waiting on other analyses to complete:"
             )
             for production in others:
-                needs = ", ".join(production.meta["needs"])
+                needs = ", ".join(production._needs)
                 click.echo(f"\t{production.name} which needs {needs}")
-
         # Post-monitor hooks
+        if "hooks" in ledger.data:
+            if "postmonitor" in ledger.data["hooks"]:
+                discovered_hooks = entry_points(group="asimov.hooks.postmonitor")
+                for hook in discovered_hooks:
+                    # do not run cbcflow every time
+                    if hook.name in list(
+                        ledger.data["hooks"]["postmonitor"].keys()
+                    ) and hook.name not in ["cbcflow"]:
+                        try:
+                            hook.load()(deepcopy(ledger)).run()
+                        except Exception as exc:
+                            logger.warning("%s experienced %s", hook.name, type(exc))
+                            traceback_lines = traceback.format_exc().splitlines()
+                            traceback_text = "Traceback:\n" + "\n".join(traceback_lines)
+                            logger.warning(traceback_text)
+
+        if chain:
+            ctx.invoke(report.html)
+
+    # run the cbcflow hook once to update all the info if needed
     if "hooks" in ledger.data:
         if "postmonitor" in ledger.data["hooks"]:
             discovered_hooks = entry_points(group="asimov.hooks.postmonitor")
             for hook in discovered_hooks:
-                if hook.name in list(ledger.data["hooks"]["postmonitor"].keys()):
+                if hook.name == "cbcflow":
+                    logger.info("Found cbcflow postmonitor hook, trying to run it")
                     try:
                         hook.load()(deepcopy(ledger)).run()
                     except Exception:
-                        pass
-
-    if chain:
-        ctx.invoke(report.html)
+                        logger.warning("Unable to run the cbcflow hook")

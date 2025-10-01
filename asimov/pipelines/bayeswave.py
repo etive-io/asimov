@@ -13,7 +13,7 @@ from asimov import config
 from asimov.utils import set_directory
 
 from ..git import AsimovFileNotFound
-from ..pipeline import Pipeline, PipelineException, PipelineLogger
+from ..pipeline import Pipeline, PipelineException
 from ..storage import AlreadyPresentException, Store
 
 
@@ -35,9 +35,14 @@ class BayesWave(Pipeline):
 
     def __init__(self, production, category=None):
         super(BayesWave, self).__init__(production, category)
+        self.logger.warning(
+            "The Bayeswave interface built into asimov will be removed "
+            "in v0.7 of asimov, and replaced with an integration from an "
+            "external package."
+        )
         self.logger.info("Using the Bayeswave pipeline")
         if not production.pipeline.lower() == "bayeswave":
-            raise PipelineException
+            raise PipelineException("Pipeline mismatch")
 
         try:
             self.category = config.get("general", "calibration_directory")
@@ -164,12 +169,10 @@ class BayesWave(Pipeline):
         ]
 
         self.logger.info(" ".join(command))
-
         if dryrun:
             print(" ".join(command))
             self.logger.info(" ".join(command))
         else:
-
             pipe = subprocess.Popen(
                 command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
@@ -252,21 +255,16 @@ class BayesWave(Pipeline):
 
         try:
             self.collect_pages()
-        except FileNotFoundError:
-            PipelineLogger(
-                message=b"Failed to copy megaplot pages.",
-                production=self.production.name,
-            )
+        except FileNotFoundError as e:
+            self.logger.error("Failed to copy the megaplot output")
+            self.logger.exception(e)
 
         try:
             self.collect_assets()
             self.store_assets()
-        except Exception:
-            PipelineLogger(
-                message=b"Failed to store PSDs.",
-                issue=self.production.event.issue_object,
-                production=self.production.name,
-            )
+        except Exception as e:
+            self.logger.error("Failed to store the PSDs")
+            self.logger.exception(e)
 
         if "supress" in self.production.meta["quality"]:
             for ifo in self.production.meta["quality"]["supress"]:
@@ -344,6 +342,8 @@ class BayesWave(Pipeline):
             f"bwave/{self.production.event.name}/{self.production.name}",
             f"{self.production.name}.dag",
         ]
+
+        self.logger.info((" ".join(command)))
 
         if dryrun:
             print(" ".join(command))
@@ -449,11 +449,18 @@ class BayesWave(Pipeline):
         Since this job also generates the PSDs these should be added to the production ledger.
         """
         psds = {}
-        results_dir = glob.glob(f"{self.production.rundir}/trigtime_*")[0]
         for det in self.production.meta["interferometers"]:
-            asset = os.path.join(
-                results_dir, "post", "clean", f"glitch_median_PSD_forLI_{det}.dat"
+            asset = glob.glob(
+                os.path.join(
+                    self.production.rundir,
+                    "trigtime*",
+                    "post",
+                    "clean",
+                    f"glitch_median_PSD_forLI_{det}.dat",
+                )
             )
+            if len(asset) > 0:
+                asset = asset[0]
             if os.path.exists(asset):
                 psds[det] = asset
 
@@ -483,7 +490,7 @@ class BayesWave(Pipeline):
         (Updated for asimov by Daniel Williams - November 2020
         """
         store = Store(root=config.get("storage", "directory"))
-        sample_rate = self.production.meta["quality"]["sample-rate"]
+        sample_rate = self.production.meta["likelihood"]["sample rate"]
         orig_PSD_file = np.genfromtxt(
             os.path.join(
                 self.production.event.repository.directory,

@@ -10,8 +10,6 @@ import datetime
 import asimov.database as database
 from asimov import mattermost
 
-# from .gitlab import EventIssue
-
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.getLogger("MARKDOWN").setLevel(logging.WARNING)
@@ -77,7 +75,7 @@ class AsimovLogger:
            The production this message is for.
         message : str
            The free-form message for the log message.
-        channels : list, or str, {"file", "mattermost", "gitlab"}, optional
+        channels : list, or str, {"file", "mattermost"}, optional
            The list of places where the log message should be sent.
            Defaults to file only.
         """
@@ -106,7 +104,7 @@ class AsimovLogger:
            The production this message is for.
         message : str
            The free-form message for the log message.
-        channels : list, or str, {"file", "mattermost", "gitlab"}, optional
+        channels : list, or str, {"file", "mattermost"}, optional
            The list of places where the log message should be sent.
            Defaults to file only.
         """
@@ -124,7 +122,7 @@ class AsimovLogger:
            The production this message is for.
         message : str
            The free-form message for the log message.
-        channels : list, or str, {"file", "mattermost", "gitlab"}, optional
+        channels : list, or str, {"file", "mattermost"}, optional
            The list of places where the log message should be sent.
            Defaults to file only.
         """
@@ -142,7 +140,7 @@ class AsimovLogger:
            The production this message is for.
         message : str
            The free-form message for the log message.
-        channels : list, or str, {"file", "mattermost", "gitlab"}, optional
+        channels : list, or str, {"file", "mattermost"}, optional
            The list of places where the log message should be sent.
            Defaults to file only.
         """
@@ -210,7 +208,7 @@ class DatabaseLogger(AsimovLogger):
            The production this message is for.
         message : str
            The free-form message for the log message.
-        channels : list, or str, {"file", "mattermost", "gitlab"}, optional
+        channels : list, or str, {"file", "mattermost"}, optional
            The list of places where the log message should be sent.
            Defaults to file only.
         """

@@ -2,6 +2,8 @@ kind: analysis
 name: Prod0
 pipeline: bayeswave
 comment: Bayeswave on-source PSD estimation job
+event: GW150914_095045
+status: ready
 ---
 kind: analysis
 name: Prod1
@@ -10,3 +12,5 @@ approximant: IMRPhenomXPHM
 comment: Bilby parameter estimation job
 needs:
   - Prod0
+event: GW150914_095045
+status: ready

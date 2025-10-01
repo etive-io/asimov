@@ -1,0 +1,53 @@
+kind: analysis
+name: Prod0
+event: GW150914_095045
+pipeline: bayeswave
+---
+kind: analysis
+name: Prod1
+event: GW150914_095045
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+---
+kind: analysis
+name: Prod0
+event: GW151226_033853
+pipeline: bayeswave
+---
+kind: analysis
+name: Prod1
+event: GW151226_033853
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+---
+kind: analysis
+name: Prod2
+event: GW151226_033853
+pipeline: lalinference
+waveform:
+  approximant: SEOBNRv4PHM
+status: uploaded
+---
+kind: analysis
+name: Prod3
+event: GW151226_033853
+pipeline: lalinference
+waveform:
+  approximant: SEOBNRv4PHM
+status: uploaded
+review:
+  - status: approved
+    message: "blah"
+---
+kind: analysis
+name: Prod4
+event: GW151226_033853
+pipeline: lalinference
+waveform:
+  approximant: IMRPhenomXPHM
+status: uploaded
+review:
+  - status: approved
+    message: "blah"

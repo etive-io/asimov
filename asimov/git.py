@@ -58,7 +58,10 @@ class EventRepo:
         """
         directory = config.get("general", "calibration_directory")
         os.makedirs(location, exist_ok=True)
-        repo = git.Repo.init(location)
+        try:
+            repo = git.Repo.init(location, initial_branch="master")
+        except Exception:
+            repo = git.Repo.init(location)
         os.makedirs(os.path.join(location, directory), exist_ok=True)
         with open(os.path.join(location, directory, ".gitkeep"), "w") as f:
             f.write(" ")
@@ -189,7 +192,9 @@ class EventRepo:
         """
         Find the coinc file for this calibration category in this repository.
         """
-        coinc_file = glob.glob(os.path.join(os.getcwd(), self.directory, category, "*coinc*.xml"))
+        coinc_file = glob.glob(
+            os.path.join(os.getcwd(), self.directory, category, "*coinc*.xml")
+        )
 
         if len(coinc_file) > 0:
             return coinc_file[0]
@@ -213,7 +218,12 @@ class EventRepo:
         """
 
         self.update()
-        path = f"{os.path.join(os.getcwd(), self.directory, category)}/{name}.ini"
+        if category is not None:
+            path = f"{os.path.join(os.getcwd(), self.directory, category)}/{name}.ini"
+        else:
+            category = "project_analyses"
+            path = f"{os.path.join(os.getcwd(), self.directory)}/{name}.ini"
+
         return [path]
 
     def upload_prod(
@@ -280,7 +290,7 @@ class EventRepo:
 
         Parameters
         ----------
-        event : `asimov.gitlab.EventIssue`
+        event : `asimov.event.Event`
            The event which the preferred upload is being prepared for.
         prods : list
            A list of all of the productions which should be included in the preferred file.

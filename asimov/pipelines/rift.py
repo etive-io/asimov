@@ -12,7 +12,7 @@ from asimov import config, logger
 from asimov.utils import set_directory
 
 from asimov.pipeline import Pipeline, PipelineException, PipelineLogger
-from asimov.pipeline import PESummaryPipeline
+from asimov.pipelines.pesummary import PESummary
 
 
 class Rift(Pipeline):
@@ -36,7 +36,7 @@ class Rift(Pipeline):
         self.logger = logger
         self.logger.info("Using the RIFT pipeline")
         if not production.pipeline.lower() == "rift":
-            raise PipelineException
+            raise PipelineException("Pipeline mismatch")
 
         if "bootstrap" in self.production.meta:
             self.bootstrap = self.production.meta["bootstrap"]
@@ -62,7 +62,7 @@ class Rift(Pipeline):
     def after_completion(self):
 
         self.logger.info("Job has completed. Running PE Summary.")
-        post_pipeline = PESummaryPipeline(production=self.production)
+        post_pipeline = PESummary(production=self.production)
         cluster = post_pipeline.submit_dag()
 
         self.production.meta["job id"] = int(cluster)
@@ -187,19 +187,38 @@ class Rift(Pipeline):
             user = config.get("condor", "user")
             self.production.set_meta("user", user)
 
-        os.environ["LIGO_USER_NAME"] = f"{user}"
-        os.environ[
-            "LIGO_ACCOUNTING"
-        ] = f"{self.production.meta['scheduler']['accounting group']}"
+        if "accounting group" in self.production.meta["scheduler"]:
+            os.environ["LIGO_USER_NAME"] = f"{user}"
+            os.environ["LIGO_ACCOUNTING"] = (
+                f"{self.production.meta['scheduler']['accounting group']}"
+            )
+
+        if "gpu architectures" in self.production.meta["scheduler"]:
+            # Write details of required GPU architectures into an environment variable.
+            os.environ["RIFT_REQUIRE_GPUS"] = "&&".join(
+                [
+                    f"""(DeviceName=!="{device}")"""
+                    for device in self.production.meta["scheduler"]["gpu architectures"]
+                ]
+            )
+
+        if "avoid hosts" in self.production.meta["scheduler"]:
+            # Collect  alist of specific hosts to avoid on the OSG
+            os.environ["RIFT_AVOID_HOSTS"] = "&&".join(
+                [
+                    f"""(TARGET.Machine =!="{machine}")"""
+                    for machine in self.production.meta["scheduler"]["avoid hosts"]
+                ]
+            )
 
         if "singularity image" in self.production.meta["scheduler"]:
             # Collect the correct information for the singularity image
-            os.environ[
-                "SINGULARITY_RIFT_IMAGE"
-            ] = f"{self.production.meta['scheduler']['singularity image']}"
-            os.environ[
-                "SINGULARITY_BASE_EXE_DIR"
-            ] = f"{self.production.meta['scheduler']['singularity base exe directory']}"
+            os.environ["SINGULARITY_RIFT_IMAGE"] = (
+                f"{self.production.meta['scheduler']['singularity image']}"
+            )
+            os.environ["SINGULARITY_BASE_EXE_DIR"] = (
+                f"{self.production.meta['scheduler']['singularity base exe directory']}"
+            )
 
         try:
             calibration = config.get("general", "calibration")

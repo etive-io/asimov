@@ -61,7 +61,7 @@ class TestBuild(unittest.TestCase):
             reload(asimov)
             reload(manage)
             runner = CliRunner()
-
+            
             result = runner.invoke(manage.manage, ['build'])
             for event in EVENTS:
                 self.assertTrue(f"Working on {event}" in result.output)
@@ -127,14 +127,14 @@ class TestSubmit(unittest.TestCase):
         assert result.output == '● New project created successfully!\n'
         self.ledger = YAMLLedger(".asimov/ledger.yml")
 
-        f = io.StringIO()
-        with contextlib.redirect_stdout(f):
-            apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-            apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
-            for event in EVENTS:
-                for pipeline in pipelines:
-                    apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-                    apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+        #f = io.StringIO()
+        #with contextlib.redirect_stdout(f):
+        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
+        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+        for event in EVENTS:
+            for pipeline in pipelines:
+                apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
+                apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
 
     def test_buildsubmit_all_events(self):
         """Check that multiple events can be built at once"""

@@ -3,7 +3,6 @@ Supervisor: A package for interacting with
 long-running data analysis jobs.
 """
 
-
 __author__ = """Daniel Williams"""
 __email__ = "daniel.williams@ligo.org"
 __packagename__ = __name__
@@ -91,14 +90,12 @@ logger.addHandler(fh)
 
 
 try:
-    if config.get("ledger", "engine") == "gitlab":
-        from .gitlab import GitlabLedger
-
-        current_ledger = GitlabLedger()
-    elif config.get("ledger", "engine") == "yamlfile":
+    if config.get("ledger", "engine") == "yamlfile":
         from .ledger import YAMLLedger
 
         current_ledger = YAMLLedger(config.get("ledger", "location"))
+    elif config.get("ledger", "engine") == "gitlab":
+        logger.error("The gitlab interface has been removed from v0.6 of asimov")
     else:
         current_ledger = None
 except FileNotFoundError:
