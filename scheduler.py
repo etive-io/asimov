@@ -7,6 +7,8 @@ Supported Schedulers are:
 
 """
 
+import htcondor
+
 class Scheduler:
     """ 
     The base class which represents all supported schedulers.

@@ -176,8 +176,6 @@ Developers' Guide
 
    
    asimov-repository
-
-   code-overview
 	     
    ledger   
    pipelines-dev
