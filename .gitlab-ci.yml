@@ -24,7 +24,6 @@ documentation-coverage:
 flake8:
   stage: analysis
   script:
-    - pip install flake8 flake8_formatter_junit_xml
     - flake8 --max-line-length=120 --format junit-xml --verbose asimov > report.xml
   allow_failure: true
   artifacts:
@@ -52,6 +51,7 @@ test-python-39:
     - pip install unittest-xml-reporting
     - pip install .
     - pip install bilby-pipe
+    - pip install -U "htcondor<23"
     - coverage run -m xmlrunner discover tests/ -o junit-reports
     - coverage report
     - coverage xml
@@ -75,6 +75,7 @@ test-python-310:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
 test-python-311:
@@ -87,6 +88,7 @@ test-python-311:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
 test-python-312:
@@ -99,6 +101,7 @@ test-python-312:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
 test-python-313:
@@ -111,6 +114,7 @@ test-python-313:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
 # Build docs for multiple code versions
