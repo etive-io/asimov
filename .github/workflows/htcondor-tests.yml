@@ -23,8 +23,6 @@ jobs:
           su - submituser
 
       - uses: actions/checkout@v5
-        with:
-          path: asimov
 
       - name: Set up conda environment
         uses: conda-incubator/setup-miniconda@v2
