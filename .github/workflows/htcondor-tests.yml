@@ -1,0 +1,27 @@
+name: Tests with HTCondor
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: 
+      image: htcondor/mini:latest
+      options: --privileged
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Start HTCondor
+        run: |
+          condor_master &
+          sleep 10
+          condor_status
+          
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        
+      - name: Run tests
+        run: |
+          pytest tests/ -v
+          python -m unittest discover
+
