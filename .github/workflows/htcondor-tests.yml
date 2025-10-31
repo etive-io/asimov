@@ -59,8 +59,8 @@ jobs:
         run: |
           cd test_project
           conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_get_data.yaml -e GW150914_095045
-          conda run -n asimov manage build
-          conda run -n asimov manage submit 
+          conda run -n asimov asimov manage build
+          conda run -n asimov asimov manage submit 
           sleep 300
           ls working/GW150914_095045/get-data/*
           asimov monitor
