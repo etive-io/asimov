@@ -23,11 +23,12 @@ jobs:
           miniconda-version: "latest"
           auto-activate-base: false
           python-version: 3.10
-          environment-file: conda/environment.yaml
           activate-environment: asimov
 
       - name: Install dependencies
-        run: pip install .
+        run: |
+        pip install .
+        mamba install -y -n asimov --file conda/environment.yaml
         
       - name: Create asimov project
         run: |
