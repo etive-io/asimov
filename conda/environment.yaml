@@ -1,2 +1,2 @@
-bayeswave
-bilby_pipe 
+conda-forge::bayeswave
+conda-forge::bilby_pipe
