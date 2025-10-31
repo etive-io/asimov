@@ -48,6 +48,8 @@ jobs:
           mkdir test_project
           cd test_project
           git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
           conda run -n asimov asimov init "Test Project"
           conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
 
