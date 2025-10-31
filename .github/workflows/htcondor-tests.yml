@@ -25,18 +25,22 @@ jobs:
           python-version: "3.10"
           activate-environment: asimov
 
-      - name: Install dependencies
+      - name: Install dependencies & asimov
         run: |
-          pip install .
           conda install -y -n asimov --file conda/environment.yaml
-        
+          pip install .
+
+      - name: Change to the submit user
+        run: |
+          sudo su - submituser
+
       - name: Create asimov project
         run: |
           mkdir test_project
           cd test_project
           asimov init "Test Project"
 
-      - name: Run tests
+      - name: Test Event Add
         run: |
-          python3 -m unittest discover
-
+          cd test_project
+          asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
