@@ -40,7 +40,7 @@ jobs:
         run: |
           conda install -y -n asimov --file conda/environment.yaml
           conda install -y -n asimov conda-build
-          conda develop -n asimov .
+          conda develop  .
 
       - name: Create asimov project
         run: |
