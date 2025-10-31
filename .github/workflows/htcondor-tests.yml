@@ -17,9 +17,23 @@ jobs:
           sleep 10
           condor_status
           
+      - name: Set up conda environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-activate-base: false
+          python-version: 3.10
+          environment-file: conda/environment.yaml
+          activate-environment: asimov
+
       - name: Install dependencies
         run: pip install .
         
+      - name: Create asimov project
+        run: |
+          mkdir test_project
+          cd test_project
+          asimov init "Test Project"
+
       - name: Run tests
         run: |
           python3 -m unittest discover
