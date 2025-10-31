@@ -24,11 +24,13 @@ jobs:
           auto-activate-base: false
           python-version: "3.10"
           activate-environment: asimov
+          channels: conda-forge
+          conda-remove-defaults: "true"
 
       - name: Install dependencies & asimov
         run: |
           conda install -y -n asimov --file conda/environment.yaml
-          pip install .
+          conda run -n asimov pip install .
 
       - name: Change to the submit user
         run: |
@@ -38,9 +40,9 @@ jobs:
         run: |
           mkdir test_project
           cd test_project
-          asimov init "Test Project"
+          conda run -n asimov asimov init "Test Project"
 
       - name: Test Event Add
         run: |
           cd test_project
-          asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
+          conda run -n asimov asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
