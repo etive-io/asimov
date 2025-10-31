@@ -27,8 +27,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-        pip install .
-        mamba install -y -n asimov --file conda/environment.yaml
+          pip install .
+          mamba install -y -n asimov --file conda/environment.yaml
         
       - name: Create asimov project
         run: |
