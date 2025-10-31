@@ -14,7 +14,7 @@ from dateutil import tz
 import warnings
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
-    import htcondor2  # NoQA
+    import htcondor2 as htcondor  # NoQA
 except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
