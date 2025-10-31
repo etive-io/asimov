@@ -35,12 +35,11 @@ jobs:
           activate-environment: asimov
           channels: conda-forge
           conda-remove-defaults: "true"
-        run: |
-          conda install -y -n asimov --file conda/environment.yaml
-          conda install -y -n asimov conda-build
 
       - name: Install dependencies & asimov
         run: |
+          conda install -y -n asimov --file conda/environment.yaml
+          conda install -y -n asimov conda-build
           pip install .
 
       - name: Create asimov project
