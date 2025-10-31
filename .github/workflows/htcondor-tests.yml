@@ -2,21 +2,28 @@ name: Tests with HTCondor
 on: [push, pull_request]
 
 jobs:
-  test:
+  condor tests:
+    name: "HTCondor Testing"
     runs-on: ubuntu-latest
     container: 
       image: htcondor/mini:latest
       options: --privileged
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
+        with:
+          path: asimov
       
       - name: Start HTCondor
         run: |
           condor_master &
           sleep 10
           condor_status
-          
+
+      - name: Change to the submit user
+        run: |
+          su - submituser
+
       - name: Set up conda environment
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -30,11 +37,7 @@ jobs:
       - name: Install dependencies & asimov
         run: |
           conda install -y -n asimov --file conda/environment.yaml
-          conda run -n asimov pip install .
-
-      - name: Change to the submit user
-        run: |
-          su - submituser
+          conda run -n asimov pip install /root/asimov
 
       - name: Create asimov project
         run: |
