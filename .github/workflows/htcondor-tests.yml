@@ -2,7 +2,7 @@ name: Tests with HTCondor
 on: [push, pull_request]
 
 jobs:
-  condor tests:
+  tests:
     name: "HTCondor Testing"
     runs-on: ubuntu-latest
     container: 
