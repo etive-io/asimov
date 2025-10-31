@@ -39,7 +39,8 @@ jobs:
       - name: Install dependencies & asimov
         run: |
           conda install -y -n asimov --file conda/environment.yaml
-          conda run -n asimov pip install .
+          conda install -y -n asimov conda-build
+          conda develop -n asimov .
 
       - name: Create asimov project
         run: |
