@@ -33,10 +33,10 @@ import operator
 
 from liquid import Liquid
 
-from asimov import config, logger, LOGGER_LEVEL
-from asimov.pipelines import known_pipelines
-from asimov.utils import update, diff_dict
-from asimov.storage import Store
+from . import config, logger, LOGGER_LEVEL
+from .pipelines import known_pipelines
+from .utils import update, diff_dict
+from .storage import Store
 
 from .review import Review
 from .ini import RunConfiguration
