@@ -18,7 +18,7 @@ jobs:
           condor_status
           
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install .
         
       - name: Run tests
         run: |
