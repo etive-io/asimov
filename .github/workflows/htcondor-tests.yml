@@ -10,9 +10,7 @@ jobs:
       options: --privileged
     
     steps:
-      - uses: actions/checkout@v5
-        with:
-          path: asimov
+
       
       - name: Start HTCondor
         run: |
@@ -23,6 +21,10 @@ jobs:
       - name: Change to the submit user
         run: |
           su - submituser
+
+      - uses: actions/checkout@v5
+        with:
+          path: asimov
 
       - name: Set up conda environment
         uses: conda-incubator/setup-miniconda@v2
@@ -36,8 +38,8 @@ jobs:
 
       - name: Install dependencies & asimov
         run: |
-          conda install -y -n asimov --file /root/asimov/conda/environment.yaml
-          conda run -n asimov pip install /root/asimov
+          conda install -y -n asimov --file conda/environment.yaml
+          conda run -n asimov pip install .
 
       - name: Create asimov project
         run: |
