@@ -31,7 +31,7 @@ jobs:
         with:
           miniconda-version: "latest"
           auto-activate-base: false
-          python-version: "3.10"
+          python-version: "3.9"
           activate-environment: asimov
           channels: conda-forge
           conda-remove-defaults: "true"
