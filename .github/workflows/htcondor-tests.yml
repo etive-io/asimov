@@ -25,7 +25,8 @@ jobs:
           su - submituser
 
       - uses: actions/checkout@v5
-
+        with:
+          fetch-depth: 0
       - name: Set up conda environment
         uses: conda-incubator/setup-miniconda@v2
         with:
