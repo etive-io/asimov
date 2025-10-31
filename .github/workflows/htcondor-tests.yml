@@ -32,7 +32,7 @@ jobs:
 
       - name: Change to the submit user
         run: |
-          sudo su - submituser
+          su - submituser
 
       - name: Create asimov project
         run: |
