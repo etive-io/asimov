@@ -21,7 +21,7 @@ jobs:
           condor_status
         
       - run: |
-          yum install sudo
+          yum install -y sudo
 
       - uses: actions/checkout@v5
         with:
@@ -105,6 +105,24 @@ jobs:
           sleep 300
           ls working/GW150914_095045/bayeswave/* || true
           $CONDA_EXE run -n asimov asimov monitor
+          EOF
+
+      - name: Test Bayeswave Sudo
+        shell: sudo -E -u submituser bash -el {0}
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        run: |
+          # Submit as submituser
+          conda run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045
+          conda run -n asimov asimov manage build
+          conda run -n asimov asimov manage submit
+
+          sleep 60
+          condor_q 
+
+          sleep 300
+          ls working/GW150914_095045/bayeswave/* || true
+          conda run -n asimov asimov monitor
           EOF
 
       # - name: Test Analysis get-data 
