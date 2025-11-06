@@ -51,6 +51,9 @@ jobs:
           git config --global user.email "you@example.com"
           git config --global user.name "Your Name"
           conda run -n asimov asimov init "Test Project"
+          conda run -n asimov asimov configuration update condor/user submituser
+          conda run -n asimov asimov configuration update condor/cache_time 30
+          conda run -n asimov asimov configuration update condor/cron_minute */1
           conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
 
       - name: Test Event Add
