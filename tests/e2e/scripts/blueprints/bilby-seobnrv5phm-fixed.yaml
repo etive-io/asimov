@@ -1,0 +1,26 @@
+# This file contains a standard bilby_pipe analysis
+kind: analysis
+name: bilby-SEOBNRv5PHM-v2
+pipeline: bilby
+# SEOBNRv5PHM is implemented via GWSignal and requires
+# different settings compared to LALSimulation-based
+# waveforms
+waveform:
+  approximant: SEOBNRv5PHM
+  generator: bilby.gw.waveform_generator.WaveformGenerator
+  arguments:
+    lmax_nyquist: 3
+
+likelihood:
+  frequency domain source model: gwsignal_binary_black_hole
+    
+comment: PE job using SEOBNRv5PHM and bilby
+needs:
+  - get-priors
+  - generate-psd
+
+# For standard LIGO analyses we target these at a dedicated cluster
+# For purposes other than GWTC-4 you should remove the next three lines.
+scheduler:
+  desired sites: AEI-Hypatia
+  request cpus: 64

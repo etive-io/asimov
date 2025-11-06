@@ -1,0 +1,134 @@
+kind: analysis
+name: get-data
+pipeline: gwdata
+download:
+  - posterior
+  - calibration
+source:
+  type: pesummary
+  location: /home/pe.o4/O4a/<event>/<illustrative_result>/summary/samples/posterior_samples.h5
+scheduler:
+  accounting group: ligo.dev.o4.cbc.pe.bilby
+  request memory: 1024
+  request post memory: 16384
+---
+kind: analysis
+name: get-priors
+pipeline: peconfigurator
+minimum mass ratio: 0.05
+checks:
+  - higher modes
+  - luminosity distance
+  - no safety
+needs:
+  - get-data
+scheduler:
+  accounting group: ligo.dev.o4.cbc.pe.bilby
+  request memory: 1024
+  request post memory: 16384
+---
+#
+# This blueprint sets up a Bayeswave job to create a PSD using standard settings which should be fine for BBH events.
+#
+
+kind: analysis
+name: generate-psd
+needs:
+  - get-data
+  - get-priors
+pipeline: bayeswave
+comment: Bayeswave on-source PSD estimation process
+---
+# This file contains a standard bilby_pipe analysis
+kind: analysis
+name: bilby-IMRPhenomXPHM
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+  arguments:
+    PhenomXHMReleaseVersion: 122022
+
+comment: PE job using IMRPhenomXPHM and bilby
+needs:
+    - generate-psd
+    - get-priors
+---
+kind: analysis
+name: bilby-IMRPhenomXPHM-SpinTaylor
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+  arguments:
+    FinalSpinMod: 2
+    PhenomXHMReleaseVersion: 122022
+    PrecVersion: 320
+comment: Default PE job using IMRPhenomXPHM-SpinTaylor and bilby
+needs:
+    - generate-psd
+    - get-priors
+---
+# This file contains a standard bilby_pipe analysis
+kind: analysis
+name: bilby-SEOBNRv5PHM
+pipeline: bilby
+# SEOBNRv5PHM is implemented via GWSignal and requires
+# different settings compared to LALSimulation-based
+# waveforms
+waveform:
+  approximant: SEOBNRv5PHM
+  generator: bilby.gw.waveform_generator.WaveformGenerator
+  frequency domain source model: gwsignal_binary_black_hole
+  arguments:
+    lmax_nyquist: 3
+  
+comment: PE job using SEOBNRv5PHM and bilby
+needs:
+  - generate-psd
+  - get-priors
+
+# For standard LIGO analyses we target these at a dedicated cluster
+# For purposes other than GWTC-4 you should remove the next three lines.
+scheduler:
+  desired sites: AEI-Hypatia
+  request cpus: 64
+---
+# This file contains a standard bilby_pipe analysis
+kind: analysis
+name: bilby-IMRPhenomXO4a
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXO4a
+
+comment: PE job using IMRPhenomXO4a and bilby
+needs:
+    - generate-psd
+    - get-priors
+
+---
+# This file contains a standard bilby_pipe analysis
+kind: analysis
+name: bilby-NRSur7dq4
+pipeline: bilby
+waveform:
+  approximant: NRSur7dq4
+  arguments:
+    pn-amplitude-order: 0
+  enforce signal duration: False
+likelihood:
+  start frequency: 0
+priors:
+  total mass:
+    type: Constraint
+    minimum: 60
+    maximum: 400
+  mass ratio:
+    minimum: 0.16666666
+    maximum: 1
+comment: PE job using NRSur7dq4 and bilby
+needs:
+  - generate-psd
+  - get-priors
+
+scheduler:
+  additional files:
+    - /home/pe.o4/lalsuite-extra/data/lalsimulation/NRSur7dq4.h5
