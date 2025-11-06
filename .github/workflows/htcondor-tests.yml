@@ -40,6 +40,7 @@ jobs:
           pip install .
 
       - name: Create asimov project
+        shell: sudo -E -u submituser bash -el {0}
         run: |
           mkdir test_project
           cd test_project
@@ -53,9 +54,8 @@ jobs:
           conda run -n asimov asimov configuration update condor/cron_minute */1
           conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
 
-          chown -R submituser:submituser test_project
-
       - name: Test Event Add
+        shell: sudo -E -u submituser bash -el {0}
         run: |
           cd test_project
           conda run -n asimov asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
@@ -63,18 +63,17 @@ jobs:
       - name: Test Bayeswave
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
+        shell: sudo -E -u submituser bash -el {0}
         run: |
           cd test_project
-          CONDA_EXE="$(command -v conda)"
 
           # Submit as submituser
-          su -m submituser -c "cd $(pwd) && whoami && \$CONDA_EXE run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045"
-          su -m submituser -c "cd $(pwd) && whoami && \$CONDA_EXE run -n asimov asimov manage build"
-          su -m submituser -c "cd $(pwd) && whoami && \$CONDA_EXE run -n asimov asimov manage submit"
+          conda run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045
+          conda run -n asimov asimov manage build
+          conda run -n asimov asimov manage submit
 
           sleep 60
           condor_q 
-          
 
           sleep 300
           ls working/GW150914_095045/bayeswave/*
