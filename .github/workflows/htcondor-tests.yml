@@ -58,12 +58,23 @@ jobs:
           cd test_project
           conda run -n asimov asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
 
-      - name: Test Analysis get-data 
+      - name: Test Bayeswave
         run: |
           cd test_project
-          conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_get_data.yaml -e GW150914_095045
+          export GWDATAFIND_SERVER="https://datafind.gwosc.org"
+          conda run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045
           conda run -n asimov asimov manage build
           conda run -n asimov asimov manage submit 
           sleep 300
-          ls working/GW150914_095045/get-data/*
-          asimov monitor
+          ls working/GW150914_095045/bayeswave/*
+          conda run -n asimov asimov monitor
+
+      # - name: Test Analysis get-data 
+      #   run: |
+      #     cd test_project
+      #     conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_get_data.yaml -e GW150914_095045
+      #     conda run -n asimov asimov manage build
+      #     conda run -n asimov asimov manage submit 
+      #     sleep 300
+      #     ls working/GW150914_095045/get-data/*
+      #     asimov monitor
