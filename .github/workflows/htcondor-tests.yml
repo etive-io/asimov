@@ -1,0 +1,96 @@
+name: Tests with HTCondor
+on: [push, pull_request]
+
+jobs:
+  tests:
+    name: "HTCondor Testing"
+    runs-on: ubuntu-latest
+    container: 
+      image: htcondor/mini:latest
+      options: --privileged
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+
+      
+      - name: Start HTCondor
+        run: |
+          condor_master &
+          sleep 10
+          condor_status
+        
+      - run: |
+          yum install -y sudo
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up conda environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          miniconda-version: "latest"
+          auto-activate-base: false
+          python-version: "3.9"
+          activate-environment: asimov
+          channels: conda-forge
+          conda-remove-defaults: "true"
+
+      - name: Install dependencies & asimov
+        run: |
+          conda install -y -n asimov --file conda/environment.yaml
+          conda install -y -n asimov conda-build
+          pip install .
+
+      - name: Create asimov project
+        shell: sudo -E -u submituser bash -el {0}
+        run: |
+          mkdir -p test_project
+          chown -R submituser:submituser test_project
+          cd test_project
+          
+          git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+          
+          conda run -n asimov asimov init "Test Project"
+          conda run -n asimov asimov configuration update condor/user submituser
+          conda run -n asimov asimov configuration update condor/cache_time 30
+          conda run -n asimov asimov configuration update condor/cron_minute '*/1'
+          conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
+
+      - name: Test Event Add
+        shell: sudo -E -u submituser bash -el {0}
+        run: |
+          cd test_project
+
+          conda run -n asimov asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
+
+      - name: Test Bayeswave
+        shell: sudo -E -u submituser bash -el {0}
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        run: |
+          cd test_project
+          
+          # Submit as submituser
+          conda run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045
+          conda run -n asimov asimov manage build
+          conda run -n asimov asimov manage submit
+
+          sleep 60
+          condor_q 
+
+          sleep 300
+          ls working/GW150914_095045/bayeswave/* || true
+          conda run -n asimov asimov monitor
+
+      # - name: Test Analysis get-data 
+      #   run: |
+      #     cd test_project
+      #     conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_get_data.yaml -e GW150914_095045
+      #     conda run -n asimov asimov manage build
+      #     conda run -n asimov asimov manage submit 
+      #     sleep 300
+      #     ls working/GW150914_095045/get-data/*
+      #     asimov monitor
