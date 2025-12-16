@@ -28,43 +28,43 @@ jobs:
         run: |
           # Create a passwordless sudo user for running Condor jobs
           id -u submituser >/dev/null 2>&1 || useradd -m -s /bin/bash submituser
-          {
-            echo 'Defaults:submituser !requiretty'
-            echo 'submituser ALL=(ALL) NOPASSWD:ALL'
-          } > /etc/sudoers.d/submituser
-          chmod 0440 /etc/sudoers.d/submituser
 
-      - name: Give submituser workspace ownership
-        run: chown -R submituser:submituser "$GITHUB_WORKSPACE"
+              su - submituser <<EOF
+              set -euo pipefail
+              cd "$GITHUB_WORKSPACE/test_project"
 
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+              $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
+              $ASIMOV_CMD asimov manage build
 
-      - name: Cache conda packages
-        uses: actions/cache@v4
-        with:
-          path: /usr/share/miniconda/pkgs
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conda/environment.yaml') }}
-          restore-keys: |
-            conda-pkgs-${{ runner.os }}-
-      - name: Set up conda environment
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          miniconda-version: "latest"
-          auto-activate-base: false
-          python-version: "3.9"
-          activate-environment: asimov
-          channels: conda-forge
-          conda-remove-defaults: "true"
+              $ASIMOV_CMD asimov manage submit
 
-      - name: Install dependencies & asimov
-        run: |
-          conda install -y -n asimov --file conda/environment.yaml
-          conda install -y -n asimov conda-build
-          pip install .
-
-      - name: Create asimov project
+              # Watch for frame files to appear
+              echo 'Waiting for H1.gwf and L1.gwf frame files to appear...'
+              TIMEOUT=600
+              ELAPSED=0
+              INTERVAL=30
+          
+              while [ \$ELAPSED -lt \$TIMEOUT ]; do
+                condor_q
+            
+                if [ -f working/GW150914_095045/get-data/frames/H1.gwf ] && [ -f working/GW150914_095045/get-data/frames/L1.gwf ]; then
+                  echo 'Frame files H1.gwf and L1.gwf found!'
+                  ls -lh working/GW150914_095045/get-data/frames/
+                  break
+                fi
+            
+                echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - H1.gwf and/or L1.gwf not yet present, waiting..."
+                sleep \$INTERVAL
+                ELAPSED=\$((ELAPSED + INTERVAL))
+              done
+          
+              if [ \$ELAPSED -ge \$TIMEOUT ]; then
+                echo 'Timeout waiting for H1.gwf and L1.gwf frame files'
+                ls -R working/GW150914_095045/ || true
+              fi
+          
+              $ASIMOV_CMD asimov monitor
+              EOF
         run: |
           CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
           if [ ! -x "$CONDA_EXE" ]; then
