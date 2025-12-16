@@ -127,14 +127,14 @@ jobs:
 
           $ASIMOV_CMD asimov manage submit
 
-          tail -n 10 asimov.log
+          tail -n 100 asimov.log
 
-          sleep 60
-          condor_q 
+          # sleep 60
+          # condor_q 
 
-          sleep 300
-          ls working/GW150914_095045/generate-psd/* || true
-          $ASIMOV_CMD asimov monitor
+          # sleep 300
+          # ls working/GW150914_095045/generate-psd/* || true
+          # $ASIMOV_CMD asimov monitor
           "
 
       # - name: Test Analysis get-data 
