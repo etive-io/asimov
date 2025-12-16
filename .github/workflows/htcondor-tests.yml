@@ -19,9 +19,20 @@ jobs:
           condor_master &
           sleep 10
           condor_status
-        
-      - run: |
-          yum install -y sudo
+
+      - name: Install base tools
+        run: |
+          yum install -y sudo git
+
+      - name: Create submit user
+        run: |
+          # Create a passwordless sudo user for running Condor jobs
+          useradd -m -s /bin/bash submituser
+          {
+            echo 'Defaults:submituser !requiretty'
+            echo 'submituser ALL=(ALL) NOPASSWD:ALL'
+          } > /etc/sudoers.d/submituser
+          chmod 0440 /etc/sudoers.d/submituser
 
       - uses: actions/checkout@v5
         with:
