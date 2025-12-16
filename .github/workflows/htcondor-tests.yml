@@ -66,48 +66,63 @@ jobs:
 
       - name: Create asimov project
         run: |
-          CONDA_EXE="$(command -v conda)"
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          if [ ! -x "$CONDA_EXE" ]; then
+            echo "Conda not found at $CONDA_EXE" >&2
+            exit 1
+          fi
           ASIMOV_CMD="$CONDA_EXE run -n asimov"
-          su - submituser <<EOF
+
+          su - submituser -c "
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd '$GITHUB_WORKSPACE'
 
           mkdir -p test_project
           cd test_project
 
           git config --global init.defaultBranch master
-          git config --global user.email "you@example.com"
-          git config --global user.name "Your Name"
+          git config --global user.email 'you@example.com'
+          git config --global user.name 'Your Name'
 
-          $ASIMOV_CMD asimov init "Test Project"
+          $ASIMOV_CMD asimov init 'Test Project'
           $ASIMOV_CMD asimov configuration update condor/user submituser
           $ASIMOV_CMD asimov configuration update condor/cache_time 30
           $ASIMOV_CMD asimov configuration update condor/cron_minute '*/1'
-          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
-          EOF
+          $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml'
+          "
 
       - name: Test Event Add
         run: |
-          CONDA_EXE="$(command -v conda)"
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          if [ ! -x "$CONDA_EXE" ]; then
+            echo "Conda not found at $CONDA_EXE" >&2
+            exit 1
+          fi
           ASIMOV_CMD="$CONDA_EXE run -n asimov"
-          su - submituser <<EOF
+
+          su - submituser -c "
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE/test_project"
+          cd '$GITHUB_WORKSPACE/test_project'
 
           $ASIMOV_CMD asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
-          EOF
+          "
 
       - name: Test Bayeswave
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         run: |
-          CONDA_EXE="$(command -v conda)"
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          if [ ! -x "$CONDA_EXE" ]; then
+            echo "Conda not found at $CONDA_EXE" >&2
+            exit 1
+          fi
           ASIMOV_CMD="$CONDA_EXE run -n asimov"
-          su - submituser <<EOF
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE/test_project"
 
-          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
+          su - submituser -c "
+          set -euo pipefail
+          cd '$GITHUB_WORKSPACE/test_project'
+
+          $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml' -e GW150914_095045
           $ASIMOV_CMD asimov manage build
           $ASIMOV_CMD asimov manage submit
 
@@ -117,7 +132,7 @@ jobs:
           sleep 300
           ls working/GW150914_095045/bayeswave/* || true
           $ASIMOV_CMD asimov monitor
-          EOF
+          "
 
       # - name: Test Analysis get-data 
       #   run: |
