@@ -127,6 +127,8 @@ jobs:
 
           $ASIMOV_CMD asimov manage submit
 
+          /__w/asimov/asimov/3/envs/asimov/bin/bayeswave_pipe --trigger-time=1126259462.391 -r /__w/asimov/asimov/test_project/working/GW150914_095045/generate-psd /__w/asimov/asimov/test_project/checkouts/GW150914_095045/C01_offline/generate-psd.ini
+
           tail -n 100 asimov.log
 
           # sleep 60
