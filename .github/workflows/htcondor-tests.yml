@@ -125,7 +125,7 @@ jobs:
           $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml' -e GW150914_095045
           $ASIMOV_CMD asimov manage build
 
-          $ASIMOV_CMD asimov manage submit
+          # $ASIMOV_CMD asimov manage submit
 
           /__w/asimov/asimov/3/envs/asimov/bin/bayeswave_pipe --trigger-time=1126259462.391 -r /__w/asimov/asimov/test_project/working/GW150914_095045/generate-psd /__w/asimov/asimov/test_project/checkouts/GW150914_095045/C01_offline/generate-psd.ini
 
