@@ -68,6 +68,8 @@ jobs:
           conda install -y -n asimov --file conda/environment.yaml
           conda install -y -n asimov conda-build
           pip install .
+          # Temporarily use the asimov-gwdata branch
+          pip install git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor
 
       - name: Create asimov project
         run: |
