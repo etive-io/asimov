@@ -125,7 +125,34 @@ jobs:
           $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml' -e GW150914_095045
           $ASIMOV_CMD asimov manage build
 
-          # $ASIMOV_CMD asimov manage submit
+          $ASIMOV_CMD asimov manage submit
+
+          # Watch for frame files to appear
+          echo 'Waiting for H1.gwf and L1.gwf frame files to appear...'
+          TIMEOUT=600
+          ELAPSED=0
+          INTERVAL=30
+          
+          while [ \$ELAPSED -lt \$TIMEOUT ]; do
+            condor_q
+            
+            if [ -f working/GW150914_095045/get-data/frames/H1.gwf ] && [ -f working/GW150914_095045/get-data/frames/L1.gwf ]; then
+              echo 'Frame files H1.gwf and L1.gwf found!'
+              ls -lh working/GW150914_095045/get-data/frames/
+              break
+            fi
+            
+            echo \"Elapsed: \${ELAPSED}s / \${TIMEOUT}s - H1.gwf and/or L1.gwf not yet present, waiting...\"
+            sleep \$INTERVAL
+            ELAPSED=\$((ELAPSED + INTERVAL))
+          done
+          
+          if [ \$ELAPSED -ge \$TIMEOUT ]; then
+            echo 'Timeout waiting for H1.gwf and L1.gwf frame files'
+            ls -R working/GW150914_095045/ || true
+          fi
+          
+          $ASIMOV_CMD asimov monitor
         
 
       - name: Test Bayeswave
