@@ -34,9 +34,20 @@ jobs:
           } > /etc/sudoers.d/submituser
           chmod 0440 /etc/sudoers.d/submituser
 
+      - name: Give submituser workspace ownership
+        run: chown -R submituser:submituser "$GITHUB_WORKSPACE"
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: /usr/share/miniconda/pkgs
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conda/environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
       - name: Set up conda environment
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -54,47 +65,59 @@ jobs:
           pip install .
 
       - name: Create asimov project
-        shell: sudo -E -u submituser bash -el {0}
         run: |
+          CONDA_EXE="$(command -v conda)"
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+
           mkdir -p test_project
-          chown -R submituser:submituser test_project
           cd test_project
-          
+
           git config --global init.defaultBranch master
           git config --global user.email "you@example.com"
           git config --global user.name "Your Name"
-          
-          conda run -n asimov asimov init "Test Project"
-          conda run -n asimov asimov configuration update condor/user submituser
-          conda run -n asimov asimov configuration update condor/cache_time 30
-          conda run -n asimov asimov configuration update condor/cron_minute '*/1'
-          conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
+
+          $ASIMOV_CMD asimov init "Test Project"
+          $ASIMOV_CMD asimov configuration update condor/user submituser
+          $ASIMOV_CMD asimov configuration update condor/cache_time 30
+          $ASIMOV_CMD asimov configuration update condor/cron_minute '*/1'
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
+          EOF
 
       - name: Test Event Add
-        shell: sudo -E -u submituser bash -el {0}
         run: |
-          cd test_project
+          CONDA_EXE="$(command -v conda)"
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/test_project"
 
-          conda run -n asimov asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
+          $ASIMOV_CMD asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
+          EOF
 
       - name: Test Bayeswave
-        shell: sudo -E -u submituser bash -el {0}
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         run: |
-          cd test_project
-          
-          # Submit as submituser
-          conda run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045
-          conda run -n asimov asimov manage build
-          conda run -n asimov asimov manage submit
+          CONDA_EXE="$(command -v conda)"
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/test_project"
+
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
+          $ASIMOV_CMD asimov manage build
+          $ASIMOV_CMD asimov manage submit
 
           sleep 60
           condor_q 
 
           sleep 300
           ls working/GW150914_095045/bayeswave/* || true
-          conda run -n asimov asimov monitor
+          $ASIMOV_CMD asimov monitor
+          EOF
 
       # - name: Test Analysis get-data 
       #   run: |
