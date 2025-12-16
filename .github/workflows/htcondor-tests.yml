@@ -27,7 +27,7 @@ jobs:
       - name: Create submit user
         run: |
           # Create a passwordless sudo user for running Condor jobs
-          useradd -m -s /bin/bash submituser
+          id -u submituser >/dev/null 2>&1 || useradd -m -s /bin/bash submituser
           {
             echo 'Defaults:submituser !requiretty'
             echo 'submituser ALL=(ALL) NOPASSWD:ALL'
