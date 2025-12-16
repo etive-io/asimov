@@ -107,6 +107,27 @@ jobs:
           $ASIMOV_CMD asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
           "
 
+      - name: Test GWData
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        run: |
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          if [ ! -x "$CONDA_EXE" ]; then
+            echo "Conda not found at $CONDA_EXE" >&2
+            exit 1
+          fi
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+
+          su - submituser -c "
+          set -euo pipefail
+          cd '$GITHUB_WORKSPACE/test_project'
+
+          $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml' -e GW150914_095045
+          $ASIMOV_CMD asimov manage build
+
+          # $ASIMOV_CMD asimov manage submit
+        
+
       - name: Test Bayeswave
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
