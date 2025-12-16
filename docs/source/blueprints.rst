@@ -278,13 +278,13 @@ General likelihood settings
      - See individual pipeline documentation.
      - The likelihood function to use.
    * - ``likelihood:kwargs``
-     -
-     -
+     - ``dict``
+     -  Additional keyword arguments to be passed to the likelihood function.
    * - ``likelihood:frequency domain source model``
      - See individual pipeline documentation.
      -
    * - ``likelihood:time domain source model``
-     -
+     - See individual pipeline documentation.
      -
 
 Calibration settings

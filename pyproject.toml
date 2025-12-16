@@ -62,7 +62,8 @@ docs = [
 	"sphinxcontrib-httpdomain",
 	"sphinxcontrib-httpexample",
 	"sphinx-jsonschema",
-	"sphinx-multiversion"
+	"sphinx-multiversion",
+	"sphinxcontrib.autodoc_pydantic",
 ]
 
 [project.scripts]
