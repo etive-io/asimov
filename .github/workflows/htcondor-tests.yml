@@ -119,23 +119,25 @@ jobs:
           $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
           $ASIMOV_CMD asimov manage build
           $ASIMOV_CMD asimov manage submit
-          echo 'Waiting for H1.gwf and L1.gwf frame files to appear...'
+          echo 'Waiting for H*.gwf and L*.gwf frame files to appear...'
           TIMEOUT=600; ELAPSED=0; INTERVAL=30
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
             ls working/GW150914_095045/get-data/ || true
             condor_q || true
             condor_q -hold || true
-            if [ -f working/GW150914_095045/get-data/frames/H1.gwf ] && [ -f working/GW150914_095045/get-data/frames/L1.gwf ]; then
-              echo 'Frame files H1.gwf and L1.gwf found!'
+            H_FILES=\$(ls working/GW150914_095045/get-data/frames/H*.gwf 2>/dev/null | wc -l)
+            L_FILES=\$(ls working/GW150914_095045/get-data/frames/L*.gwf 2>/dev/null | wc -l)
+            if [ "\$H_FILES" -gt 0 ] && [ "\$L_FILES" -gt 0 ]; then
+              echo 'Frame files found!'
               ls -lh working/GW150914_095045/get-data/frames/
               break
             fi
-            echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - H1.gwf and/or L1.gwf not yet present, waiting..."
+            echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - H*.gwf and/or L*.gwf not yet present, waiting..."
             sleep \$INTERVAL
             ELAPSED=\$((ELAPSED + INTERVAL))
           done
           if [ \$ELAPSED -ge \$TIMEOUT ]; then
-            echo 'Timeout waiting for H1.gwf and L1.gwf frame files'
+            echo 'Timeout waiting for H*.gwf and L*.gwf frame files'
             ls -R working/GW150914_095045/ || true
             return 1
           fi
