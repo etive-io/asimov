@@ -155,15 +155,40 @@ jobs:
           CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
           [ -x "$CONDA_EXE" ] || { echo "Conda not found at $CONDA_EXE" >&2; exit 1; }
           ASIMOV_CMD="$CONDA_EXE run -n asimov"
-          su - submituser -c "
+          su - submituser <<EOF
           set -euo pipefail
-          cd '$GITHUB_WORKSPACE/test_project'
-          $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml' -e GW150914_095045
+          cd "$GITHUB_WORKSPACE/test_project"
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
           $ASIMOV_CMD asimov manage build
           $ASIMOV_CMD asimov manage submit
           sleep 60
+
           condor_q || true
-          sleep 300
-          ls working/GW150914_095045/bayeswave/* || true
+          echo 'Waiting for PSD files to appear...'
+          TIMEOUT=600; ELAPSED=0; INTERVAL=30
+          while [ \$ELAPSED -lt \$TIMEOUT ]; do
+            condor_q || true
+            H_COUNT=0
+            L_COUNT=0
+            for f in working/GW150914_095045/generate-psd/trigtime_*/post/clean/glitch_median_PSD_forLI_H1.dat; do
+              [ -e "\$f" ] && H_COUNT=\$((H_COUNT + 1))
+            done
+            for f in working/GW150914_095045/generate-psd/trigtime_*/post/clean/glitch_median_PSD_forLI_L1.dat; do
+              [ -e "\$f" ] && L_COUNT=\$((L_COUNT + 1))
+            done
+            if [ \$H_COUNT -gt 0 ] && [ \$L_COUNT -gt 0 ]; then
+              echo 'PSD files found!'
+              ls -lh working/GW150914_095045/generate-psd/trigtime_*/post/clean/
+              break
+            fi
+            echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - PSD files not yet present, waiting..."
+            sleep \$INTERVAL
+            ELAPSED=\$((ELAPSED + INTERVAL))
+          done
+          if [ \$ELAPSED -ge \$TIMEOUT ]; then
+            echo 'Timeout waiting for PSD files'
+            ls -R working/GW150914_095045/ || true
+            exit 1
+          fi
           $ASIMOV_CMD asimov monitor
-          "
+          EOF
