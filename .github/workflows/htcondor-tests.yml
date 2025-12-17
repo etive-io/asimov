@@ -100,11 +100,11 @@ jobs:
           CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
           [ -x "$CONDA_EXE" ] || { echo "Conda not found at $CONDA_EXE" >&2; exit 1; }
           ASIMOV_CMD="$CONDA_EXE run -n asimov"
-          su - submituser -c "
+          su - submituser <<EOF
           set -euo pipefail
-          cd '$GITHUB_WORKSPACE/test_project'
-          $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml'
-          "
+          cd "$GITHUB_WORKSPACE/test_project"
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+          EOF
 
       - name: Test GWData
         env:
@@ -190,6 +190,7 @@ jobs:
             ls -R working/GW150914_095045/ || true
             exit 1
           fi
+          rm .asimov/_cache_jobs.yaml
           $ASIMOV_CMD asimov monitor
           EOF
 
@@ -205,8 +206,8 @@ jobs:
           cd "$GITHUB_WORKSPACE/test_project"
           $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
           $ASIMOV_CMD asimov manage build
-          sleep 10
           $ASIMOV_CMD asimov manage submit
+          sleep 10
           sleep 60
 
           condor_q || true
