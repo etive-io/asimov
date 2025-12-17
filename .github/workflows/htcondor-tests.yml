@@ -212,10 +212,11 @@ jobs:
           sleep 60
 
           condor_q || true
-          echo 'Waiting for PSD files to appear...'
+          echo 'Waiting for result file to appear...'
           TIMEOUT=1200; ELAPSED=0; INTERVAL=30
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
             condor_q || true
+            asimov monitor --chain
             RESULT_COUNT=0
             tail -n 20 working/GW150914_095045/bilby-IMRPhenomXPHM/log_*/*.err || true
             for f in working/GW150914_095045/bilby-IMRPhenomXPHM/*merge*_result.hdf5; do
