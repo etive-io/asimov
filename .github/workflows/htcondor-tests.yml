@@ -122,12 +122,16 @@ jobs:
           echo 'Waiting for H*.gwf and L*.gwf frame files to appear...'
           TIMEOUT=600; ELAPSED=0; INTERVAL=30
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
-            ls working/GW150914_095045/get-data/ || true
             condor_q || true
-            condor_q -hold || true
-            H_FILES=\$(ls working/GW150914_095045/get-data/frames/H*.gwf 2>/dev/null | wc -l)
-            L_FILES=\$(ls working/GW150914_095045/get-data/frames/L*.gwf 2>/dev/null | wc -l)
-            if [ "\$H_FILES" -gt 0 ] && [ "\$L_FILES" -gt 0 ]; then
+            H_COUNT=0
+            L_COUNT=0
+            for f in working/GW150914_095045/get-data/frames/H*.gwf; do
+              [ -e "\$f" ] && H_COUNT=\$((H_COUNT + 1))
+            done
+            for f in working/GW150914_095045/get-data/frames/L*.gwf; do
+              [ -e "\$f" ] && L_COUNT=\$((L_COUNT + 1))
+            done
+            if [ \$H_COUNT -gt 0 ] && [ \$L_COUNT -gt 0 ]; then
               echo 'Frame files found!'
               ls -lh working/GW150914_095045/get-data/frames/
               break
@@ -139,7 +143,7 @@ jobs:
           if [ \$ELAPSED -ge \$TIMEOUT ]; then
             echo 'Timeout waiting for H*.gwf and L*.gwf frame files'
             ls -R working/GW150914_095045/ || true
-            return 1
+            exit 1
           fi
           $ASIMOV_CMD asimov monitor
           EOF
