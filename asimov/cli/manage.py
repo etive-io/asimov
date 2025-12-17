@@ -466,7 +466,7 @@ def submit(event, update, dryrun):
                     if priority_method == "vanilla":
                         N_ok = 0
                         for prod in production._needs:
-                            if interest_dict_single_analysis[production.event.name][prod]['done']:
+                            if interest_dict_single_analysis.get(production.event.name, {}).get(prod, {}).get('done', False):
                                 N_ok += 1
                         if N_ok < len(production._needs):
                             to_analyse = False
