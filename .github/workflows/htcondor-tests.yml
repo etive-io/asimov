@@ -190,6 +190,7 @@ jobs:
             ls -R working/GW150914_095045/ || true
             exit 1
           fi
+          condor_rm 2
           rm .asimov/_cache_jobs.yaml
           $ASIMOV_CMD asimov monitor
           EOF
