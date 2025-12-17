@@ -30,11 +30,13 @@ pipelines:
         H1: H1:DCS-CALIB_STATE_VECTOR_C01
         V1: V1:DQ_ANALYSIS_STATE_VECTOR
     likelihood:
-      iterations: 250000
+      iterations: 25000
+      chains: 2
+      threads: 1
     scheduler:
       accounting group: ligo.dev.o4.cbc.pe.bilby
       request memory: 1024
-      request post memory: 16384
+      request post memory: 2048
   rift:
     scheduler:
       accounting group: ligo.dev.o4.cbc.pe.bilby
