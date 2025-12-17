@@ -22,7 +22,8 @@ pipelines:
       sampler kwargs: "{nlive: 100, dlogz: 1, nact: 5}"
     scheduler:
       accounting group: ligo.dev.o4.cbc.pe.bilby
-      request cpus: 16
+      request cpus: 4
+      request memory: 2.0
   bayeswave:
     quality:
       state vector:
