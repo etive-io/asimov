@@ -205,6 +205,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/test_project"
           $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
           $ASIMOV_CMD asimov manage build
+          sleep 10
           $ASIMOV_CMD asimov manage submit
           sleep 60
 
