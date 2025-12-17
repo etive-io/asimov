@@ -5,7 +5,7 @@ jobs:
   tests:
     name: "HTCondor Testing"
     runs-on: ubuntu-latest
-    container: 
+    container:
       image: htcondor/mini:latest
       options: --privileged
     defaults:
@@ -13,19 +13,38 @@ jobs:
         shell: bash -el {0}
     steps:
 
-      
       - name: Start HTCondor
         run: |
           condor_master &
           sleep 10
           condor_status
-        
-      - run: |
-          yum install -y sudo
+
+      - name: Install base tools
+        run: |
+          yum install -y sudo git
+
+      - name: Create submit user
+        run: |
+          id -u submituser >/dev/null 2>&1 || useradd -m -s /bin/bash submituser
+          {
+            echo 'Defaults:submituser !requiretty'
+            echo 'submituser ALL=(ALL) NOPASSWD:ALL'
+          } > /etc/sudoers.d/submituser
+          chmod 0440 /etc/sudoers.d/submituser
+          chown -R submituser:submituser "$GITHUB_WORKSPACE"
 
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: /usr/share/miniconda/pkgs
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conda/environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
+
       - name: Set up conda environment
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -36,61 +55,185 @@ jobs:
           channels: conda-forge
           conda-remove-defaults: "true"
 
+      - name: Cache asimov conda env
+        uses: actions/cache@v4
+        with:
+          path: /usr/share/miniconda/envs/asimov
+          key: conda-env-asimov-${{ runner.os }}-py39-${{ hashFiles('conda/environment.yaml') }}
+          restore-keys: |
+            conda-env-asimov-${{ runner.os }}-
+
       - name: Install dependencies & asimov
         run: |
           conda install -y -n asimov --file conda/environment.yaml
           conda install -y -n asimov conda-build
           pip install .
+          # Temporarily use the asimov-gwdata branch
+          pip install git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor
 
       - name: Create asimov project
-        shell: sudo -E -u submituser bash -el {0}
         run: |
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          if [ ! -x "$CONDA_EXE" ]; then
+            echo "Conda not found at $CONDA_EXE" >&2
+            exit 1
+          fi
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
           mkdir -p test_project
-          chown -R submituser:submituser test_project
           cd test_project
-          
           git config --global init.defaultBranch master
           git config --global user.email "you@example.com"
           git config --global user.name "Your Name"
-          
-          conda run -n asimov asimov init "Test Project"
-          conda run -n asimov asimov configuration update condor/user submituser
-          conda run -n asimov asimov configuration update condor/cache_time 30
-          conda run -n asimov asimov configuration update condor/cron_minute '*/1'
-          conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
+          $ASIMOV_CMD asimov init "Test Project"
+          $ASIMOV_CMD asimov configuration update condor/user submituser
+          $ASIMOV_CMD asimov configuration update condor/cache_time 30
+          $ASIMOV_CMD asimov configuration update condor/cron_minute '*/1'
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
+          EOF
 
       - name: Test Event Add
-        shell: sudo -E -u submituser bash -el {0}
         run: |
-          cd test_project
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          [ -x "$CONDA_EXE" ] || { echo "Conda not found at $CONDA_EXE" >&2; exit 1; }
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/test_project"
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+          EOF
 
-          conda run -n asimov asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
-
-      - name: Test Bayeswave
-        shell: sudo -E -u submituser bash -el {0}
+      - name: Test GWData
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         run: |
-          cd test_project
-          
-          # Submit as submituser
-          conda run -n asimov asimov apply -f ../tests/test_blueprints/bayeswave_quick_test.yaml -e GW150914_095045
-          conda run -n asimov asimov manage build
-          conda run -n asimov asimov manage submit
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          [ -x "$CONDA_EXE" ] || { echo "Conda not found at $CONDA_EXE" >&2; exit 1; }
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/test_project"
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
+          $ASIMOV_CMD asimov manage build
+          $ASIMOV_CMD asimov manage submit
+          echo 'Waiting for H*.gwf and L*.gwf frame files to appear...'
+          TIMEOUT=600; ELAPSED=0; INTERVAL=30
+          while [ \$ELAPSED -lt \$TIMEOUT ]; do
+            condor_q || true
+            H_COUNT=0
+            L_COUNT=0
+            for f in working/GW150914_095045/get-data/frames/H*.gwf; do
+              [ -e "\$f" ] && H_COUNT=\$((H_COUNT + 1))
+            done
+            for f in working/GW150914_095045/get-data/frames/L*.gwf; do
+              [ -e "\$f" ] && L_COUNT=\$((L_COUNT + 1))
+            done
+            if [ \$H_COUNT -gt 0 ] && [ \$L_COUNT -gt 0 ]; then
+              echo 'Frame files found!'
+              ls -lh working/GW150914_095045/get-data/frames/
+              break
+            fi
+            echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - H*.gwf and/or L*.gwf not yet present, waiting..."
+            sleep \$INTERVAL
+            ELAPSED=\$((ELAPSED + INTERVAL))
+          done
+          if [ \$ELAPSED -ge \$TIMEOUT ]; then
+            echo 'Timeout waiting for H*.gwf and L*.gwf frame files'
+            ls -R working/GW150914_095045/ || true
+            exit 1
+          fi
+          $ASIMOV_CMD asimov monitor
+          EOF
 
+      - name: Test Bayeswave
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        run: |
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          [ -x "$CONDA_EXE" ] || { echo "Conda not found at $CONDA_EXE" >&2; exit 1; }
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/test_project"
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
+          $ASIMOV_CMD asimov manage build
+          $ASIMOV_CMD asimov manage submit
           sleep 60
-          condor_q 
 
-          sleep 300
-          ls working/GW150914_095045/bayeswave/* || true
-          conda run -n asimov asimov monitor
+          condor_q || true
+          echo 'Waiting for PSD files to appear...'
+          TIMEOUT=600; ELAPSED=0; INTERVAL=30
+          while [ \$ELAPSED -lt \$TIMEOUT ]; do
+            condor_q || true
+            H_COUNT=0
+            L_COUNT=0
+            for f in working/GW150914_095045/generate-psd/trigtime_*/post/clean/glitch_median_PSD_forLI_H1.dat; do
+              [ -e "\$f" ] && H_COUNT=\$((H_COUNT + 1))
+            done
+            for f in working/GW150914_095045/generate-psd/trigtime_*/post/clean/glitch_median_PSD_forLI_L1.dat; do
+              [ -e "\$f" ] && L_COUNT=\$((L_COUNT + 1))
+            done
+            if [ \$H_COUNT -gt 0 ] && [ \$L_COUNT -gt 0 ]; then
+              echo 'PSD files found!'
+              ls -lh working/GW150914_095045/generate-psd/trigtime_*/post/clean/
+              break
+            fi
+            echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - PSD files not yet present, waiting..."
+            sleep \$INTERVAL
+            ELAPSED=\$((ELAPSED + INTERVAL))
+          done
+          if [ \$ELAPSED -ge \$TIMEOUT ]; then
+            echo 'Timeout waiting for PSD files'
+            ls -R working/GW150914_095045/ || true
+            exit 1
+          fi
+          condor_rm 2
+          rm .asimov/_cache_jobs.yaml
+          $ASIMOV_CMD asimov monitor
+          EOF
 
-      # - name: Test Analysis get-data 
-      #   run: |
-      #     cd test_project
-      #     conda run -n asimov asimov apply -f ../tests/test_blueprints/gwosc_get_data.yaml -e GW150914_095045
-      #     conda run -n asimov asimov manage build
-      #     conda run -n asimov asimov manage submit 
-      #     sleep 300
-      #     ls working/GW150914_095045/get-data/*
-      #     asimov monitor
+      - name: Test Bilby
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        run: |
+          CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+          [ -x "$CONDA_EXE" ] || { echo "Conda not found at $CONDA_EXE" >&2; exit 1; }
+          ASIMOV_CMD="$CONDA_EXE run -n asimov"
+          su - submituser <<EOF
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/test_project"
+          $ASIMOV_CMD asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
+          $ASIMOV_CMD asimov manage build
+          $ASIMOV_CMD asimov manage submit
+          sleep 10
+          sleep 60
+
+          condor_q || true
+          echo 'Waiting for PSD files to appear...'
+          TIMEOUT=1200; ELAPSED=0; INTERVAL=30
+          while [ \$ELAPSED -lt \$TIMEOUT ]; do
+            condor_q || true
+            RESULT_COUNT=0
+            tail -n 20 working/GW150914_095045/bilby-IMRPhenomXPHM/log_*/*.err || true
+            for f in working/GW150914_095045/bilby-IMRPhenomXPHM/*merge*_result.hdf5; do
+              [ -e "\$f" ] && RESULT_COUNT=\$((RESULT_COUNT + 1))
+            done
+            if [ \$RESULT_COUNT -gt 0 ]; then
+              echo 'Result files found!'
+              ls -lh working/GW150914_095045/bilby-IMRPhenomXPHM/
+              break
+            fi
+            echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - Result files not yet present, waiting..."
+            sleep \$INTERVAL
+            ELAPSED=\$((ELAPSED + INTERVAL))
+          done
+          if [ \$ELAPSED -ge \$TIMEOUT ]; then
+            echo 'Timeout waiting for Result files'
+            ls -R working/GW150914_095045/ || true
+            exit 1
+          fi
+          $ASIMOV_CMD asimov monitor
+          EOF          
