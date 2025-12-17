@@ -122,6 +122,7 @@ jobs:
           echo 'Waiting for H1.gwf and L1.gwf frame files to appear...'
           TIMEOUT=600; ELAPSED=0; INTERVAL=30
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
+            ls working/GW150914_095045/get-data/ || true
             condor_q || true
             condor_q -hold || true
             if [ -f working/GW150914_095045/get-data/frames/H1.gwf ] && [ -f working/GW150914_095045/get-data/frames/L1.gwf ]; then
@@ -136,6 +137,7 @@ jobs:
           if [ \$ELAPSED -ge \$TIMEOUT ]; then
             echo 'Timeout waiting for H1.gwf and L1.gwf frame files'
             ls -R working/GW150914_095045/ || true
+            return 1
           fi
           $ASIMOV_CMD asimov monitor
           EOF
