@@ -103,7 +103,7 @@ jobs:
           su - submituser -c "
           set -euo pipefail
           cd '$GITHUB_WORKSPACE/test_project'
-          $ASIMOV_CMD asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
+          $ASIMOV_CMD asimov apply -f '$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml'
           "
 
       - name: Test GWData
