@@ -237,4 +237,4 @@ jobs:
             exit 1
           fi
           $ASIMOV_CMD asimov monitor
-          EOF          
+          EOF
