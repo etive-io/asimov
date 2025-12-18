@@ -217,8 +217,9 @@ jobs:
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
             condor_q || true
             RESULT_COUNT=0
-            tail -n 20 working/GW150914_095045/bilby-IMRPhenomXPHM/log_data_analysis/*.out || true
-            for f in working/GW150914_095045/bilby-IMRPhenomXPHM/result/*merge*_result.hdf5; do
+            tail -n 1 working/GW150914_095045/bilby-IMRPhenomXPHM/log_data_analysis/*.out || true
+            ls -lh working/GW150914_095045/bilby-IMRPhenomXPHM/result/ || true
+            for f in working/GW150914_095045/bilby-IMRPhenomXPHM/final_result/*.hdf5; do
               [ -e "\$f" ] && RESULT_COUNT=\$((RESULT_COUNT + 1))
             done
             if [ \$RESULT_COUNT -gt 0 ]; then
