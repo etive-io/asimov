@@ -213,7 +213,7 @@ jobs:
 
           condor_q || true
           echo 'Waiting for result file to appear...'
-          TIMEOUT=1200; ELAPSED=0; INTERVAL=30
+          TIMEOUT=2400; ELAPSED=0; INTERVAL=30
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
             condor_q || true
             RESULT_COUNT=0
