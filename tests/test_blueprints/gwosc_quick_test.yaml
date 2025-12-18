@@ -24,6 +24,7 @@ pipelines:
       accounting group: ligo.dev.o4.cbc.pe.bilby
       request cpus: 4
       request memory: 2.0
+    cosmology: Planck15_lal
   bayeswave:
     quality:
       state vector:
