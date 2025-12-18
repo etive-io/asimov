@@ -19,7 +19,7 @@ pipelines:
     sampler:
       sampler: dynesty
       parallel jobs: 1
-      sampler kwargs: "{nlive: 100, dlogz: 20, nact: 5}"
+      sampler kwargs: "{nlive: 50, dlogz: 1, naccept: 5, check_point_delta_t: 1800, 'print_method': 'interval-10', 'sample': 'acceptance-walk'}"
     scheduler:
       accounting group: ligo.dev.o4.cbc.pe.bilby
       request cpus: 4
