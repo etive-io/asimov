@@ -50,7 +50,7 @@ jobs:
         with:
           miniconda-version: "latest"
           auto-activate-base: false
-          python-version: "3.9"
+          python-version: "3.10"
           activate-environment: asimov
           channels: conda-forge
           conda-remove-defaults: "true"
@@ -59,7 +59,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /usr/share/miniconda/envs/asimov
-          key: conda-env-asimov-${{ runner.os }}-py39-${{ hashFiles('conda/environment.yaml') }}
+          key: conda-env-asimov-${{ runner.os }}-py310-${{ hashFiles('conda/environment.yaml') }}
           restore-keys: |
             conda-env-asimov-${{ runner.os }}-
 
@@ -68,6 +68,7 @@ jobs:
           conda install -y -n asimov --file conda/environment.yaml
           conda install -y -n asimov conda-build
           pip install .
+          pip install -U bilby bilby_pipe
           # Temporarily use the asimov-gwdata branch
           pip install git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor
 
@@ -209,16 +210,16 @@ jobs:
           $ASIMOV_CMD asimov manage build
           $ASIMOV_CMD asimov manage submit
           sleep 10
-          sleep 60
 
           condor_q || true
-          echo 'Waiting for PSD files to appear...'
-          TIMEOUT=1200; ELAPSED=0; INTERVAL=30
+          echo 'Waiting for result file to appear...'
+          TIMEOUT=2400; ELAPSED=0; INTERVAL=30
           while [ \$ELAPSED -lt \$TIMEOUT ]; do
             condor_q || true
             RESULT_COUNT=0
-            tail -n 20 working/GW150914_095045/bilby-IMRPhenomXPHM/log_*/*.err || true
-            for f in working/GW150914_095045/bilby-IMRPhenomXPHM/*merge*_result.hdf5; do
+            tail -n 1 working/GW150914_095045/bilby-IMRPhenomXPHM/log_data_analysis/*.out || true
+            ls -lh working/GW150914_095045/bilby-IMRPhenomXPHM/result/ || true
+            for f in working/GW150914_095045/bilby-IMRPhenomXPHM/final_result/*.hdf5; do
               [ -e "\$f" ] && RESULT_COUNT=\$((RESULT_COUNT + 1))
             done
             if [ \$RESULT_COUNT -gt 0 ]; then
@@ -236,4 +237,4 @@ jobs:
             exit 1
           fi
           $ASIMOV_CMD asimov monitor
-          EOF          
+          EOF

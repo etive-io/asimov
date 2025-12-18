@@ -455,84 +455,51 @@ def submit(event, update, dryrun):
                 production.status = "running"
             else:
                 pipe = production.pipeline
-                # check the priority status to see if we need to start 
-                # the analysis
-                to_analyse = True
-                if production.status not in {"ready"}:
-                    to_analyse = False
-                else:
-                    # verify priority method to be used 
-                    priority_method = check_priority_method(production)
-                    if priority_method == "vanilla":
-                        N_ok = 0
-                        for prod in production._needs:
-                            if interest_dict_single_analysis[production.event.name][prod]['done']:
-                                N_ok += 1
-                        if N_ok < len(production._needs):
-                            to_analyse = False
-                    elif priority_method == "is_interesting":
-                        if "minimum" in production.meat["needs settings"].keys():
-                            N_target = int(production.meta["needs settings"]["minimum"])
-                        else:
-                            # all pipelines should indicate the run as interesting
-                            N_target = len(production._needs)
-                        for prod in production._needs:
-                            if interest_dict_single_analysis[production.event.name][prod]['interest status']:
-                                N_ok += 1
-                        if N_ok < N_target:
-                            to_analyse = False
-                    else:
-                        raise ValueError(f"Priority method {priority_method} not recognized")
-                if to_analyse:
-                    try:
-                        pipe.build_dag(dryrun=dryrun)
-                    except PipelineException as e:
-                        logger.error(
-                            "failed to build a DAG file.",
-                        )
-                        logger.exception(e)
-                        click.echo(
-                            click.style("●", fg="red")
-                            + f" Unable to submit {production.name}"
-                        )
-                    except ValueError:
-                        logger.info("Unable to submit an unbuilt production")
-                        click.echo(
-                            click.style("●", fg="red")
-                            + f" Unable to submit {production.name} as it hasn't been built yet."
-                        )
-                        click.echo("Try running `asimov manage build` first.")
-                    try:
-                        pipe.submit_dag(dryrun=dryrun)
-                        if not dryrun:
-                            click.echo(
-                                click.style("●", fg="green")
-                                + f" Submitted {production.event.name}/{production.name}"
-                            )
-                            production.status = "running"
-
-                    except PipelineException as e:
-                        production.status = "stuck"
-                        click.echo(
-                            click.style("●", fg="red")
-                            + f" Unable to submit {production.name}"
-                        )
-                        logger.exception(e)
-                        ledger.update_event(event)
-                        logger.error(
-                            f"The pipeline failed to submit the DAG file to the cluster. {e}",
-                        )
-                    if not dryrun:
-                        # Refresh the job list
-                        job_list = condor.CondorJobList()
-                        job_list.refresh()
-                        # Update the ledger
-                        ledger.update_event(event)
-                else:
-                    click.echo(
-                        click.style("●", fg="yellow")
-                        + f"Production {production.name} not ready to submit"
+                
+                try:
+                    pipe.build_dag(dryrun=dryrun)
+                except PipelineException as e:
+                    logger.error(
+                        "failed to build a DAG file.",
                     )
+                    logger.exception(e)
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Unable to submit {production.name}"
+                    )
+                except ValueError:
+                    logger.info("Unable to submit an unbuilt production")
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Unable to submit {production.name} as it hasn't been built yet."
+                    )
+                    click.echo("Try running `asimov manage build` first.")
+                try:
+                    pipe.submit_dag(dryrun=dryrun)
+                    if not dryrun:
+                        click.echo(
+                            click.style("●", fg="green")
+                            + f" Submitted {production.event.name}/{production.name}"
+                        )
+                        production.status = "running"
+
+                except PipelineException as e:
+                    production.status = "stuck"
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Unable to submit {production.name}"
+                    )
+                    logger.exception(e)
+                    ledger.update_event(event)
+                    logger.error(
+                        f"The pipeline failed to submit the DAG file to the cluster. {e}",
+                    )
+                if not dryrun:
+                    # Refresh the job list
+                    job_list = condor.CondorJobList()
+                    job_list.refresh()
+                    # Update the ledger
+                    ledger.update_event(event)
 
 @click.option(
     "--event",
