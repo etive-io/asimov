@@ -41,17 +41,24 @@ runs:
           exit 1
         fi
         
-        # Prepare variables (COMMAND kept quoted to preserve internal spaces/quotes)
-        WORKDIR="$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
-        EXTRA_ENV="${{ inputs.extra-env }}"
-        SHELL_SETUP="${{ inputs.shell-setup }}"
-        COMMAND='${{ inputs.command }}'
-
-        # Run as submituser; eval preserves quoted arguments inside COMMAND
-        su - submituser -s /bin/bash -c "
+        # Create a temporary script to run as submituser
+        SCRIPT_FILE=$(mktemp)
+        trap "rm -f $SCRIPT_FILE" EXIT
+        
+        cat > "$SCRIPT_FILE" <<'SCRIPT_EOF'
         set -euo pipefail
-        cd \"$WORKDIR\"
-        $EXTRA_ENV
-        $SHELL_SETUP
-        eval \"$CONDA_BIN run -n asimov asimov $COMMAND\"
-        "
+        cd "$1"
+        $2
+        $3
+        $4 run -n asimov asimov $5
+        SCRIPT_EOF
+        
+        chmod +x "$SCRIPT_FILE"
+        
+        # Run the script as submituser with all parameters
+        su - submituser "$SCRIPT_FILE" \
+          "$GITHUB_WORKSPACE/${{ inputs.working-directory }}" \
+          "${{ inputs.extra-env }}" \
+          "${{ inputs.shell-setup }}" \
+          "$CONDA_BIN" \
+          "${{ inputs.command }}"
