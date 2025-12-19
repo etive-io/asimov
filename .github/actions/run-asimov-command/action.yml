@@ -33,25 +33,37 @@ runs:
           CONDA_BIN="/opt/miniconda3/bin/conda"
         else
           # Try to find conda in PATH
-          CONDA_BIN=$(which conda)
+          CONDA_BIN=$(which conda 2>/dev/null || echo "/usr/share/miniconda/bin/conda")
         fi
         
         if [ ! -x "$CONDA_BIN" ]; then
-          echo "Conda not found" >&2
+          echo "Conda not found at: $CONDA_BIN" >&2
           exit 1
         fi
         
         echo "Using conda at: $CONDA_BIN"
         
-        # Create a script in workspace for submituser to run
-        # Use printf to avoid variable expansion issues
-        SCRIPT_PATH="$GITHUB_WORKSPACE/.asimov_run.sh"
-        printf '#!/bin/bash\nset -euo pipefail\n' > "$SCRIPT_PATH"
-        printf 'cd "%s"\n' "${{ inputs.working-directory }}" >> "$SCRIPT_PATH"
-        printf '%s\n' "${{ inputs.extra-env }}" >> "$SCRIPT_PATH"
-        printf '%s\n' "${{ inputs.shell-setup }}" >> "$SCRIPT_PATH"
-        printf '"%s" run -n asimov asimov %s\n' "$CONDA_BIN" "${{ inputs.command }}" >> "$SCRIPT_PATH"
-        chmod +x "$SCRIPT_PATH"
+        # Export for use in su
+        export CONDA_BIN
+        export GITHUB_WORKSPACE
+        
+        # Build the command to run
+        WORKDIR="${{ inputs.working-directory }}"
+        EXTRA_ENV=$(cat <<'ENV_EOF'
+        ${{ inputs.extra-env }}
+        ENV_EOF
+        )
+        SHELL_SETUP=$(cat <<'SETUP_EOF'
+        ${{ inputs.shell-setup }}
+        SETUP_EOF
+        )
+        COMMAND=$(cat <<'CMD_EOF'
+        ${{ inputs.command }}
+        CMD_EOF
+        )
+        
+        # Export for submituser
+        export WORKDIR EXTRA_ENV SHELL_SETUP COMMAND
         
         # Run as submituser
-        su - submituser -c "cd '$GITHUB_WORKSPACE' && bash .asimov_run.sh"
+        su - submituser -c 'cd "$GITHUB_WORKSPACE/$WORKDIR" && eval "$EXTRA_ENV" && eval "$SHELL_SETUP" && $CONDA_BIN run -n asimov asimov '"$COMMAND"
