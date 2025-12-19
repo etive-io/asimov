@@ -44,8 +44,8 @@ runs:
       if: steps.cache-env.outputs.cache-hit != 'true'
       shell: bash -el {0}
       run: |
-        mamba install -y -n asimov --file conda/environment.yaml
-        mamba install -y -n asimov conda-build
+        conda install -y -n asimov --file conda/environment.yaml
+        conda install -y -n asimov conda-build
         pip install .
         if [ -n "${{ inputs.extra-packages }}" ]; then
           pip install ${{ inputs.extra-packages }}
