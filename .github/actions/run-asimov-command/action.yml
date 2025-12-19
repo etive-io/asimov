@@ -43,7 +43,7 @@ runs:
         
         # Create a script in workspace for submituser to run
         SCRIPT_PATH="$GITHUB_WORKSPACE/.asimov_run.sh"
-        cat > "$SCRIPT_PATH" <<'SCRIPT_EOF'
+        cat > "$SCRIPT_PATH" <<SCRIPT_EOF
         #!/bin/bash
         set -euo pipefail
         cd "${{ inputs.working-directory }}"
@@ -53,5 +53,5 @@ runs:
         SCRIPT_EOF
         chmod +x "$SCRIPT_PATH"
         
-        # Run as submituser
+        # Run as submituser with CONDA_BIN set
         su - submituser -c "cd '$GITHUB_WORKSPACE' && CONDA_BIN='$CONDA_BIN' bash .asimov_run.sh"
