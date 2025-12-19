@@ -23,19 +23,25 @@ runs:
       shell: bash
       run: |
         # Find conda executable - prefer CONDA_EXE, then default location
+        echo "CONDA_EXE=${CONDA_EXE:-not set}"
+        echo "Checking for conda..."
+        
         if [ -n "${CONDA_EXE:-}" ] && [ -x "$CONDA_EXE" ]; then
           CONDA_BIN="$CONDA_EXE"
         elif [ -x "/usr/share/miniconda/bin/conda" ]; then
           CONDA_BIN="/usr/share/miniconda/bin/conda"
         elif [ -x "/opt/miniconda3/bin/conda" ]; then
           CONDA_BIN="/opt/miniconda3/bin/conda"
+        elif [ -x "/root/miniconda3/bin/conda" ]; then
+          CONDA_BIN="/root/miniconda3/bin/conda"
+        elif command -v conda &> /dev/null; then
+          CONDA_BIN=$(command -v conda)
         else
-          # Last resort: try to find in PATH
-          CONDA_BIN=$(which conda 2>/dev/null || echo "")
-          if [ -z "$CONDA_BIN" ]; then
-            echo "Conda not found" >&2
-            exit 1
-          fi
+          echo "ERROR: Conda not found in any standard location" >&2
+          echo "Searched: CONDA_EXE, /usr/share/miniconda, /opt/miniconda3, /root/miniconda3, PATH" >&2
+          ls -la /usr/share/ 2>/dev/null | grep -i conda || true
+          ls -la /opt/ 2>/dev/null | grep -i conda || true
+          exit 1
         fi
         
         echo "Using conda at: $CONDA_BIN"
