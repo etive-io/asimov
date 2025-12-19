@@ -10,20 +10,25 @@ __packagename__ = __name__
 import os
 import logging
 
-from pkg_resources import DistributionNotFound, get_distribution, resource_string
+try:
+    from importlib.metadata import version, PackageNotFoundError
+    from importlib.resources import files
+except ImportError:
+    from importlib_metadata import version, PackageNotFoundError
+    from importlib_resources import files
 
 try:
-    __version__ = get_distribution(__name__).version
-except DistributionNotFound:
+    __version__ = version(__name__)
+except PackageNotFoundError:
     # package is not installed
     __version__ = "dev"
-    pass
 
 try:
     import ConfigParser as configparser
 except ImportError:
     import configparser
-default_config = resource_string(__name__, "{}.conf".format(__packagename__))
+
+default_config = files(__name__).joinpath(f"{__packagename__}.conf").read_bytes()
 
 config = configparser.ConfigParser()
 # if not config_file:

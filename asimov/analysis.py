@@ -314,9 +314,12 @@ class Analysis:
             if hasattr(pipeline, "config_template"):
                 template_file = pipeline.config_template
             else:
-                from pkg_resources import resource_filename
+                try:
+                    from importlib.resources import files
+                except ImportError:
+                    from importlib_resources import files
 
-                template_file = resource_filename("asimov", f"configs/{template}")
+                template_file = str(files("asimov").joinpath(f"configs/{template}"))
 
         liq = Liquid(template_file)
         rendered = liq.render(production=self, analysis=self, config=config)
