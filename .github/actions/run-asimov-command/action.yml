@@ -22,17 +22,32 @@ runs:
     - name: Run asimov command
       shell: bash
       run: |
-        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
-        if [ ! -x "$CONDA_EXE" ]; then
-          echo "Conda not found at $CONDA_EXE" >&2
+        # Find conda executable - look in common locations
+        if [ -n "${CONDA_EXE:-}" ] && [ -x "$CONDA_EXE" ]; then
+          CONDA_BIN="$CONDA_EXE"
+        elif [ -n "${CONDA:-}" ] && [ -x "${CONDA}/bin/conda" ]; then
+          CONDA_BIN="${CONDA}/bin/conda"
+        elif [ -x "/usr/share/miniconda/bin/conda" ]; then
+          CONDA_BIN="/usr/share/miniconda/bin/conda"
+        elif [ -x "/opt/miniconda3/bin/conda" ]; then
+          CONDA_BIN="/opt/miniconda3/bin/conda"
+        else
+          # Try to find conda in PATH
+          CONDA_BIN=$(which conda)
+        fi
+        
+        if [ ! -x "$CONDA_BIN" ]; then
+          echo "Conda not found" >&2
           exit 1
         fi
-        ASIMOV_CMD="$CONDA_EXE run -n asimov"
         
-        su - submituser <<EOF
+        # Export conda path so it's available in the su shell
+        export CONDA_BIN
+        
+        su - submituser <<'EOF'
         set -euo pipefail
         cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
         ${{ inputs.extra-env }}
-        ${{ inputs.shell-setup }}
-        $ASIMOV_CMD asimov ${{ inputs.command }}
+        {{ inputs.shell-setup }}
+        $CONDA_BIN run -n asimov asimov ${{ inputs.command }}
         EOF
