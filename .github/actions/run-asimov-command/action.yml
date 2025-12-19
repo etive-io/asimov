@@ -46,11 +46,11 @@ runs:
         EXTRA_ENV="${{ inputs.extra-env }}"
         COMMAND="${{ inputs.command }}"
         
-        su - submituser <<'EOSU'
+        su - submituser <<EOSU
         set -euo pipefail
-        cd "'"$WORKDIR"'"
+        cd "$WORKDIR"
         $EXTRA_ENV
         ${{ inputs.shell-setup }}
-        # Run through bash -lc so quoted args in COMMAND are respected
-        bash -lc "$CONDA_BIN run -n asimov asimov $COMMAND"
+        # Use eval so quotes inside COMMAND are preserved (e.g., init "Test Project")
+        eval "$CONDA_BIN run -n asimov asimov $COMMAND"
         EOSU
