@@ -59,7 +59,8 @@ runs:
         # Set additional environment variables if provided
         EXTRA_ENV='${{ inputs.extra-env }}'
         if [ -n "$EXTRA_ENV" ]; then
-          # Split on whitespace and process each KEY=VALUE pair
+          # Process each KEY=VALUE pair (space or newline separated)
+          # Note: values cannot contain spaces when using space-separated format
           while IFS= read -r line; do
             [ -z "$line" ] && continue
             # Validate format: KEY=VALUE
