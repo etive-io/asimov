@@ -41,17 +41,17 @@ runs:
           exit 1
         fi
         
+        echo "Using conda at: $CONDA_BIN"
+        
         # Create a script in workspace for submituser to run
+        # Use printf to avoid variable expansion issues
         SCRIPT_PATH="$GITHUB_WORKSPACE/.asimov_run.sh"
-        cat > "$SCRIPT_PATH" <<SCRIPT_EOF
-        #!/bin/bash
-        set -euo pipefail
-        cd "${{ inputs.working-directory }}"
-        ${{ inputs.extra-env }}
-        ${{ inputs.shell-setup }}
-        $CONDA_BIN run -n asimov asimov ${{ inputs.command }}
-        SCRIPT_EOF
+        printf '#!/bin/bash\nset -euo pipefail\n' > "$SCRIPT_PATH"
+        printf 'cd "%s"\n' "${{ inputs.working-directory }}" >> "$SCRIPT_PATH"
+        printf '%s\n' "${{ inputs.extra-env }}" >> "$SCRIPT_PATH"
+        printf '%s\n' "${{ inputs.shell-setup }}" >> "$SCRIPT_PATH"
+        printf '"%s" run -n asimov asimov %s\n' "$CONDA_BIN" "${{ inputs.command }}" >> "$SCRIPT_PATH"
         chmod +x "$SCRIPT_PATH"
         
-        # Run as submituser with CONDA_BIN set
-        su - submituser -c "cd '$GITHUB_WORKSPACE' && CONDA_BIN='$CONDA_BIN' bash .asimov_run.sh"
+        # Run as submituser
+        su - submituser -c "cd '$GITHUB_WORKSPACE' && bash .asimov_run.sh"
