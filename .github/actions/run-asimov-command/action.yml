@@ -41,13 +41,17 @@ runs:
           exit 1
         fi
         
-        # Export variables so they're available in the su shell
-        export GITHUB_WORKSPACE CONDA_BIN
-        
-        su - submituser bash << 'BASH_SCRIPT'
+        # Create a script in workspace for submituser to run
+        SCRIPT_PATH="$GITHUB_WORKSPACE/.asimov_run.sh"
+        cat > "$SCRIPT_PATH" <<'SCRIPT_EOF'
+        #!/bin/bash
         set -euo pipefail
-        cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
+        cd "${{ inputs.working-directory }}"
         ${{ inputs.extra-env }}
         ${{ inputs.shell-setup }}
         $CONDA_BIN run -n asimov asimov ${{ inputs.command }}
-        BASH_SCRIPT
+        SCRIPT_EOF
+        chmod +x "$SCRIPT_PATH"
+        
+        # Run as submituser
+        su - submituser -c "cd '$GITHUB_WORKSPACE' && CONDA_BIN='$CONDA_BIN' bash .asimov_run.sh"
