@@ -22,48 +22,37 @@ runs:
     - name: Run asimov command
       shell: bash
       run: |
-        # Find conda executable - look in common locations
+        # Find conda executable - prefer CONDA_EXE, then default location
         if [ -n "${CONDA_EXE:-}" ] && [ -x "$CONDA_EXE" ]; then
           CONDA_BIN="$CONDA_EXE"
-        elif [ -n "${CONDA:-}" ] && [ -x "${CONDA}/bin/conda" ]; then
-          CONDA_BIN="${CONDA}/bin/conda"
         elif [ -x "/usr/share/miniconda/bin/conda" ]; then
           CONDA_BIN="/usr/share/miniconda/bin/conda"
         elif [ -x "/opt/miniconda3/bin/conda" ]; then
           CONDA_BIN="/opt/miniconda3/bin/conda"
         else
-          # Try to find conda in PATH
-          CONDA_BIN=$(which conda 2>/dev/null || echo "/usr/share/miniconda/bin/conda")
-        fi
-        
-        if [ ! -x "$CONDA_BIN" ]; then
-          echo "Conda not found at: $CONDA_BIN" >&2
-          exit 1
+          # Last resort: try to find in PATH
+          CONDA_BIN=$(which conda 2>/dev/null || echo "")
+          if [ -z "$CONDA_BIN" ]; then
+            echo "Conda not found" >&2
+            exit 1
+          fi
         fi
         
         echo "Using conda at: $CONDA_BIN"
         
-        # Export for use in su
-        export CONDA_BIN
-        export GITHUB_WORKSPACE
-        
         # Build the command to run
         WORKDIR="${{ inputs.working-directory }}"
-        EXTRA_ENV=$(cat <<'ENV_EOF'
-        ${{ inputs.extra-env }}
-        ENV_EOF
-        )
-        SHELL_SETUP=$(cat <<'SETUP_EOF'
-        ${{ inputs.shell-setup }}
-        SETUP_EOF
-        )
-        COMMAND=$(cat <<'CMD_EOF'
-        ${{ inputs.command }}
-        CMD_EOF
-        )
+        EXTRA_ENV='${{ inputs.extra-env }}'
+        SHELL_SETUP='${{ inputs.shell-setup }}'
+        COMMAND='${{ inputs.command }}'
         
-        # Export for submituser
-        export WORKDIR EXTRA_ENV SHELL_SETUP COMMAND
-        
-        # Run as submituser
-        su - submituser -c 'cd "$GITHUB_WORKSPACE/$WORKDIR" && eval "$EXTRA_ENV" && eval "$SHELL_SETUP" && $CONDA_BIN run -n asimov asimov '"$COMMAND"
+        # Run as submituser WITHOUT login shell (no -) so env vars are preserved
+        # Pass variables explicitly in the command
+        su submituser bash -c "
+        export CONDA_BIN='$CONDA_BIN'
+        export GITHUB_WORKSPACE='$GITHUB_WORKSPACE'
+        cd \"\$GITHUB_WORKSPACE/$WORKDIR\"
+        ${EXTRA_ENV:+eval \"\$EXTRA_ENV\"}
+        ${SHELL_SETUP:+eval \"\$SHELL_SETUP\"}
+        eval \"\$CONDA_BIN run -n asimov asimov $COMMAND\"
+        "
