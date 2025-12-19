@@ -41,16 +41,13 @@ runs:
           exit 1
         fi
         
-        # Pass script via stdin to avoid permission issues
-        su - submituser bash -s <<'BASH_SCRIPT'
+        # Export variables so they're available in the su shell
+        export GITHUB_WORKSPACE CONDA_BIN
+        
+        su - submituser bash << 'BASH_SCRIPT'
         set -euo pipefail
-        cd "$1"
-        if [ -n "$2" ]; then eval "$2"; fi
-        if [ -n "$3" ]; then eval "$3"; fi
-        eval "$4 run -n asimov asimov $5"
-        BASH_SCRIPT \
-          "$GITHUB_WORKSPACE/${{ inputs.working-directory }}" \
-          "${{ inputs.extra-env }}" \
-          "${{ inputs.shell-setup }}" \
-          "$CONDA_BIN" \
-          "${{ inputs.command }}"
+        cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
+        ${{ inputs.extra-env }}
+        ${{ inputs.shell-setup }}
+        $CONDA_BIN run -n asimov asimov ${{ inputs.command }}
+        BASH_SCRIPT
