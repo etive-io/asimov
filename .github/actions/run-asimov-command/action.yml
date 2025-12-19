@@ -1,0 +1,38 @@
+name: 'Run Asimov Command'
+description: 'Execute asimov command as submituser'
+inputs:
+  command:
+    description: 'Asimov command to run (without asimov prefix)'
+    required: true
+  working-directory:
+    description: 'Working directory relative to GITHUB_WORKSPACE'
+    default: 'test_project'
+    required: false
+  extra-env:
+    description: 'Additional environment variables (e.g., "VAR1=value1 VAR2=value2")'
+    default: ''
+    required: false
+  shell-setup:
+    description: 'Additional shell setup commands to run before asimov command'
+    default: ''
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Run asimov command
+      shell: bash
+      run: |
+        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+        if [ ! -x "$CONDA_EXE" ]; then
+          echo "Conda not found at $CONDA_EXE" >&2
+          exit 1
+        fi
+        ASIMOV_CMD="$CONDA_EXE run -n asimov"
+        
+        su - submituser <<EOF
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
+        ${{ inputs.extra-env }}
+        ${{ inputs.shell-setup }}
+        $ASIMOV_CMD asimov ${{ inputs.command }}
+        EOF

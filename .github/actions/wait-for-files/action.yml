@@ -1,0 +1,92 @@
+name: 'Wait for Files'
+description: 'Wait for specific files to appear with timeout'
+inputs:
+  patterns:
+    description: 'File patterns to wait for (one per line or space-separated)'
+    required: true
+  directory:
+    description: 'Directory to search in (relative to working directory)'
+    required: true
+  timeout:
+    description: 'Timeout in seconds'
+    default: '600'
+    required: false
+  interval:
+    description: 'Check interval in seconds'
+    default: '30'
+    required: false
+  working-directory:
+    description: 'Working directory relative to GITHUB_WORKSPACE'
+    default: 'test_project'
+    required: false
+  require-all:
+    description: 'Require all patterns to match (true) or just one (false)'
+    default: 'true'
+    required: false
+  show-condor-q:
+    description: 'Show condor_q output during wait'
+    default: 'true'
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Wait for files
+      shell: bash
+      run: |
+        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+        ASIMOV_CMD="$CONDA_EXE run -n asimov"
+        
+        su - submituser <<'EOF'
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
+        
+        echo "Waiting for files matching patterns: ${{ inputs.patterns }}"
+        TIMEOUT=${{ inputs.timeout }}
+        ELAPSED=0
+        INTERVAL=${{ inputs.interval }}
+        REQUIRE_ALL="${{ inputs.require-all }}"
+        
+        while [ $ELAPSED -lt $TIMEOUT ]; do
+          if [ "${{ inputs.show-condor-q }}" = "true" ]; then
+            condor_q || true
+          fi
+          
+          # Count matches for each pattern
+          FOUND_COUNT=0
+          PATTERN_COUNT=0
+          
+          for pattern in ${{ inputs.patterns }}; do
+            PATTERN_COUNT=$((PATTERN_COUNT + 1))
+            COUNT=0
+            for f in ${{ inputs.directory }}/$pattern; do
+              [ -e "$f" ] && COUNT=$((COUNT + 1))
+            done
+            if [ $COUNT -gt 0 ]; then
+              FOUND_COUNT=$((FOUND_COUNT + 1))
+            fi
+          done
+          
+          # Check if we found enough files
+          if [ "$REQUIRE_ALL" = "true" ]; then
+            if [ $FOUND_COUNT -eq $PATTERN_COUNT ]; then
+              echo "All file patterns found!"
+              ls -lh ${{ inputs.directory }}/ || true
+              exit 0
+            fi
+          else
+            if [ $FOUND_COUNT -gt 0 ]; then
+              echo "Files found!"
+              ls -lh ${{ inputs.directory }}/ || true
+              exit 0
+            fi
+          fi
+          
+          echo "Elapsed: ${ELAPSED}s / ${TIMEOUT}s - Files not yet present ($FOUND_COUNT/$PATTERN_COUNT patterns matched), waiting..."
+          sleep $INTERVAL
+          ELAPSED=$((ELAPSED + INTERVAL))
+        done
+        
+        echo "Timeout waiting for files"
+        ls -R ${{ inputs.directory }}/ || true
+        exit 1
+        EOF
