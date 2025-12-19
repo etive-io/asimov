@@ -13,6 +13,10 @@ jobs:
         shell: bash -el {0}
     steps:
 
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - uses: ./.github/actions/setup-htcondor
 
       - name: Install base tools
@@ -20,10 +24,6 @@ jobs:
           yum install -y sudo git
 
       - uses: ./.github/actions/create-submit-user
-
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - uses: ./.github/actions/setup-asimov-env
         with:
