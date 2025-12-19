@@ -79,7 +79,8 @@ runs:
         fi
         
         # Execute the asimov command
-        # The command input is trusted as it comes from the workflow file
+        # The command input is trusted as it comes from the workflow file (repository code)
+        # and may contain multi-line commands and shell features (pipes, redirects, etc.)
         COMMAND='${{ inputs.command }}'
         $CONDA_BIN run -n asimov bash -c "asimov $COMMAND"
         SCRIPT_END
