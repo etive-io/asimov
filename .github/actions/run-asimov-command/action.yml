@@ -78,9 +78,19 @@ runs:
           eval "$SHELL_SETUP"
         fi
         
-        # Execute the asimov command
+        # Execute the asimov command(s)
         # The command input is trusted as it comes from the workflow file (repository code)
         # and may contain multi-line commands and shell features (pipes, redirects, etc.)
         COMMAND='${{ inputs.command }}'
-        $CONDA_BIN run -n asimov bash -c "asimov $COMMAND"
+        
+        # Handle multiline commands by prefixing each non-empty line with "asimov"
+        line_count=$(echo "$COMMAND" | wc -l)
+        if [ "$line_count" -gt 1 ]; then
+          # Multiline: prefix each non-empty line with "asimov"
+          PREFIXED_COMMAND=$(echo "$COMMAND" | sed '/^[[:space:]]*$/d' | sed 's/^/asimov /')
+          $CONDA_BIN run -n asimov bash -c "$PREFIXED_COMMAND"
+        else
+          # Single line: just prefix with "asimov"
+          $CONDA_BIN run -n asimov bash -c "asimov $COMMAND"
+        fi
         SCRIPT_END
