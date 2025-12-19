@@ -41,15 +41,15 @@ runs:
           exit 1
         fi
         
-        # Expand variables in the outer shell before passing to su
+        # Store variables for use in heredoc
         WORKDIR="$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
         EXTRA_ENV="${{ inputs.extra-env }}"
-        SHELL_SETUP="${{ inputs.shell-setup }}"
+        COMMAND="${{ inputs.command }}"
         
-        su - submituser <<EOF
+        su - submituser <<'EOSU'
         set -euo pipefail
-        cd "$WORKDIR"
+        cd "'"$WORKDIR"'"
         $EXTRA_ENV
-        $SHELL_SETUP
-        $CONDA_BIN run -n asimov asimov ${{ inputs.command }}
-        EOF
+        ${{ inputs.shell-setup }}
+        $CONDA_BIN run -n asimov asimov $COMMAND
+        EOSU
