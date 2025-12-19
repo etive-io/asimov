@@ -29,21 +29,30 @@ runs:
         activate-environment: asimov
         channels: conda-forge
         conda-remove-defaults: "true"
+        use-mamba: true
 
     - name: Cache asimov conda env
+      id: cache-env
       uses: actions/cache@v4
       with:
         path: /usr/share/miniconda/envs/asimov
-        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/environment.yaml') }}
+        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/environment.yaml', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v2
         restore-keys: |
-          conda-env-asimov-${{ runner.os }}-
+          conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-
 
     - name: Install dependencies & asimov
+      if: steps.cache-env.outputs.cache-hit != 'true'
       shell: bash -el {0}
       run: |
-        conda install -y -n asimov --file conda/environment.yaml
-        conda install -y -n asimov conda-build
+        mamba install -y -n asimov --file conda/environment.yaml
+        mamba install -y -n asimov conda-build
         pip install .
         if [ -n "${{ inputs.extra-packages }}" ]; then
           pip install ${{ inputs.extra-packages }}
         fi
+
+    - name: Install extra packages (cache hit)
+      if: steps.cache-env.outputs.cache-hit == 'true' && inputs.extra-packages != ''
+      shell: bash -el {0}
+      run: |
+        pip install ${{ inputs.extra-packages }}

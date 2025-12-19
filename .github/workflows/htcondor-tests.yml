@@ -34,7 +34,7 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           command: init "Test Project"
-          working-directory: test_project
+          working-directory: .
           shell-setup: |
             mkdir -p test_project
             cd test_project
