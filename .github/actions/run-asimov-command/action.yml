@@ -51,31 +51,31 @@ runs:
         
         # Run as submituser WITHOUT login shell (no -) so env vars are preserved
         # Pass variables explicitly in the command
-        su submituser bash <<'SCRIPT_END'
+        su submituser bash <<SCRIPT_END
         export CONDA_BIN='$CONDA_BIN'
         export GITHUB_WORKSPACE='$GITHUB_WORKSPACE'
-        cd "$GITHUB_WORKSPACE/$WORKDIR"
+        cd "\$GITHUB_WORKSPACE/$WORKDIR"
         
         # Set additional environment variables if provided
         EXTRA_ENV='${{ inputs.extra-env }}'
-        if [ -n "$EXTRA_ENV" ]; then
+        if [ -n "\$EXTRA_ENV" ]; then
           # Process each KEY=VALUE pair (space or newline separated)
           # Note: values cannot contain spaces when using space-separated format
           while IFS= read -r line; do
-            [ -z "$line" ] && continue
+            [ -z "\$line" ] && continue
             # Validate format: KEY=VALUE
-            if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
-              export "$line"
+            if [[ "\$line" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
+              export "\$line"
             else
-              echo "Warning: Skipping invalid environment variable format: $line" >&2
+              echo "Warning: Skipping invalid environment variable format: \$line" >&2
             fi
-          done < <(echo "$EXTRA_ENV" | tr ' ' '\n')
+          done < <(echo "\$EXTRA_ENV" | tr ' ' '\n')
         fi
         
         # Run shell setup commands if provided
         SHELL_SETUP='${{ inputs.shell-setup }}'
-        if [ -n "$SHELL_SETUP" ]; then
-          eval "$SHELL_SETUP"
+        if [ -n "\$SHELL_SETUP" ]; then
+          eval "\$SHELL_SETUP"
         fi
         
         # Execute the asimov command(s)
@@ -84,13 +84,13 @@ runs:
         COMMAND='${{ inputs.command }}'
         
         # Handle multiline commands by prefixing each non-empty line with "asimov"
-        line_count=$(echo "$COMMAND" | wc -l)
-        if [ "$line_count" -gt 1 ]; then
+        line_count=\$(echo "\$COMMAND" | wc -l)
+        if [ "\$line_count" -gt 1 ]; then
           # Multiline: prefix each non-empty line with "asimov"
-          PREFIXED_COMMAND=$(echo "$COMMAND" | sed '/^[[:space:]]*$/d' | sed 's/^/asimov /')
-          $CONDA_BIN run -n asimov bash -c "set -e; $PREFIXED_COMMAND"
+          PREFIXED_COMMAND=\$(echo "\$COMMAND" | sed '/^[[:space:]]*$/d' | sed 's/^/asimov /')
+          \$CONDA_BIN run -n asimov bash -c "set -e; \$PREFIXED_COMMAND"
         else
           # Single line: just prefix with "asimov"
-          $CONDA_BIN run -n asimov bash -c "asimov $COMMAND"
+          \$CONDA_BIN run -n asimov bash -c "asimov \$COMMAND"
         fi
         SCRIPT_END
