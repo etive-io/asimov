@@ -51,5 +51,6 @@ runs:
         cd "'"$WORKDIR"'"
         $EXTRA_ENV
         ${{ inputs.shell-setup }}
-        $CONDA_BIN run -n asimov asimov $COMMAND
+        # Run through bash -lc so quoted args in COMMAND are respected
+        bash -lc "$CONDA_BIN run -n asimov asimov $COMMAND"
         EOSU
