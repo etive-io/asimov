@@ -33,10 +33,7 @@ runs:
     - name: Wait for files
       shell: bash
       run: |
-        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
-        ASIMOV_CMD="$CONDA_EXE run -n asimov"
-        
-        su - submituser <<'EOF'
+        su - submituser <<EOF
         set -euo pipefail
         cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
         
@@ -46,7 +43,7 @@ runs:
         INTERVAL=${{ inputs.interval }}
         REQUIRE_ALL="${{ inputs.require-all }}"
         
-        while [ $ELAPSED -lt $TIMEOUT ]; do
+        while [ \$ELAPSED -lt \$TIMEOUT ]; do
           if [ "${{ inputs.show-condor-q }}" = "true" ]; then
             condor_q || true
           fi
@@ -56,34 +53,34 @@ runs:
           PATTERN_COUNT=0
           
           for pattern in ${{ inputs.patterns }}; do
-            PATTERN_COUNT=$((PATTERN_COUNT + 1))
+            PATTERN_COUNT=\$((PATTERN_COUNT + 1))
             COUNT=0
-            for f in ${{ inputs.directory }}/$pattern; do
-              [ -e "$f" ] && COUNT=$((COUNT + 1))
+            for f in ${{ inputs.directory }}/\$pattern; do
+              [ -e "\$f" ] && COUNT=\$((COUNT + 1))
             done
-            if [ $COUNT -gt 0 ]; then
-              FOUND_COUNT=$((FOUND_COUNT + 1))
+            if [ \$COUNT -gt 0 ]; then
+              FOUND_COUNT=\$((FOUND_COUNT + 1))
             fi
           done
           
           # Check if we found enough files
-          if [ "$REQUIRE_ALL" = "true" ]; then
-            if [ $FOUND_COUNT -eq $PATTERN_COUNT ]; then
+          if [ "\$REQUIRE_ALL" = "true" ]; then
+            if [ \$FOUND_COUNT -eq \$PATTERN_COUNT ]; then
               echo "All file patterns found!"
               ls -lh ${{ inputs.directory }}/ || true
               exit 0
             fi
           else
-            if [ $FOUND_COUNT -gt 0 ]; then
+            if [ \$FOUND_COUNT -gt 0 ]; then
               echo "Files found!"
               ls -lh ${{ inputs.directory }}/ || true
               exit 0
             fi
           fi
           
-          echo "Elapsed: ${ELAPSED}s / ${TIMEOUT}s - Files not yet present ($FOUND_COUNT/$PATTERN_COUNT patterns matched), waiting..."
-          sleep $INTERVAL
-          ELAPSED=$((ELAPSED + INTERVAL))
+          echo "Elapsed: \${ELAPSED}s / \${TIMEOUT}s - Files not yet present (\$FOUND_COUNT/\$PATTERN_COUNT patterns matched), waiting..."
+          sleep \$INTERVAL
+          ELAPSED=\$((ELAPSED + INTERVAL))
         done
         
         echo "Timeout waiting for files"

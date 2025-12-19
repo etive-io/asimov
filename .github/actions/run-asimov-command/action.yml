@@ -2,7 +2,7 @@ name: 'Run Asimov Command'
 description: 'Execute asimov command as submituser'
 inputs:
   command:
-    description: 'Asimov command to run (without asimov prefix)'
+    description: 'Arguments to the Asimov CLI (do NOT include the leading "asimov"; it is added automatically)'
     required: true
   working-directory:
     description: 'Working directory relative to GITHUB_WORKSPACE'
@@ -48,17 +48,37 @@ runs:
         
         # Build the command to run
         WORKDIR="${{ inputs.working-directory }}"
-        EXTRA_ENV='${{ inputs.extra-env }}'
-        SHELL_SETUP='${{ inputs.shell-setup }}'
-        COMMAND='${{ inputs.command }}'
         
         # Run as submituser WITHOUT login shell (no -) so env vars are preserved
         # Pass variables explicitly in the command
-        su submituser bash -c "
+        su submituser bash <<'SCRIPT_END'
         export CONDA_BIN='$CONDA_BIN'
         export GITHUB_WORKSPACE='$GITHUB_WORKSPACE'
-        cd \"\$GITHUB_WORKSPACE/$WORKDIR\"
-        ${EXTRA_ENV:+eval \"\$EXTRA_ENV\"}
-        ${SHELL_SETUP:+eval \"\$SHELL_SETUP\"}
-        eval \"\$CONDA_BIN run -n asimov asimov $COMMAND\"
-        "
+        cd "$GITHUB_WORKSPACE/$WORKDIR"
+        
+        # Set additional environment variables if provided
+        EXTRA_ENV='${{ inputs.extra-env }}'
+        if [ -n "$EXTRA_ENV" ]; then
+          # Split on whitespace and process each KEY=VALUE pair
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            # Validate format: KEY=VALUE
+            if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
+              export "$line"
+            else
+              echo "Warning: Skipping invalid environment variable format: $line" >&2
+            fi
+          done < <(echo "$EXTRA_ENV" | tr ' ' '\n')
+        fi
+        
+        # Run shell setup commands if provided
+        SHELL_SETUP='${{ inputs.shell-setup }}'
+        if [ -n "$SHELL_SETUP" ]; then
+          eval "$SHELL_SETUP"
+        fi
+        
+        # Execute the asimov command
+        # The command input is trusted as it comes from the workflow file
+        COMMAND='${{ inputs.command }}'
+        $CONDA_BIN run -n asimov bash -c "asimov $COMMAND"
+        SCRIPT_END

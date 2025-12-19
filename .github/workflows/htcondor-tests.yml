@@ -47,9 +47,9 @@ jobs:
         with:
           command: |
             configuration update condor/user submituser
-            asimov configuration update condor/cache_time 30
-            asimov configuration update condor/cron_minute '*/1'
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
+            configuration update condor/cache_time 30
+            configuration update condor/cron_minute '*/1'
+            apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
           working-directory: test_project
 
       - name: Test Event Add
@@ -65,8 +65,8 @@ jobs:
         with:
           command: |
             apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
-            asimov manage build
-            asimov manage submit
+            manage build
+            manage submit
           working-directory: test_project
 
       - name: Wait for GWData frame files
@@ -91,8 +91,8 @@ jobs:
         with:
           command: |
             apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
-            asimov manage build
-            asimov manage submit
+            manage build
+            manage submit
           working-directory: test_project
 
       - name: Wait for Bayeswave PSD files
@@ -120,8 +120,8 @@ jobs:
         with:
           command: |
             apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
-            asimov manage build
-            asimov manage submit
+            manage build
+            manage submit
           working-directory: test_project
 
       - name: Wait for Bilby result files
