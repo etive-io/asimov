@@ -12,12 +12,10 @@ runs:
     - name: Run asimov command
       shell: bash -el {0}
       run: |
+        echo $CONDA 
+        echo $CONDA_EXE 
 
-        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
-        if [ ! -x "$CONDA_EXE" ]; then
-          echo "Conda not found at $CONDA_EXE" >&2
-          exit 1
-        fi
+        CONDA_EXE=/__w/asimov/asimov/3/condabin/conda
         ASIMOV_CMD="$CONDA_EXE run -n asimov"
 
         su - submituser <<EOF
