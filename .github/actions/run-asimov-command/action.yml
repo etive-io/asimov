@@ -78,6 +78,6 @@ runs:
             cd "$WORKDIR"
           # Drop nounset for conda script (it may reference higher args)
           set +u
-          # Run via bash -lc so quoted args inside CMD_RAW are respected
-          bash -lc "$CONDA_BIN run -n asimov $CMD_RAW"
+          # Run the provided command string inside the asimov env via bash -c
+          "$CONDA_BIN" run -n asimov bash -c "$CMD_RAW"
         ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW"
