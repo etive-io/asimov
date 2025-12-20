@@ -23,9 +23,17 @@ jobs:
         run: |
           yum install -y sudo git
 
-      - uses: ./.github/actions/create-submit-user
+      - name: Create submit user
+        uses: ./.github/actions/create-submit-user
 
-      - uses: ./.github/actions/setup-asimov-env
+      - name: Ensure submituser owns workspace
+        run: |
+          chown -R submituser:submituser "$GITHUB_WORKSPACE" || true
+          mkdir -p "$GITHUB_WORKSPACE/test_project"
+          chown -R submituser:submituser "$GITHUB_WORKSPACE/test_project" || chmod -R a+rwX "$GITHUB_WORKSPACE/test_project"
+
+      - name: Setup Asimov Environment
+        uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
           extra-packages: "-U bilby bilby_pipe git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor"
@@ -33,7 +41,7 @@ jobs:
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
         with:
-          command: init "Test Project"
+          command: asimov init "Test Project"
           working-directory: .
           shell-setup: |
             mkdir -p test_project
@@ -46,30 +54,30 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           command: |
-            configuration update condor/user submituser
+            asimov configuration update condor/user submituser
             asimov configuration update condor/cache_time 30
             asimov configuration update condor/cron_minute '*/1'
             asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
           working-directory: test_project
 
-      - name: Test Event Add
+      - name: Add event from GWOSC
         uses: ./.github/actions/run-asimov-command
         with:
-          command: apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+          command: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
           working-directory: test_project
 
-      - name: Test GWData
+      - name: Submit asimov-gwdata job
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         uses: ./.github/actions/run-asimov-command
         with:
           command: |
-            apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
             asimov manage build
             asimov manage submit
           working-directory: test_project
 
-      - name: Wait for GWData frame files
+      - name: Wait for frame files
         uses: ./.github/actions/wait-for-files
         with:
           patterns: "H*.gwf L*.gwf"
@@ -78,24 +86,24 @@ jobs:
           interval: "30"
           working-directory: test_project
 
-      - name: Monitor GWData
+      - name: Run asimov monitor
         uses: ./.github/actions/run-asimov-command
         with:
-          command: monitor
+          command: asimov monitor
           working-directory: test_project
 
-      - name: Test Bayeswave
+      - name: Create PSDs using Bayeswave
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         uses: ./.github/actions/run-asimov-command
         with:
           command: |
-            apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
             asimov manage build
             asimov manage submit
           working-directory: test_project
 
-      - name: Wait for Bayeswave PSD files
+      - name: Wait for PSD files
         uses: ./.github/actions/wait-for-files
         with:
           patterns: "trigtime_*/post/clean/glitch_median_PSD_forLI_H1.dat trigtime_*/post/clean/glitch_median_PSD_forLI_L1.dat"
@@ -107,7 +115,7 @@ jobs:
       - name: Clean up Bayeswave and monitor
         uses: ./.github/actions/run-asimov-command
         with:
-          command: monitor
+          command: asimov monitor
           working-directory: test_project
           shell-setup: |
             condor_rm 2
@@ -119,7 +127,7 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           command: |
-            apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
             asimov manage build
             asimov manage submit
           working-directory: test_project
@@ -136,5 +144,5 @@ jobs:
       - name: Monitor Bilby
         uses: ./.github/actions/run-asimov-command
         with:
-          command: monitor
+          command: asimov monitor
           working-directory: test_project

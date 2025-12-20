@@ -2,7 +2,7 @@ name: 'Run Asimov Command'
 description: 'Execute asimov command as submituser'
 inputs:
   command:
-    description: 'Asimov command to run (without asimov prefix)'
+    description: 'Full command to run inside the asimov env (include the asimov CLI if needed)'
     required: true
   working-directory:
     description: 'Working directory relative to GITHUB_WORKSPACE'
@@ -50,7 +50,7 @@ runs:
         fi
         echo "Using conda at: $CONDA_BIN"
         
-        # Build the command to run and ensure working dir exists & owned by submituser
+        # Build the command to run; workspace is pre-owned by submituser in the workflow step
         WORKDIR_IN="${{ inputs.working-directory }}"
         EXTRA_ENV='${{ inputs.extra-env }}'
         SHELL_SETUP='${{ inputs.shell-setup }}'
@@ -62,10 +62,8 @@ runs:
           WORKDIR="$GITHUB_WORKSPACE/$WORKDIR_IN"
         fi
 
-          # Ensure submituser owns the workspace and target dir
-          sudo chown -R submituser:submituser "$GITHUB_WORKSPACE"
-          sudo mkdir -p "$WORKDIR"
-          sudo chown -R submituser:submituser "$WORKDIR"
+        # Ensure the working directory exists (ownership handled earlier in workflow)
+        mkdir -p "$WORKDIR"
 
         # Run as submituser without a login shell (keep env); pass args safely
         su submituser -s /bin/bash -c '
@@ -81,5 +79,5 @@ runs:
           # Drop nounset for conda script (it may reference higher args)
           set +u
           # Run via bash -lc so quoted args inside CMD_RAW are respected
-          bash -lc "$CONDA_BIN run -n asimov asimov $CMD_RAW"
+          bash -lc "$CONDA_BIN run -n asimov $CMD_RAW"
         ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW"
