@@ -31,6 +31,8 @@ class PESummary(Pipeline):
     def __init__(self, production, category=None):
         self.production = production
 
+        self.event = self.subject = None
+
         self.category = category if category else production.category
         self.logger = logger
         self.meta = self.production.meta["postprocessing"][self.name.lower()]
@@ -168,7 +170,7 @@ class PESummary(Pipeline):
             for key, value in cals.items():
                 command += [f"{key}:{value}"]
 
-        with utils.set_directory(self.subject.work_dir):
+        with utils.set_directory(self.production.work_dir):
             with open("pesummary.sh", "w") as bash_file:
                 bash_file.write(f"{self.executable} " + " ".join(command))
 
