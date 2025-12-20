@@ -48,6 +48,7 @@ class TestBaseAnalysis(unittest.TestCase):
     def setUp(self):
         reload(asimov)
         reload(manage)
+        shutil.rmtree(f"{self.cwd}/tests/tmp/")
         os.makedirs(f"{self.cwd}/tests/tmp/project")
         os.chdir(f"{self.cwd}/tests/tmp/project")
         runner = CliRunner()
