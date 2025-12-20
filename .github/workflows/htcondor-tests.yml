@@ -35,7 +35,7 @@ jobs:
         uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
-          extra-packages: "-U bilby bilby_pipe git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor"
+          extra-packages: "-U bilby git+https://git.ligo.org/daniel-williams/bilby_pipe.git@rename-asimov-integration git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor"
 
       - name: Set up git
         run: |
