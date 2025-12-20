@@ -44,6 +44,10 @@ runs:
           exit 1
         fi
         
+        # Canonicalize path (helps avoid relative paths like 3/condabin/conda)
+        if command -v realpath >/dev/null 2>&1; then
+          CONDA_BIN=$(realpath "$CONDA_BIN" 2>/dev/null || echo "$CONDA_BIN")
+        fi
         echo "Using conda at: $CONDA_BIN"
         
         # Build the command to run
@@ -54,7 +58,7 @@ runs:
 
         # Run as submituser without a login shell (keep env); pass args safely
         su submituser -s /bin/bash -c '
-          set -euo pipefail
+          set -eo pipefail
           CONDA_BIN="$1"
           WORKDIR="$2"
           EXTRA_ENV="$3"
@@ -64,6 +68,8 @@ runs:
           cd "$GIT_WS/$WORKDIR"
           if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
           if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
+          # Drop nounset for conda script (it may reference higher args)
+          set +u
           # Run via bash -lc so quoted args inside CMD_RAW are respected
           bash -lc "$CONDA_BIN run -n asimov asimov $CMD_RAW"
         ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW" "$GITHUB_WORKSPACE"
