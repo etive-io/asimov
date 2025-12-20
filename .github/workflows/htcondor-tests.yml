@@ -26,11 +26,10 @@ jobs:
       - name: Create submit user
         uses: ./.github/actions/create-submit-user
 
-      - name: Ensure submituser owns workspace
+      - name: Ensure submituser can access workspace
         run: |
-          chown -R submituser:submituser "$GITHUB_WORKSPACE" || true
           mkdir -p "$GITHUB_WORKSPACE/test_project"
-          chown -R submituser:submituser "$GITHUB_WORKSPACE/test_project" || chmod -R a+rwX "$GITHUB_WORKSPACE/test_project"
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
 
       - name: Setup Asimov Environment
         uses: ./.github/actions/setup-asimov-env

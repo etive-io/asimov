@@ -58,3 +58,9 @@ runs:
       shell: bash -el {0}
       run: |
         pip install ${{ inputs.extra-packages }}
+
+    - name: Ensure conda env is readable by all users
+      shell: bash
+      run: |
+        chmod -R a+rX /usr/share/miniconda/envs/asimov
+        chmod -R a+rX /usr/share/miniconda/pkgs
