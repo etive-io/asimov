@@ -46,8 +46,8 @@ runs:
         # Run as submituser using heredoc pattern (double-quoted to allow variable expansion)
         su - submituser <<"SUBMITUSER_EOF"
           set -euo pipefail
-          CONDA_EXE='$CONDA_EXE'
-          WORKDIR='$WORKDIR'
+          CONDA_EXE="$CONDA_EXE"
+          WORKDIR="$WORKDIR"
           EXTRA_ENV='${{ inputs.extra-env }}'
           SHELL_SETUP='${{ inputs.shell-setup }}'
           TIMEOUT_SECS='${{ inputs.timeout }}'
