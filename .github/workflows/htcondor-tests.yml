@@ -39,9 +39,12 @@ jobs:
 
       - name: Set up git
         run: |
+              su - submituser <<SUBMITUSER
+              set -euo pipefail
               git config --global init.defaultBranch master
               git config --global user.email "you@example.com"
               git config --global user.name "Your Name"
+              SUBMITUSER
 
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
