@@ -1,0 +1,60 @@
+name: 'Setup Asimov Environment'
+description: 'Install Asimov and dependencies with conda'
+inputs:
+  python-version:
+    description: 'Python version to use'
+    default: '3.10'
+    required: false
+  extra-packages:
+    description: 'Additional pip packages to install'
+    default: ''
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Cache conda packages and pip
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/share/miniconda/pkgs
+          ~/.cache/pip
+        key: conda-${{ runner.os }}-${{ hashFiles('conda/environment.yaml', 'pyproject.toml') }}
+        restore-keys: |
+          conda-${{ runner.os }}-
+
+    - name: Set up conda environment
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        miniconda-version: "latest"
+        auto-activate-base: false
+        python-version: ${{ inputs.python-version }}
+        activate-environment: asimov
+        channels: conda-forge
+        conda-remove-defaults: "true"
+        use-mamba: true
+
+    - name: Cache asimov conda env
+      id: cache-env
+      uses: actions/cache@v4
+      with:
+        path: /usr/share/miniconda/envs/asimov
+        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/environment.yaml', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v2
+        restore-keys: |
+          conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-
+
+    - name: Install dependencies & asimov
+      if: steps.cache-env.outputs.cache-hit != 'true'
+      shell: bash -el {0}
+      run: |
+        conda install -y -n asimov --file conda/environment.yaml
+        conda install -y -n asimov conda-build
+        pip install .
+        if [ -n "${{ inputs.extra-packages }}" ]; then
+          pip install ${{ inputs.extra-packages }}
+        fi
+
+    - name: Install extra packages (cache hit)
+      if: steps.cache-env.outputs.cache-hit == 'true' && inputs.extra-packages != ''
+      shell: bash -el {0}
+      run: |
+        pip install ${{ inputs.extra-packages }}
