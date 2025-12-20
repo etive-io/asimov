@@ -7,12 +7,12 @@ on:
     branches: [ master ]
 
 jobs:
-  build-ubuntu-python310:
+  build-ubuntu-python:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.6, 3.7, 3.8, 3.9, "3.10"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest] # , macOS-latest, windows-latest
 
     steps:
