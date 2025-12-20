@@ -24,46 +24,40 @@ runs:
   using: "composite"
   steps:
     - name: Run asimov command
-      shell: bash
+      shell: bash -el {0}
       run: |
-        # Build the command variables
+        # Find conda executable
+        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
+        if [ ! -x "$CONDA_EXE" ]; then
+          echo "ERROR: Conda not found at $CONDA_EXE" >&2
+          exit 1
+        fi
+        
+        # Build variables
         WORKDIR_IN="${{ inputs.working-directory }}"
-        EXTRA_ENV='${{ inputs.extra-env }}'
-        SHELL_SETUP='${{ inputs.shell-setup }}'
-        COMMAND_RAW='${{ inputs.command }}'
-        TIMEOUT_SECS='${{ inputs.timeout }}'
-
         if [[ "$WORKDIR_IN" = /* ]]; then
           WORKDIR="$WORKDIR_IN"
         else
           WORKDIR="$GITHUB_WORKSPACE/$WORKDIR_IN"
         fi
-
-        # Ensure the working directory exists
+        
         mkdir -p "$WORKDIR"
-
-        # Export variables and run as submituser with explicit conda initialization
-        export WORKDIR EXTRA_ENV SHELL_SETUP COMMAND_RAW TIMEOUT_SECS
-        su submituser -l -s /bin/bash -c '
-          set -eo pipefail
+        
+        # Run as submituser using heredoc pattern (double-quoted to allow variable expansion)
+        su - submituser <<"SUBMITUSER_EOF"
+          set -euo pipefail
+          CONDA_EXE='$CONDA_EXE'
+          WORKDIR='$WORKDIR'
+          EXTRA_ENV='${{ inputs.extra-env }}'
+          SHELL_SETUP='${{ inputs.shell-setup }}'
+          TIMEOUT_SECS='${{ inputs.timeout }}'
           
-          # Explicitly initialize conda for submituser (fresh user)
-          __conda_setup="$(/usr/share/miniconda/bin/conda shell.bash hook 2> /dev/null)"
-          if [ $? -eq 0 ]; then
-              eval "$__conda_setup"
-          else
-              if [ -f "/usr/share/miniconda/etc/profile.d/conda.sh" ]; then
-                  . "/usr/share/miniconda/etc/profile.d/conda.sh"
-              else
-                  export PATH="/usr/share/miniconda/bin:$PATH"
-              fi
-          fi
-          unset __conda_setup
-          
-          if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
-          if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
           cd "$WORKDIR"
           
-          # Run command in asimov environment
-          timeout "$TIMEOUT_SECS" conda run -n asimov bash -c "$COMMAND_RAW"
-        '
+          if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
+          if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
+          
+          # Properly quote command to handle special chars (quotes, spaces, etc)
+          COMMAND_SAFE=$(printf '%q' '${{ inputs.command }}')
+          timeout "$TIMEOUT_SECS" "$CONDA_EXE" run -n asimov bash -c $COMMAND_SAFE
+        SUBMITUSER_EOF

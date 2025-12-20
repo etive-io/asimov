@@ -58,23 +58,3 @@ runs:
       shell: bash -el {0}
       run: |
         pip install ${{ inputs.extra-packages }}
-
-    - name: Ensure conda env is readable by all users
-      shell: bash -el {0}
-      run: |
-        # Find the actual conda env location and make it readable
-        ENV_PATH=$(conda run -n asimov bash -c 'echo $CONDA_PREFIX')
-        if [ -d "$ENV_PATH" ]; then
-          chmod -R a+rX "$ENV_PATH"
-          echo "Made $ENV_PATH readable"
-        else
-          echo "WARNING: Env path $ENV_PATH not found, trying fallback..."
-          # Fallback to standard location
-          if [ -d "/usr/share/miniconda/envs/asimov" ]; then
-            chmod -R a+rX /usr/share/miniconda/envs/asimov
-          fi
-        fi
-        # Also ensure pkgs are readable
-        if [ -d "/usr/share/miniconda/pkgs" ]; then
-          chmod -R a+rX /usr/share/miniconda/pkgs
-        fi
