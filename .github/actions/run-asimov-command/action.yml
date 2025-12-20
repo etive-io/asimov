@@ -2,7 +2,7 @@ name: 'Run Asimov Command'
 description: 'Execute asimov command as submituser'
 inputs:
   script:
-    description: 'Full sript to run inside the asimov env (include the asimov CLI if needed)'
+    description: 'Full script to run inside the asimov env (include the asimov CLI if needed)'
     required: true
 
 
