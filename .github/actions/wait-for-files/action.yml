@@ -17,7 +17,7 @@ inputs:
     required: false
   working-directory:
     description: 'Working directory relative to GITHUB_WORKSPACE'
-    default: 'test_project'
+    default: '.'
     required: false
   require-all:
     description: 'Require all patterns to match (true) or just one (false)'
@@ -33,9 +33,7 @@ runs:
     - name: Wait for files
       shell: bash -el {0}
       run: |
-        CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
-        
-        su - submituser <<'EOF'
+        su - submituser <<SUBMITUSER
         set -euo pipefail
         cd "$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
         
@@ -88,4 +86,4 @@ runs:
         echo "Timeout waiting for files"
         ls -R ${{ inputs.directory }}/ || true
         exit 1
-        EOF
+        SUBMITUSER
