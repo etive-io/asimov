@@ -44,7 +44,10 @@ runs:
           exit 1
         fi
         
-        # Canonicalize path (helps avoid relative paths like 3/condabin/conda)
+        # Prefer the real bin/conda instead of condabin shim
+        if [[ "$CONDA_BIN" == */condabin/conda ]]; then
+          CONDA_BIN="${CONDA_BIN%/condabin/conda}/bin/conda"
+        fi
         if command -v realpath >/dev/null 2>&1; then
           CONDA_BIN=$(realpath "$CONDA_BIN" 2>/dev/null || echo "$CONDA_BIN")
         fi
@@ -78,6 +81,6 @@ runs:
             cd "$WORKDIR"
           # Drop nounset for conda script (it may reference higher args)
           set +u
-          # Run the provided command string inside the asimov env via bash -c
-          "$CONDA_BIN" run -n asimov bash -c "$CMD_RAW"
+            # Run the provided command string inside the asimov env via bash -c
+            "$CONDA_BIN" run -n asimov --no-capture-output bash -c "$CMD_RAW"
         ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW"
