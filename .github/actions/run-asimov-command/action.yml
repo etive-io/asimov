@@ -73,7 +73,7 @@ runs:
         # Ensure the working directory exists
         mkdir -p "$WORKDIR"
 
-        # Run as submituser with login shell and explicit conda init
+        # Run as submituser with login shell to use conda properly
         su submituser -l -s /bin/bash -c '
           set -eo pipefail
           CONDA_BIN="$1"
@@ -83,13 +83,13 @@ runs:
           CMD_RAW="$5"
           TIMEOUT_SECS="$6"
           
-          # Explicitly source conda initialization
-          source "$(dirname "$CONDA_BIN")/../etc/profile.d/conda.sh" 2>/dev/null || true
+          # Ensure conda is in PATH
+          export PATH="$(dirname "$CONDA_BIN"):$PATH"
           
           if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
           if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
           cd "$WORKDIR"
           
-          # Run with timeout; activate env explicitly to ensure PATH is set
-          timeout "$TIMEOUT_SECS" conda activate asimov && bash -c "$CMD_RAW"
+          # Use conda run (works in non-interactive shells)
+          timeout "$TIMEOUT_SECS" "$CONDA_BIN" run -n asimov bash -c "$CMD_RAW"
         ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW" "$TIMEOUT_SECS"
