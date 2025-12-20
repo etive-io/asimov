@@ -50,15 +50,20 @@ runs:
         WORKDIR="${{ inputs.working-directory }}"
         EXTRA_ENV='${{ inputs.extra-env }}'
         SHELL_SETUP='${{ inputs.shell-setup }}'
-        COMMAND='${{ inputs.command }}'
-        
-        # Run as submituser WITHOUT login shell (no -) so env vars are preserved
-        # Pass variables explicitly in the command
-        su submituser bash -c "
-        export CONDA_BIN='$CONDA_BIN'
-        export GITHUB_WORKSPACE='$GITHUB_WORKSPACE'
-        cd \"\$GITHUB_WORKSPACE/$WORKDIR\"
-        ${EXTRA_ENV:+eval \"\$EXTRA_ENV\"}
-        ${SHELL_SETUP:+eval \"\$SHELL_SETUP\"}
-        eval \"\$CONDA_BIN run -n asimov asimov $COMMAND\"
-        "
+        COMMAND_RAW='${{ inputs.command }}'
+
+        # Run as submituser without a login shell (keep env); pass args safely
+        su submituser -s /bin/bash -c '
+          set -euo pipefail
+          CONDA_BIN="$1"
+          WORKDIR="$2"
+          EXTRA_ENV="$3"
+          SHELL_SETUP="$4"
+          CMD_RAW="$5"
+          GIT_WS="$6"
+          cd "$GIT_WS/$WORKDIR"
+          if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
+          if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
+          # Run via bash -lc so quoted args inside CMD_RAW are respected
+          bash -lc "$CONDA_BIN run -n asimov asimov $CMD_RAW"
+        ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW" "$GITHUB_WORKSPACE"
