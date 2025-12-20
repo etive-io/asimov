@@ -110,8 +110,14 @@ jobs:
         with:
           script: |
             asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
-            asimov manage build
-            asimov manage submit
+
+      - name: Submit Bayeswave
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            asimov manage build submit
 
       - name: Wait for PSD files
         uses: ./.github/actions/wait-for-files
@@ -140,8 +146,14 @@ jobs:
         with:
           script: |
             asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
-            asimov manage build
-            asimov manage submit
+
+      - name: Test Bilby submit
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            asimov manage build submit
 
       - name: Wait for Bilby result files
         uses: ./.github/actions/wait-for-files
