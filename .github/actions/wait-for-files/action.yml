@@ -31,7 +31,7 @@ runs:
   using: "composite"
   steps:
     - name: Wait for files
-      shell: bash
+      shell: bash -el {0}
       run: |
         CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
         
