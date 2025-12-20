@@ -12,13 +12,15 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Cache conda packages
+    - name: Cache conda packages and pip
       uses: actions/cache@v4
       with:
-        path: /usr/share/miniconda/pkgs
-        key: conda-pkgs-${{ runner.os }}-${{ hashFiles('conda/environment.yaml') }}
+        path: |
+          /usr/share/miniconda/pkgs
+          ~/.cache/pip
+        key: conda-${{ runner.os }}-${{ hashFiles('conda/environment.yaml', 'pyproject.toml') }}
         restore-keys: |
-          conda-pkgs-${{ runner.os }}-
+          conda-${{ runner.os }}-
 
     - name: Set up conda environment
       uses: conda-incubator/setup-miniconda@v2
@@ -46,7 +48,7 @@ runs:
       run: |
         conda install -y -n asimov --file conda/environment.yaml
         conda install -y -n asimov conda-build
-        pip install .
+        pip install -e .
         if [ -n "${{ inputs.extra-packages }}" ]; then
           pip install ${{ inputs.extra-packages }}
         fi

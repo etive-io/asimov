@@ -146,3 +146,11 @@ jobs:
         with:
           command: asimov monitor
           working-directory: test_project
+
+      - name: Cleanup on exit
+        if: always()
+        uses: ./.github/actions/run-asimov-command
+        with:
+          command: condor_rm -all
+          working-directory: test_project
+          timeout: '60'
