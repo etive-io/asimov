@@ -291,8 +291,8 @@ class Bilby(Pipeline):
             rundir = self.production.rundir
         self.logger.info(f"Rundir for samples: {rundir}")
         return glob.glob(
-            os.path.join(rundir, "result", "*_merge*_result.hdf5")
-        ) + glob.glob(os.path.join(rundir, "result", "*_merge*_result.json"))
+            os.path.join(rundir, "final_result", "*.hdf5")
+        ) + glob.glob(os.path.join(rundir, "final_result", "*.json"))
 
     def after_completion(self):
         post_pipeline = PESummary(production=self.production)
