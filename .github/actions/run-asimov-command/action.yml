@@ -16,6 +16,7 @@ runs:
         set -euo pipefail
         cd "$GITHUB_WORKSPACE"
         echo $CONDA_ENV
-        COMMAND_SAFE=$(printf '%q' '${{ inputs.script }}')
+        COMMAND_SAFE=$(printf '%q' '${{ inputs.script }}' | xargs)
+        echo $COMMAND_SAFE
         $CONDA_EXE run -n asimov bash -c $COMMAND_SAFE
         EOF
