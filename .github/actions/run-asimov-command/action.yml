@@ -12,16 +12,14 @@ runs:
     - name: Run asimov command
       shell: bash -el {0}
       run: |
-        su -m - submituser <<SUBMITUSER
+        su - submituser <<SUBMITUSER
         echo "Setting environment"
         set -euo pipefail
         echo "Switching to the github workspace"
         cd "$GITHUB_WORKSPACE"
         echo "Running command in asimov conda environment"
-        echo $CONDA_ENV
-        echo "Quoting the command to be safe"
-        COMMAND_SAFE=$(printf '%q' '${{ inputs.script }}' | xargs)
-        echo $COMMAND_SAFE
+        echo $CONDA_EXE
+        CONDA_EXE=/__w/asimov/asimov/3/envs/asimov/bin/conda
         echo "Running the quoted command"
         $CONDA_EXE run -n asimov bash -s <<'SCRIPT'
         ${{ inputs.script }}
