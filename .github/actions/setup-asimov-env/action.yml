@@ -48,7 +48,7 @@ runs:
       run: |
         conda install -y -n asimov --file conda/environment.yaml
         conda install -y -n asimov conda-build
-        pip install -e .
+        pip install .
         if [ -n "${{ inputs.extra-packages }}" ]; then
           pip install ${{ inputs.extra-packages }}
         fi

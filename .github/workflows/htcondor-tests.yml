@@ -41,10 +41,10 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
-              git config --global init.defaultBranch master
-              git config --global user.email "you@example.com"
-              git config --global user.name "Your Name"
-              asimov init "Test Project"
+            git config --global init.defaultBranch master
+            git config --global user.email "you@example.com"
+            git config --global user.name "Your Name"
+            asimov init "Test Project"
 
 
       - name: Configure asimov project
@@ -141,4 +141,3 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           script: condor_rm -all
-          timeout: '60'

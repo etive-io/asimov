@@ -34,7 +34,6 @@ runs:
       shell: bash
       run: |
         CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
-        ASIMOV_CMD="$CONDA_EXE run -n asimov"
         
         su - submituser <<'EOF'
         set -euo pipefail
