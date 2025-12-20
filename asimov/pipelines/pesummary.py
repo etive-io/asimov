@@ -28,14 +28,22 @@ class PESummary(Pipeline):
     )
     name = "PESummary"
 
-    def __init__(self, production, category=None):
-        self.production = production
+    def __init__(self, analysis=None, subject=None, category=None):
+        self.production = self.analysis = analysis
 
-        self.event = self.subject = None
+        # Allow the subject to be specified otherwise get it from the analysis
+        self.event = self.subject = subject if subject else self.analysis.subject
+        
 
-        self.category = category if category else production.category
+        self.category = category if category else subject.category
         self.logger = logger
-        self.meta = self.production.meta["postprocessing"][self.name.lower()]
+
+        if self.analysis is not None:
+            self.meta = self.analysis.meta["postprocessing"][self.name.lower()]
+        elif self.subject is not None:
+            self.meta = self.subject.meta["postprocessing"][self.name.lower()]
+
+        self.name = self.analysis.name if self.analysis else self.subject.name
 
     def results(self):
         """
@@ -59,11 +67,10 @@ class PESummary(Pipeline):
         self.outputs = os.path.join(
             config.get("project", "root"),
             config.get("general", "webroot"),
-            self.subject.name,
+            self.name,
         )
 
-        self.outputs = os.path.join(self.outputs, self.production.name)
-        self.outputs = os.path.join(self.outputs, "pesummary")
+        self.outputs = os.path.join(self.outputs, self.name, "pesummary")
 
         metafile = os.path.join(self.outputs, "samples", "posterior_samples.h5")
 
@@ -74,18 +81,28 @@ class PESummary(Pipeline):
         Run PESummary on the results of this job.
         """
 
-        configfile = self.production.event.repository.find_prods(
-            self.production.name, self.category
-        )[0]
-        label = str(self.production.name)
+        if self.analysis is None and self.subject is not None:
+            configfile = self.subject.repository.find_prods(
+                self.name, self.category
+            )[0]
+        elif self.analysis is not None:
+            configfile = self.analysis.subject.repository.find_prods(
+                self.name, self.category
+            )[0]
+        else:  # pragma: no cover
+            raise PipelineException(
+                "PESummary pipeline requires either an analysis or subject."
+            )
+        
+        label = str(self.name)
 
         command = [
             "--webdir",
             os.path.join(
                 config.get("project", "root"),
                 config.get("general", "webroot"),
-                self.production.event.name,
-                self.production.name,
+                self.subject.name,
+                self.analysis.name if self.analysis is not None else "event",
                 "pesummary",
             ),
             "--labels",
@@ -177,6 +194,8 @@ class PESummary(Pipeline):
         self.logger.info(
             f"PE summary command: {self.executable} {' '.join(command)}",
         )
+
+        print(command)
 
         if dryrun:
             print("PESUMMARY COMMAND")
