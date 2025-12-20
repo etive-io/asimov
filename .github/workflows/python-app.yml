@@ -2,9 +2,9 @@ name: Python multi-OS
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, v*-release, v*-preview ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, v*-release, v*-preview ]
 
 jobs:
   build-ubuntu-python:
