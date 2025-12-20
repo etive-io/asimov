@@ -1,63 +1,28 @@
 name: 'Run Asimov Command'
 description: 'Execute asimov command as submituser'
 inputs:
-  command:
-    description: 'Full command to run inside the asimov env (include the asimov CLI if needed)'
+  script:
+    description: 'Full sript to run inside the asimov env (include the asimov CLI if needed)'
     required: true
-  working-directory:
-    description: 'Working directory relative to GITHUB_WORKSPACE'
-    default: 'test_project'
-    required: false
-  extra-env:
-    description: 'Additional environment variables (e.g., "VAR1=value1 VAR2=value2")'
-    default: ''
-    required: false
-  shell-setup:
-    description: 'Additional shell setup commands to run before asimov command'
-    default: ''
-    required: false
-  timeout:
-    description: 'Command timeout in seconds (default 1800 = 30 min)'
-    default: '1800'
-    required: false
+
+
 runs:
   using: "composite"
   steps:
     - name: Run asimov command
       shell: bash -el {0}
       run: |
-        # Find conda executable
+
         CONDA_EXE="${CONDA_EXE:-${CONDA:-/usr/share/miniconda}/bin/conda}"
         if [ ! -x "$CONDA_EXE" ]; then
-          echo "ERROR: Conda not found at $CONDA_EXE" >&2
+          echo "Conda not found at $CONDA_EXE" >&2
           exit 1
         fi
-        
-        # Build variables
-        WORKDIR_IN="${{ inputs.working-directory }}"
-        if [[ "$WORKDIR_IN" = /* ]]; then
-          WORKDIR="$WORKDIR_IN"
-        else
-          WORKDIR="$GITHUB_WORKSPACE/$WORKDIR_IN"
-        fi
-        
-        mkdir -p "$WORKDIR"
-        
-        # Run as submituser using heredoc pattern (double-quoted to allow variable expansion)
-        su - submituser <<"SUBMITUSER_EOF"
-          set -euo pipefail
-          CONDA_EXE="$CONDA_EXE"
-          WORKDIR="$WORKDIR"
-          EXTRA_ENV='${{ inputs.extra-env }}'
-          SHELL_SETUP='${{ inputs.shell-setup }}'
-          TIMEOUT_SECS='${{ inputs.timeout }}'
-          
-          cd "$WORKDIR"
-          
-          if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
-          if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
-          
-          # Properly quote command to handle special chars (quotes, spaces, etc)
-          COMMAND_SAFE=$(printf '%q' '${{ inputs.command }}')
-          timeout "$TIMEOUT_SECS" "$CONDA_EXE" run -n asimov bash -c $COMMAND_SAFE
-        SUBMITUSER_EOF
+        ASIMOV_CMD="$CONDA_EXE run -n asimov"
+
+        su - submituser <<EOF
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        COMMAND_SAFE=$(printf '%q' '${{ inputs.script }}')
+        "$ASIMOV_CMD" bash -c $COMMAND_SAFE
+        EOF
