@@ -50,11 +50,22 @@ runs:
         fi
         echo "Using conda at: $CONDA_BIN"
         
-        # Build the command to run
-        WORKDIR="${{ inputs.working-directory }}"
+        # Build the command to run and ensure working dir exists & owned by submituser
+        WORKDIR_IN="${{ inputs.working-directory }}"
         EXTRA_ENV='${{ inputs.extra-env }}'
         SHELL_SETUP='${{ inputs.shell-setup }}'
         COMMAND_RAW='${{ inputs.command }}'
+
+        if [[ "$WORKDIR_IN" = /* ]]; then
+          WORKDIR="$WORKDIR_IN"
+        else
+          WORKDIR="$GITHUB_WORKSPACE/$WORKDIR_IN"
+        fi
+
+          # Ensure submituser owns the workspace and target dir
+          sudo chown -R submituser:submituser "$GITHUB_WORKSPACE"
+          sudo mkdir -p "$WORKDIR"
+          sudo chown -R submituser:submituser "$WORKDIR"
 
         # Run as submituser without a login shell (keep env); pass args safely
         su submituser -s /bin/bash -c '
@@ -64,12 +75,11 @@ runs:
           EXTRA_ENV="$3"
           SHELL_SETUP="$4"
           CMD_RAW="$5"
-          GIT_WS="$6"
-          cd "$GIT_WS/$WORKDIR"
           if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
           if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
+            cd "$WORKDIR"
           # Drop nounset for conda script (it may reference higher args)
           set +u
           # Run via bash -lc so quoted args inside CMD_RAW are respected
           bash -lc "$CONDA_BIN run -n asimov asimov $CMD_RAW"
-        ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW" "$GITHUB_WORKSPACE"
+        ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW"
