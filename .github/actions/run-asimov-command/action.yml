@@ -26,38 +26,7 @@ runs:
     - name: Run asimov command
       shell: bash
       run: |
-        # Find conda executable - prefer CONDA_EXE, then default location
-        echo "CONDA_EXE=${CONDA_EXE:-not set}"
-        echo "Checking for conda..."
-        
-        if [ -n "${CONDA_EXE:-}" ] && [ -x "$CONDA_EXE" ]; then
-          CONDA_BIN="$CONDA_EXE"
-        elif [ -x "/usr/share/miniconda/bin/conda" ]; then
-          CONDA_BIN="/usr/share/miniconda/bin/conda"
-        elif [ -x "/opt/miniconda3/bin/conda" ]; then
-          CONDA_BIN="/opt/miniconda3/bin/conda"
-        elif [ -x "/root/miniconda3/bin/conda" ]; then
-          CONDA_BIN="/root/miniconda3/bin/conda"
-        elif command -v conda &> /dev/null; then
-          CONDA_BIN=$(command -v conda)
-        else
-          echo "ERROR: Conda not found in any standard location" >&2
-          echo "Searched: CONDA_EXE, /usr/share/miniconda, /opt/miniconda3, /root/miniconda3, PATH" >&2
-          ls -la /usr/share/ 2>/dev/null | grep -i conda || true
-          ls -la /opt/ 2>/dev/null | grep -i conda || true
-          exit 1
-        fi
-        
-        # Prefer the real bin/conda instead of condabin shim
-        if [[ "$CONDA_BIN" == */condabin/conda ]]; then
-          CONDA_BIN="${CONDA_BIN%/condabin/conda}/bin/conda"
-        fi
-        if command -v realpath >/dev/null 2>&1; then
-          CONDA_BIN=$(realpath "$CONDA_BIN" 2>/dev/null || echo "$CONDA_BIN")
-        fi
-        echo "Using conda at: $CONDA_BIN"
-        
-        # Build the command to run; workspace is pre-owned by submituser in the workflow step
+        # Build the command variables
         WORKDIR_IN="${{ inputs.working-directory }}"
         EXTRA_ENV='${{ inputs.extra-env }}'
         SHELL_SETUP='${{ inputs.shell-setup }}'
@@ -73,23 +42,32 @@ runs:
         # Ensure the working directory exists
         mkdir -p "$WORKDIR"
 
-        # Run as submituser with login shell to use conda properly
+        # Run as submituser with explicit conda initialization
         su submituser -l -s /bin/bash -c '
           set -eo pipefail
-          CONDA_BIN="$1"
-          WORKDIR="$2"
-          EXTRA_ENV="$3"
-          SHELL_SETUP="$4"
-          CMD_RAW="$5"
-          TIMEOUT_SECS="$6"
+          WORKDIR="$1"
+          EXTRA_ENV="$2"
+          SHELL_SETUP="$3"
+          CMD_RAW="$4"
+          TIMEOUT_SECS="$5"
           
-          # Ensure conda is in PATH
-          export PATH="$(dirname "$CONDA_BIN"):$PATH"
+          # Explicitly initialize conda for submituser (they are a fresh user)
+          __conda_setup="$(/usr/share/miniconda/bin/conda shell.bash hook 2> /dev/null)"
+          if [ $? -eq 0 ]; then
+              eval "$__conda_setup"
+          else
+              if [ -f "/usr/share/miniconda/etc/profile.d/conda.sh" ]; then
+                  . "/usr/share/miniconda/etc/profile.d/conda.sh"
+              else
+                  export PATH="/usr/share/miniconda/bin:$PATH"
+              fi
+          fi
+          unset __conda_setup
           
           if [ -n "$EXTRA_ENV" ]; then eval "$EXTRA_ENV"; fi
           if [ -n "$SHELL_SETUP" ]; then eval "$SHELL_SETUP"; fi
           cd "$WORKDIR"
           
-          # Use conda run (works in non-interactive shells)
-          timeout "$TIMEOUT_SECS" "$CONDA_BIN" run -n asimov bash -c "$CMD_RAW"
-        ' -- "$CONDA_BIN" "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW" "$TIMEOUT_SECS"
+          # Run command in asimov environment
+          timeout "$TIMEOUT_SECS" conda run -n asimov bash -c "$CMD_RAW"
+        ' -- "$WORKDIR" "$EXTRA_ENV" "$SHELL_SETUP" "$COMMAND_RAW" "$TIMEOUT_SECS"
