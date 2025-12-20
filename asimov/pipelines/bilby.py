@@ -126,19 +126,23 @@ class Bilby(Pipeline):
         else:
             job_label = self.production.name
 
-        default_executable = os.path.join(
-            config.get("pipelines", "environment"), "bin", "bilby_pipe"
-        )
-        executable = self.production.meta.get("executable", default_executable)
-        if (executable := shutil.which(executable)) is not None:
-            pass
-        elif (executable := shutil.which("bilby_pipe")) is not None:
-            pass
-        else:
-            raise PipelineException(
-                "Cannot find bilby_pipe executable",
-                production=self.production.name,
+        if not dryrun:
+            default_executable = os.path.join(
+                config.get("pipelines", "environment"), "bin", "bilby_pipe"
             )
+            executable = self.production.meta.get("executable", default_executable)
+            if (executable := shutil.which(executable)) is not None:
+                pass
+            elif (executable := shutil.which("bilby_pipe")) is not None:
+                pass
+            else:
+                raise PipelineException(
+                    "Cannot find bilby_pipe executable",
+                    production=self.production.name,
+                )
+        else:
+            executable = "bilby_pipe"
+            
         command = [
             executable,
             ini,
