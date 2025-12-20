@@ -170,7 +170,7 @@ class PESummary(Pipeline):
             for key, value in cals.items():
                 command += [f"{key}:{value}"]
 
-        with utils.set_directory(self.production.work_dir):
+        with utils.set_directory(self.production.rundir):
             with open("pesummary.sh", "w") as bash_file:
                 bash_file.write(f"{self.executable} " + " ".join(command))
 
@@ -186,9 +186,9 @@ class PESummary(Pipeline):
         submit_description = {
             "executable": self.executable,
             "arguments": " ".join(command),
-            "output": f"{self.subject.work_dir}/pesummary.out",
-            "error": f"{self.subject.work_dir}/pesummary.err",
-            "log": f"{self.subject.work_dir}/pesummary.log",
+            "output": f"{self.production.rundir}/pesummary.out",
+            "error": f"{self.production.rundir}/pesummary.err",
+            "log": f"{self.production.rundir}/pesummary.log",
             "request_cpus": self.meta["multiprocess"],
             "getenv": "true",
             "batch_name": f"Summary Pages/{self.subject.name}/{self.production.name}",
