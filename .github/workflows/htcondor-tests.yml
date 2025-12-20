@@ -46,33 +46,45 @@ jobs:
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
         with:
-          script: |
-              asimov init "Test Project"
+          script: asimov init "Test Project"
 
 
-      - name: Configure asimov project
+      - name: Configure asimov user
         uses: ./.github/actions/run-asimov-command
         with:
-          script: |
-            asimov configuration update condor/user submituser
-            asimov configuration update condor/cache_time 30
-            asimov configuration update condor/cron_minute '*/1'
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
+          script: asimov configuration update condor/user submituser
+
+      - name: Configure HTCondor settings
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov configuration update condor/cache_time 30
+          
+      - name: Set cron minute to 1
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov configuration update condor/cron_minute '*/1'
+
+      - name: Apply GWOSC quick test blueprint
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
 
       - name: Add event from GWOSC
         uses: ./.github/actions/run-asimov-command
         with:
           script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
 
-      - name: Submit asimov-gwdata job
+      - name: Add asimov-gwdata job
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         uses: ./.github/actions/run-asimov-command
         with:
-          script: |
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
-            asimov manage build
-            asimov manage submit
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
+
+      - name: Build and submit gwdata job
+        uses: ./.github/actions/run-asimov-command
+        with: 
+          script: asimov manage build submit
 
       - name: Wait for frame files
         uses: ./.github/actions/wait-for-files
