@@ -37,13 +37,16 @@ jobs:
           python-version: "3.10"
           extra-packages: "-U bilby bilby_pipe git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor"
 
+      - name: Set up git
+        run: |
+              git config --global init.defaultBranch master
+              git config --global user.email "you@example.com"
+              git config --global user.name "Your Name"
+
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
-              git config --global init.defaultBranch master
-              git config --global user.email "you@example.com"
-              git config --global user.name "Your Name"
               asimov init "Test Project"
 
 
@@ -104,12 +107,15 @@ jobs:
           interval: "30"
           working-directory: .
 
-      - name: Clean up Bayeswave and monitor
+      - name: Stop megaplot and cleanup cache
+        run: |
+            condor_rm 2
+            rm .asimov/_cache_jobs.yaml
+
+      - name: Run the asimov monitor
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
-            condor_rm 2
-            rm .asimov/_cache_jobs.yaml
             asimov monitor
             
       - name: Test Bilby
@@ -135,10 +141,3 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           script: asimov monitor
-
-      - name: Cleanup on exit
-        if: always()
-        uses: ./.github/actions/run-asimov-command
-        with:
-          script: condor_rm -all
-          timeout: '60'
