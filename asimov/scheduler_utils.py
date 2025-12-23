@@ -8,7 +8,7 @@ the scheduler API in pipelines and other parts of asimov.
 import configparser
 import functools
 from asimov import config, logger
-from asimov.scheduler import get_scheduler, JobDescription
+from asimov.scheduler import get_scheduler, JobDescription, JobList
 
 logger = logger.getChild("scheduler_utils")
 
@@ -146,3 +146,39 @@ def scheduler_aware(func):
             self.scheduler = get_configured_scheduler()
         return func(self, *args, **kwargs)
     return wrapper
+
+
+def get_job_list(cache_time=None):
+    """
+    Get a JobList instance for monitoring running jobs.
+    
+    This function creates a JobList that queries the configured scheduler
+    and caches the results for performance.
+    
+    Parameters
+    ----------
+    cache_time : int, optional
+        Maximum age of cache in seconds. If None, uses the value from
+        config or defaults to 900 (15 minutes).
+        
+    Returns
+    -------
+    JobList
+        A JobList instance containing all running jobs.
+        
+    Examples
+    --------
+    >>> job_list = get_job_list()
+    >>> if 12345 in job_list.jobs:
+    ...     job = job_list.jobs[12345]
+    ...     print(f"Job status: {job.status}")
+    """
+    scheduler = get_configured_scheduler()
+    
+    if cache_time is None:
+        try:
+            cache_time = float(config.get("condor", "cache_time"))
+        except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+            cache_time = 900  # Default to 15 minutes
+    
+    return JobList(scheduler, cache_time=cache_time)

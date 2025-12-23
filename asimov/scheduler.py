@@ -9,6 +9,8 @@ Supported Schedulers are:
 """
 
 import os
+import datetime
+import yaml
 import htcondor
 from abc import ABC, abstractmethod
 
@@ -82,6 +84,27 @@ class Scheduler(ABC):
         -------
         int
             The job ID (cluster ID) returned by the scheduler.
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    def query_all_jobs(self):
+        """
+        Query all jobs from the scheduler.
+        
+        This method is used to get a list of all jobs currently in the scheduler
+        queue, which is useful for monitoring and status checking.
+        
+        Returns
+        -------
+        list of dict
+            A list of dictionaries, each containing job information with keys:
+            - id: Job ID
+            - command: Command being executed
+            - hosts: Number of hosts
+            - status: Job status (integer code or string)
+            - name: Job name (optional)
+            - dag id: Parent DAG ID if this is a subjob (optional)
         """
         raise NotImplementedError
 
@@ -239,6 +262,67 @@ class HTCondor(Scheduler):
             raise RuntimeError(f"Failed to submit DAG to HTCondor: {e}")
         except Exception as e:
             raise RuntimeError(f"Unexpected error submitting DAG: {e}")
+    
+    def query_all_jobs(self):
+        """
+        Query all jobs from HTCondor schedulers.
+        
+        This method queries all available HTCondor schedulers to get a complete
+        list of jobs. It's used by the JobList class for monitoring.
+        
+        Returns
+        -------
+        list of dict
+            A list of dictionaries containing job information.
+        """
+        data = []
+        
+        try:
+            collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
+        except htcondor.HTCondorLocateError as e:
+            raise RuntimeError(f"Could not find a valid HTCondor scheduler: {e}")
+        
+        for schedd_ad in collectors:
+            try:
+                schedd = htcondor.Schedd(schedd_ad)
+                jobs = schedd.query(
+                    opts=htcondor.QueryOpts.DefaultMyJobsOnly,
+                    projection=[
+                        "ClusterId",
+                        "Cmd",
+                        "CurrentHosts",
+                        "HoldReason",
+                        "JobStatus",
+                        "DAG_Status",
+                        "JobBatchName",
+                        "DAGManJobId",
+                    ],
+                )
+                
+                # Convert HTCondor ClassAds to dictionaries
+                for job_ad in jobs:
+                    if "ClusterId" in job_ad:
+                        job_dict = {
+                            "id": int(float(job_ad["ClusterId"])),
+                            "command": job_ad.get("Cmd", ""),
+                            "hosts": job_ad.get("CurrentHosts", 0),
+                            "status": job_ad.get("JobStatus", 0),
+                        }
+                        
+                        if "HoldReason" in job_ad:
+                            job_dict["hold"] = job_ad["HoldReason"]
+                        if "JobBatchName" in job_ad:
+                            job_dict["name"] = job_ad["JobBatchName"]
+                        if "DAG_Status" not in job_ad and "DAGManJobId" in job_ad:
+                            job_dict["dag id"] = int(float(job_ad["DAGManJobId"]))
+                        
+                        data.append(job_dict)
+                        
+            except Exception:
+                # Skip problematic schedulers
+                pass
+        
+        return data
 
 
 class Slurm(Scheduler):
@@ -267,6 +351,223 @@ class Slurm(Scheduler):
     def submit_dag(self, dag_file, batch_name=None, **kwargs):
         """Submit a DAG to Slurm."""
         raise NotImplementedError("Slurm scheduler is not yet implemented")
+    
+    def query_all_jobs(self):
+        """Query all jobs from Slurm."""
+        raise NotImplementedError("Slurm scheduler is not yet implemented")
+
+
+class Job:
+    """
+    Scheduler-agnostic representation of a job.
+    
+    This class provides a common interface for job information across
+    different schedulers.
+    """
+    
+    def __init__(self, job_id, command, hosts, status, name=None, dag_id=None, **kwargs):
+        """
+        Create a Job object.
+        
+        Parameters
+        ----------
+        job_id : int
+            The job ID or cluster ID.
+        command : str
+            The command being run.
+        hosts : int
+            The number of hosts currently processing the job.
+        status : int or str
+            The status of the job.
+        name : str, optional
+            The name or batch name of the job.
+        dag_id : int, optional
+            The DAG ID if this is a subjob.
+        **kwargs
+            Additional scheduler-specific attributes.
+        """
+        self.job_id = job_id
+        self.command = command
+        self.hosts = hosts
+        self._status = status
+        self.name = name or "asimov job"
+        self.dag_id = dag_id
+        self.subjobs = []
+        
+        # Store any additional attributes
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    def add_subjob(self, job):
+        """
+        Add a subjob to this job.
+        
+        Parameters
+        ----------
+        job : Job
+            The subjob to add.
+        """
+        self.subjobs.append(job)
+    
+    @property
+    def status(self):
+        """
+        Get the status of the job as a string.
+        
+        Returns
+        -------
+        str
+            A description of the status of the job.
+        """
+        # Handle both integer status codes and string status
+        if isinstance(self._status, int):
+            # HTCondor status codes
+            statuses = {
+                0: "Unexplained",
+                1: "Idle",
+                2: "Running",
+                3: "Removed",
+                4: "Completed",
+                5: "Held",
+                6: "Submission error",
+            }
+            return statuses.get(self._status, "Unknown")
+        else:
+            return str(self._status)
+    
+    def __repr__(self):
+        return f"<Job | {self.job_id} | {self.status} | {self.hosts} | {self.name} | {len(self.subjobs)} subjobs>"
+    
+    def __str__(self):
+        return repr(self)
+    
+    def to_dict(self):
+        """
+        Convert the job to a dictionary representation.
+        
+        Returns
+        -------
+        dict
+            Dictionary representation of the job.
+        """
+        output = {
+            "name": self.name,
+            "id": self.job_id,
+            "hosts": self.hosts,
+            "status": self._status,
+            "command": self.command,
+        }
+        
+        if self.dag_id:
+            output["dag id"] = self.dag_id
+        
+        return output
+
+
+class JobList:
+    """
+    Scheduler-agnostic list of running jobs.
+    
+    This class queries the scheduler and caches the results for performance.
+    """
+    
+    def __init__(self, scheduler, cache_file=None, cache_time=900):
+        """
+        Initialize the job list.
+        
+        Parameters
+        ----------
+        scheduler : Scheduler
+            The scheduler instance to query.
+        cache_file : str, optional
+            Path to the cache file. If None, uses ".asimov/_cache_jobs.yaml"
+        cache_time : int, optional
+            Maximum age of cache in seconds. Default is 900 (15 minutes).
+        """
+        import datetime
+        import yaml
+        
+        self.scheduler = scheduler
+        self.jobs = {}
+        self.cache_file = cache_file or os.path.join(".asimov", "_cache_jobs.yaml")
+        self.cache_time = cache_time
+        
+        # Try to load from cache
+        if os.path.exists(self.cache_file):
+            age = -os.stat(self.cache_file).st_mtime + datetime.datetime.now().timestamp()
+            if float(age) < float(self.cache_time):
+                with open(self.cache_file, "r") as f:
+                    cached_data = yaml.safe_load(f)
+                    if cached_data:
+                        self.jobs = cached_data
+                        return
+        
+        # Cache is stale or doesn't exist, refresh from scheduler
+        self.refresh()
+    
+    def refresh(self):
+        """
+        Poll the scheduler to get the list of running jobs and update the cache.
+        """
+        import yaml
+        
+        # Query all jobs from the scheduler
+        try:
+            raw_jobs = self.scheduler.query_all_jobs()
+        except Exception as e:
+            raise RuntimeError(f"Failed to query jobs from scheduler: {e}")
+        
+        # Process the raw jobs into Job objects
+        self.jobs = {}
+        all_jobs = []
+        
+        for job_data in raw_jobs:
+            job = self._create_job_from_data(job_data)
+            all_jobs.append(job)
+        
+        # Organize jobs by main jobs and subjobs
+        for job in all_jobs:
+            if not job.dag_id:
+                self.jobs[job.job_id] = job
+        
+        # Add subjobs to their parent jobs
+        for job in all_jobs:
+            if job.dag_id:
+                if job.dag_id in self.jobs:
+                    self.jobs[job.dag_id].add_subjob(job)
+                else:
+                    self.jobs[job.job_id] = job.to_dict()
+        
+        # Save to cache
+        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+        with open(self.cache_file, "w") as f:
+            f.write(yaml.dump(self.jobs))
+    
+    def _create_job_from_data(self, job_data):
+        """
+        Create a Job object from scheduler-specific data.
+        
+        Parameters
+        ----------
+        job_data : dict
+            Scheduler-specific job data.
+            
+        Returns
+        -------
+        Job
+            A Job object.
+        """
+        # This method can be overridden by scheduler-specific implementations
+        # For now, we assume the data is already in a compatible format
+        return Job(
+            job_id=job_data.get("id", job_data.get("job_id")),
+            command=job_data.get("command", ""),
+            hosts=job_data.get("hosts", 0),
+            status=job_data.get("status", 0),
+            name=job_data.get("name"),
+            dag_id=job_data.get("dag id", job_data.get("dag_id")),
+            **{k: v for k, v in job_data.items() if k not in ["id", "job_id", "command", "hosts", "status", "name", "dag id", "dag_id"]}
+        )
 
 
 def get_scheduler(scheduler_type="htcondor", **kwargs):

@@ -9,7 +9,7 @@ from copy import deepcopy
 from asimov import condor, config, logger, LOGGER_LEVEL
 from asimov import current_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
-from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict
+from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 
 logger = logger.getChild("cli").getChild("monitor")
 logger.setLevel(LOGGER_LEVEL)
@@ -145,16 +145,29 @@ def monitor(ctx, event, update, dry_run, chain):
         ctx.invoke(manage.submit, event=event)
 
     try:
-        # First pull the condor job listing
-        job_list = condor.CondorJobList()
-    except condor.htcondor.HTCondorLocateError:
-        click.echo(click.style("Could not find the condor scheduler", bold=True))
+        # Get the job listing using the new scheduler API
+        job_list = get_job_list()
+    except RuntimeError as e:
+        click.echo(click.style(f"Could not query the scheduler: {e}", bold=True))
         click.echo(
             "You need to run asimov on a machine which has access to a"
-            "condor scheduler in order to work correctly, or to specify"
-            "the address of a valid sceduler."
+            "scheduler in order to work correctly, or to specify"
+            "the address of a valid scheduler."
         )
         sys.exit()
+    except Exception as e:
+        # Fall back to legacy CondorJobList for backward compatibility
+        logger.warning(f"Failed to use new JobList, falling back to legacy: {e}")
+        try:
+            job_list = condor.CondorJobList()
+        except condor.htcondor.HTCondorLocateError:
+            click.echo(click.style("Could not find the scheduler", bold=True))
+            click.echo(
+                "You need to run asimov on a machine which has access to a"
+                "scheduler in order to work correctly, or to specify"
+                "the address of a valid scheduler."
+            )
+            sys.exit()
 
     # also check the analyses in the project analyses
     for analysis in ledger.project_analyses:
