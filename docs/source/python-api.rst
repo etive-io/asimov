@@ -39,7 +39,7 @@ The ``Project`` class provides a context manager interface that ensures the proj
 
     from asimov.project import Project
     
-    # Create or load a project
+    # Create a new project (see "Loading an Existing Project" below for loading existing projects)
     project = Project("My Project", location="/path/to/project")
     
     # Use the context manager to make changes
@@ -59,6 +59,7 @@ The ``Project`` class provides a context manager interface that ensures the proj
         )
         
         subject.add_production(production)
+        # The ledger will be updated when exiting the context manager
         project.ledger.update_event(subject)
     
     # When the context exits, changes are automatically saved

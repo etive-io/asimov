@@ -11,8 +11,8 @@ try:
 except ImportError:
     import configparser
 
-from asimov import config as global_config, storage, logger, LOGGER_LEVEL
-from asimov.ledger import Ledger, YAMLLedger
+from asimov import config as global_config, logger, LOGGER_LEVEL
+from asimov.ledger import YAMLLedger
 from asimov.event import Event
 from asimov.cli.project import make_project
 
@@ -84,6 +84,16 @@ class Project:
         self._ledger = None
         self._in_context = False
         
+        # Prevent accidental re-initialization of an existing project directory.
+        # If the target location already exists and contains a project, refuse to
+        # create a new project there, as this may overwrite an existing project.
+        config_path = os.path.join(self.location, ".asimov", "asimov.conf")
+        if os.path.exists(config_path):
+            raise RuntimeError(
+                f"Project directory '{self.location}' already contains an asimov project. "
+                "If you meant to open an existing project, use Project.load(...)."
+            )
+        
         # Initialize the project structure
         self._initialize_project()
     
@@ -145,13 +155,21 @@ class Project:
         
         # Create a Project instance without initializing
         project = cls.__new__(cls)
-        project.name = config.get("project", "name")
-        project.location = location
-        project.working = config.get("general", "rundir_default")
-        project.checkouts = config.get("general", "git_default")
-        project.results = config.get("storage", "directory")
-        project.logs = config.get("logging", "directory")
-        project.user = config.get("condor", "user")
+        
+        try:
+            project.name = config.get("project", "name")
+            project.location = location
+            project.working = config.get("general", "rundir_default")
+            project.checkouts = config.get("general", "git_default")
+            project.results = config.get("storage", "directory")
+            project.logs = config.get("logging", "directory")
+            project.user = config.get("condor", "user")
+        except (configparser.NoSectionError, configparser.NoOptionError) as e:
+            raise ValueError(
+                f"Project configuration at {config_path} is incomplete or malformed. "
+                f"Missing configuration: {e}"
+            )
+        
         project._original_dir = None
         project._ledger = None
         project._in_context = False
@@ -172,6 +190,7 @@ class Project:
         """
         if self._ledger is None:
             # Change to project directory to load the ledger
+            # This is required because Event initialization needs the correct working directory
             original_dir = os.getcwd()
             try:
                 os.chdir(self.location)
@@ -195,13 +214,20 @@ class Project:
         os.chdir(self.location)
         self._in_context = True
         
+        # Preserve the existing global project root so it can be restored on exit
+        try:
+            self._previous_project_root = global_config.get("project", "root")
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            self._previous_project_root = None
+        
         # Update the global config with the project location
         # This is needed for ledger.save() to work correctly
         global_config.set("project", "root", self.location)
         
-        # Reload the ledger in the project directory
-        ledger_path = os.path.join(".asimov", "ledger.yml")
-        self._ledger = YAMLLedger(location=ledger_path)
+        # Load the ledger in the project directory if it hasn't been loaded yet
+        if self._ledger is None:
+            ledger_path = os.path.join(".asimov", "ledger.yml")
+            self._ledger = YAMLLedger(location=ledger_path)
         
         # Ensure pipelines section exists in ledger data
         # This is needed for production.to_dict() to work correctly
@@ -231,6 +257,10 @@ class Project:
                 logger.debug(f"Saved ledger for project '{self.name}'")
                 # Invalidate the ledger cache so it will be reloaded on next access
                 self._ledger = None
+            
+            # Restore the previous global project root
+            if self._previous_project_root is not None:
+                global_config.set("project", "root", self._previous_project_root)
         finally:
             self._in_context = False
             if self._original_dir:
@@ -267,8 +297,16 @@ class Project:
         # Create the event
         event = Event(name=name, ledger=self._ledger, **kwargs)
         
-        # Add to ledger
-        self._ledger.add_event(event)
+        # Add to ledger without saving (save happens on context exit)
+        # Temporarily disable auto-save during add_event to avoid redundant I/O
+        original_save = self._ledger.save
+        try:
+            # Replace save with a no-op during add_event
+            self._ledger.save = lambda: None
+            self._ledger.add_event(event)
+        finally:
+            # Restore the original save method
+            self._ledger.save = original_save
         
         logger.info(f"Added subject '{name}' to project '{self.name}'")
         

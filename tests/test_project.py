@@ -27,6 +27,10 @@ class TestProject(unittest.TestCase):
         """Test that a project can be created programmatically."""
         project = Project(self.project_name, location=self.test_dir)
         
+        # Verify that the project object has the expected attributes
+        self.assertEqual(project.name, self.project_name)
+        self.assertEqual(project.location, self.test_dir)
+        
         # Check that the project directory was created
         self.assertTrue(os.path.exists(self.test_dir))
         
@@ -47,7 +51,7 @@ class TestProject(unittest.TestCase):
     def test_project_load(self):
         """Test that an existing project can be loaded."""
         # First create a project
-        project1 = Project(self.project_name, location=self.test_dir)
+        Project(self.project_name, location=self.test_dir)
         
         # Now load it
         project2 = Project.load(self.test_dir)
@@ -124,6 +128,12 @@ class TestProject(unittest.TestCase):
         with project:
             subject1 = project.add_subject(name="GW150914")
             subject2 = project.add_subject(name="GW151226")
+            
+            # Check that the returned subjects are correct
+            self.assertIsInstance(subject1, Event)
+            self.assertIsInstance(subject2, Event)
+            self.assertEqual(subject1.name, "GW150914")
+            self.assertEqual(subject2.name, "GW151226")
         
         # Check that both subjects are in the ledger
         events = project.get_event()
@@ -154,6 +164,54 @@ class TestProject(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(len(events[0].productions), 1)
         self.assertEqual(events[0].productions[0].name, "prod_bilby")
+    
+    def test_project_creation_on_existing_fails(self):
+        """Test that creating a project on an existing project directory raises an error."""
+        # First create a project
+        Project(self.project_name, location=self.test_dir)
+        
+        # Try to create another project in the same location
+        with self.assertRaises(RuntimeError) as context:
+            Project("Another Project", location=self.test_dir)
+        
+        self.assertIn("already contains an asimov project", str(context.exception))
+    
+    def test_load_with_malformed_config(self):
+        """Test that loading a project with incomplete config raises a clear error."""
+        # Create a directory with a malformed config
+        os.makedirs(os.path.join(self.test_dir, ".asimov"))
+        
+        # Create a config file with missing sections
+        import configparser
+        config = configparser.ConfigParser()
+        config.add_section("project")
+        config.set("project", "name", "Test")
+        # Missing other required sections
+        
+        config_path = os.path.join(self.test_dir, ".asimov", "asimov.conf")
+        with open(config_path, "w") as f:
+            config.write(f)
+        
+        # Try to load the project
+        with self.assertRaises(ValueError) as context:
+            Project.load(self.test_dir)
+        
+        self.assertIn("incomplete or malformed", str(context.exception))
+    
+    def test_context_manager_exception_handling(self):
+        """Test that ledger is not saved when an exception occurs in context."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        # Try to add a subject but raise an exception
+        with self.assertRaises(ValueError):
+            with project:
+                project.add_subject(name="GW150914")
+                # Raise an exception before exiting context
+                raise ValueError("Test exception")
+        
+        # Verify that the subject was not saved
+        events = project.get_event()
+        self.assertEqual(len(events), 0)
 
 
 if __name__ == "__main__":
