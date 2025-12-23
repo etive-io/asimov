@@ -203,6 +203,11 @@ class Project:
         ledger_path = os.path.join(".asimov", "ledger.yml")
         self._ledger = YAMLLedger(location=ledger_path)
         
+        # Ensure pipelines section exists in ledger data
+        # This is needed for production.to_dict() to work correctly
+        if "pipelines" not in self._ledger.data:
+            self._ledger.data["pipelines"] = {}
+        
         logger.debug(f"Entered context for project '{self.name}'")
         return self
     

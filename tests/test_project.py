@@ -135,12 +135,7 @@ class TestProject(unittest.TestCase):
         """Test adding an analysis to a subject within a project context."""
         project = Project(self.project_name, location=self.test_dir)
         
-        # First, ensure the ledger has a pipelines section
         with project:
-            # Add pipelines section to ledger data if not present
-            if "pipelines" not in project.ledger.data:
-                project.ledger.data["pipelines"] = {}
-            
             subject = project.add_subject(name="GW150914")
             # Add a production/analysis to the subject
             from asimov.analysis import GravitationalWaveTransient

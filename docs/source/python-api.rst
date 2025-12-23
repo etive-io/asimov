@@ -134,10 +134,6 @@ Here's a complete example showing how to create a project, add events, and confi
     )
     
     with project:
-        # Ensure pipelines section exists in ledger
-        if "pipelines" not in project.ledger.data:
-            project.ledger.data["pipelines"] = {}
-        
         # Add events from GWTC-1
         for event_name in ["GW150914", "GW151012", "GW151226"]:
             subject = project.add_subject(name=event_name)
