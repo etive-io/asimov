@@ -191,17 +191,38 @@ interface = BilbyPriorInterface({
         'maximum': 1000,
         'type': 'PowerLaw',
         'alpha': 2
+    },
+    'chirp mass': {
+        'minimum': 21.4,
+        'maximum': 42.0
     }
 })
 
-# Convert to bilby format (returns dict for template)
+# Convert to bilby format (returns dict)
 bilby_priors = interface.convert()
 
 # Get default prior set
 default = interface.get_default_prior()  # Returns 'BBHPriorDict'
+
+# Generate a complete prior_dict string for bilby config
+prior_string = interface.to_prior_dict_string()
+# Returns a formatted string like:
+# {
+#    chirp_mass = bilby.gw.prior.UniformInComponentsChirpMass(name='chirp_mass', minimum=21.4, maximum=42.0, unit='$M_{\odot}$'),
+#    luminosity_distance = PowerLaw(name='luminosity_distance', minimum=10, maximum=1000, alpha=2, unit='Mpc'),
+#    ...
+# }
 ```
 
-The bilby template (`configs/bilby.ini`) accesses these priors through the pipeline's prior interface.
+The bilby template (`configs/bilby.ini`) uses the `to_prior_dict_string()` method to generate a complete prior dictionary string that can be directly inserted into the configuration file:
+
+```liquid
+{%- assign prior_interface = production.pipeline.get_prior_interface() -%}
+default-prior = {{ prior_interface.get_default_prior() }}
+prior-dict = {{ prior_interface.to_prior_dict_string() }}
+```
+
+This approach provides maximum flexibility as the prior interface can generate any valid bilby prior specification, including custom prior types and reparameterizations.
 
 ### LALInference Prior Interface
 
