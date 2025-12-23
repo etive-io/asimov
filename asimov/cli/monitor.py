@@ -23,6 +23,8 @@ else:
 @click.command()
 def start(dry_run):
     """Set up a cron job on condor to monitor the project."""
+    from asimov import setup_file_logging
+    setup_file_logging()
 
     try:
         minute_expression = config.get("condor", "cron_minute")
@@ -74,6 +76,8 @@ def start(dry_run):
 @click.command()
 def stop(dry_run):
     """Set up a cron job on condor to monitor the project."""
+    from asimov import setup_file_logging
+    setup_file_logging()
     cluster = ledger.data["cronjob"]
     condor.delete_job(cluster)
     click.secho("  \t  ● Asimov has been stopped", fg="red")
@@ -102,6 +106,8 @@ def monitor(ctx, event, update, dry_run, chain):
     """
     Monitor condor jobs' status, and collect logging information.
     """
+    from asimov import setup_file_logging
+    setup_file_logging()
 
     logger.info("Running asimov monitor")
 

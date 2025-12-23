@@ -82,16 +82,47 @@ print_formatter = logging.Formatter("[%(levelname)s] %(message)s", "%Y-%m-%d %H:
 ch.setFormatter(print_formatter)
 ch.setLevel(PRINT_LEVEL)
 
-logfile = "asimov.log"
-fh = logging.FileHandler(logfile)
-formatter = logging.Formatter(
-    "%(asctime)s [%(name)s][%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
-)
-fh.setFormatter(formatter)
-fh.setLevel(LOGGER_LEVEL)
-
 logger.addHandler(ch)
-logger.addHandler(fh)
+
+# File handler is not added by default - it's lazy-loaded when needed
+_file_handler = None
+
+def setup_file_logging(logfile=None):
+    """
+    Set up file logging for asimov.
+    
+    This function should be called by commands that need to write logs to a file.
+    Read-only commands like --help or --version should not call this.
+    
+    Parameters
+    ----------
+    logfile : str, optional
+        Path to the log file. If None, uses configuration or default location.
+    """
+    global _file_handler
+    
+    # Only set up file handler once
+    if _file_handler is not None:
+        return
+    
+    # Determine log file location
+    if logfile is None:
+        try:
+            log_directory = config.get("logging", "location")
+            if not os.path.exists(log_directory):
+                os.makedirs(log_directory)
+            logfile = os.path.join(log_directory, "asimov.log")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            # Fall back to current directory if no config
+            logfile = "asimov.log"
+    
+    _file_handler = logging.FileHandler(logfile)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(name)s][%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
+    )
+    _file_handler.setFormatter(formatter)
+    _file_handler.setLevel(LOGGER_LEVEL)
+    logger.addHandler(_file_handler)
 
 
 try:

@@ -144,8 +144,10 @@ def init(
     """
     Roll-out a new project.
     """
+    from asimov import setup_file_logging
     make_project(name, root, working=working, checkouts=checkouts, results=results)
     click.echo(click.style("●", fg="green") + " New project created successfully!")
+    setup_file_logging()
     logger.info(f"A new project was created in {os.getcwd()}")
 
 

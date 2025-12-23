@@ -59,6 +59,7 @@ def build(event, dryrun):
     Create the run configuration files for a given event for jobs which are ready to run.
     If no event is specified then all of the events will be processed.
     """
+    asimov.setup_file_logging()
     logger = asimov.logger.getChild("cli").getChild("manage.build")
     logger.setLevel(LOGGER_LEVEL)
 
@@ -190,6 +191,7 @@ def submit(event, update, dryrun):
     Submit the run configuration files for a given event for jobs which are ready to run.
     If no event is specified then all of the events will be processed.
     """
+    asimov.setup_file_logging()
     logger = asimov.logger.getChild("cli").getChild("manage.submit")
     logger.setLevel(LOGGER_LEVEL)
 
