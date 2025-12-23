@@ -261,6 +261,13 @@ class Project:
             # Restore the previous global project root
             if self._previous_project_root is not None:
                 global_config.set("project", "root", self._previous_project_root)
+            else:
+                # There was no previous project.root; remove the option we added in __enter__
+                try:
+                    global_config.remove_option("project", "root")
+                except (configparser.NoSectionError, configparser.NoOptionError):
+                    # If the section/option is missing, there's nothing to restore
+                    pass
         finally:
             self._in_context = False
             if self._original_dir:
