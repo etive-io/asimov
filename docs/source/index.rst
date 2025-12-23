@@ -124,6 +124,8 @@ Users' guide
 
    getting-started
    installation
+   architecture
+   glossary
    user-guide/projects
    user-guide/events
    user-guide/productions

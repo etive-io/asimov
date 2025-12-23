@@ -68,6 +68,11 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/
+docs/lvk/
+docs/**/*.doctree
+docs/**/doctrees/
+docs/**/environment.pickle
 
 # PyBuilder
 target/
