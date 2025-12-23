@@ -144,10 +144,12 @@ def init(
     """
     Roll-out a new project.
     """
-    from asimov import setup_file_logging
+    from asimov import setup_file_logging, config
     make_project(name, root, working=working, checkouts=checkouts, results=results)
     click.echo(click.style("●", fg="green") + " New project created successfully!")
-    # Set up logging after project is created so logs directory exists
+    # Reload config to pick up the newly created project config
+    config.read(os.path.join(".asimov", "asimov.conf"))
+    # Set up logging after project is created and config is reloaded
     setup_file_logging()
     logger.info(f"A new project was created in {os.getcwd()}")
 
