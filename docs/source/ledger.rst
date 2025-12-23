@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 .. _ledger:
 
-=======
->>>>>>> v0.4-release
 The Asimov Ledger
 =================
 
