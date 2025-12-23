@@ -484,9 +484,6 @@ class JobList:
         cache_time : int, optional
             Maximum age of cache in seconds. Default is 900 (15 minutes).
         """
-        import datetime
-        import yaml
-        
         self.scheduler = scheduler
         self.jobs = {}
         self.cache_file = cache_file or os.path.join(".asimov", "_cache_jobs.yaml")
@@ -509,8 +506,6 @@ class JobList:
         """
         Poll the scheduler to get the list of running jobs and update the cache.
         """
-        import yaml
-        
         # Query all jobs from the scheduler
         try:
             raw_jobs = self.scheduler.query_all_jobs()
@@ -536,7 +531,8 @@ class JobList:
                 if job.dag_id in self.jobs:
                     self.jobs[job.dag_id].add_subjob(job)
                 else:
-                    self.jobs[job.job_id] = job.to_dict()
+                    # If DAG parent doesn't exist, store this job as a standalone job
+                    self.jobs[job.job_id] = job
         
         # Save to cache
         os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
