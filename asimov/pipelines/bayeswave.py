@@ -347,11 +347,9 @@ class BayesWave(Pipeline):
         else:
             with set_directory(self.production.rundir):
                 try:
-                    dag_path = os.path.join(self.production.rundir, dag_filename)
-                    
                     # Use the scheduler API to submit the DAG
                     cluster_id = self.scheduler.submit_dag(
-                        dag_file=dag_path,
+                        dag_file=dag_filename,
                         batch_name=batch_name
                     )
                     

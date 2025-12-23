@@ -8,6 +8,7 @@ Supported Schedulers are:
 
 """
 
+import os
 import htcondor
 from abc import ABC, abstractmethod
 
@@ -212,8 +213,6 @@ class HTCondor(Scheduler):
         FileNotFoundError
             If the DAG file does not exist.
         """
-        import os
-        
         if not os.path.exists(dag_file):
             raise FileNotFoundError(f"DAG file not found: {dag_file}")
         
