@@ -89,14 +89,23 @@ class BilbyPriorInterface(PriorInterface):
             if prior_str:
                 prior_lines.append(prior_str)
         
-        # Add default fixed priors for sky location and polarization
-        prior_lines.extend([
-            "dec = Cosine(name='dec')",
-            "ra = Uniform(name='ra', minimum=0, maximum=2 * np.pi, boundary='periodic')",
-            "theta_jn = Sine(name='theta_jn')",
-            "psi = Uniform(name='psi', minimum=0, maximum=np.pi, boundary='periodic')",
-            "phase = Uniform(name='phase', minimum=0, maximum=2 * np.pi, boundary='periodic')"
-        ])
+        # Add default fixed priors for sky location and polarization,
+        # but only if they have not been specified by the user.
+        default_sky_priors = {
+            "dec": "dec = Cosine(name='dec')",
+            "ra": "ra = Uniform(name='ra', minimum=0, maximum=2 * np.pi, boundary='periodic')",
+            "theta_jn": "theta_jn = Sine(name='theta_jn')",
+            "psi": "psi = Uniform(name='psi', minimum=0, maximum=np.pi, boundary='periodic')",
+            "phase": "phase = Uniform(name='phase', minimum=0, maximum=2 * np.pi, boundary='periodic')",
+        }
+
+        # Determine which parameters have been explicitly specified in the prior dict
+        specified_params = {name for name in priors.keys() if name != "default"}
+
+        # Only append defaults for parameters that are not explicitly specified
+        for param_name, prior_str in default_sky_priors.items():
+            if param_name not in specified_params:
+                prior_lines.append(prior_str)
         
         # Join all lines with proper indentation
         return "{\n   " + ",\n   ".join(prior_lines) + "}"
@@ -171,25 +180,14 @@ class BilbyPriorInterface(PriorInterface):
         
         # Add minimum and maximum if present
         if minimum is not None:
-            # Special handling for chirp mass and mass ratio defaults
-            if bilby_name == 'chirp_mass' and minimum is not None:
-                parts.append(f"minimum={minimum}")
-            elif bilby_name == 'chirp_mass':
-                parts.append("minimum=1")
-            else:
-                parts.append(f"minimum={minimum}")
+            parts.append(f"minimum={minimum}")
         elif bilby_name in ['a_1', 'a_2', 'phi_12', 'phi_jl', 'lambda_1', 'lambda_2']:
             parts.append("minimum=0")
         elif bilby_name in ['mass_1', 'mass_2']:
             parts.append("minimum=1")
         
         if maximum is not None:
-            if bilby_name == 'chirp_mass' and maximum is not None:
-                parts.append(f"maximum={maximum}")
-            elif bilby_name == 'chirp_mass':
-                parts.append("maximum=100")
-            else:
-                parts.append(f"maximum={maximum}")
+            parts.append(f"maximum={maximum}")
         elif bilby_name in ['a_1', 'a_2']:
             parts.append("maximum=0.99")
         elif bilby_name in ['phi_12', 'phi_jl']:

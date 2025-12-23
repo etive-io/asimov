@@ -18,15 +18,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'asimov'))
 # Import outside the asimov directory to avoid logging.py conflict
 os.chdir('/tmp')
 
-from pydantic import ValidationError
-
 # Import the prior models directly
 from asimov.priors import (
     PriorSpecification,
     PriorDict,
-    BilbyPriorInterface,
     Reparameterization
 )
+from asimov.pipelines.bilby import BilbyPriorInterface
 
 def test_basic_prior_spec():
     """Test basic prior specification."""

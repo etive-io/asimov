@@ -113,8 +113,6 @@ class MyPipeline(Pipeline):
     
     def get_prior_interface(self):
         """Get the prior interface for this pipeline."""
-        from asimov.priors import MyPipelinePriorInterface
-        
         if self._prior_interface is None:
             priors = self.production.priors
             self._prior_interface = MyPipelinePriorInterface(priors)

@@ -8,7 +8,7 @@ This module provides a flexible prior specification system that:
 """
 
 from typing import Any, Dict, Optional, Union
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 
 class PriorSpecification(BaseModel):
