@@ -224,6 +224,7 @@ Python API
    api/mattermost
    api/olivaw
    api/pipeline
+   api/schedulers
    config
 
 LIGO Analysis Cookbook
