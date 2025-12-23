@@ -67,7 +67,7 @@ def make_project(
 
     # Make the log directory
     pathlib.Path(logs).mkdir(parents=True, exist_ok=True)
-    config.set("logging", "directory", logs)
+    config.set("logging", "location", logs)
 
     # Make the results store
     storage.Store.create(root=results, name=f"{project_name} storage")
