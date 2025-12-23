@@ -199,6 +199,10 @@ class Project:
         os.chdir(self.location)
         self._in_context = True
         
+        # Update the global config with the project location
+        # This is needed for ledger.save() to work correctly
+        global_config.set("project", "root", self.location)
+        
         # Reload the ledger in the project directory
         ledger_path = os.path.join(".asimov", "ledger.yml")
         self._ledger = YAMLLedger(location=ledger_path)
