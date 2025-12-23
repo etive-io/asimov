@@ -73,10 +73,10 @@ class Event:
         self.logger = logger.getChild("event").getChild(f"{self.name}")
         self.logger.setLevel(LOGGER_LEVEL)
 
-        # pathlib.Path(os.path.join(config.get("logging", "directory"), name)).mkdir(
+        # pathlib.Path(os.path.join(config.get("logging", "location"), name)).mkdir(
         #    parents=True, exist_ok=True
         # )
-        # logfile = os.path.join(config.get("logging", "directory"), name, "asimov.log")
+        # logfile = os.path.join(config.get("logging", "location"), name, "asimov.log")
 
         # fh = logging.FileHandler(logfile)
         # formatter = logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")

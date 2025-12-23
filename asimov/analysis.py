@@ -464,7 +464,7 @@ class SimpleAnalysis(Analysis):
         self.name = name
 
         pathlib.Path(
-            os.path.join(config.get("logging", "directory"), self.event.name, name)
+            os.path.join(config.get("logging", "location"), self.event.name, name)
         ).mkdir(parents=True, exist_ok=True)
 
         self.logger = logger.getChild("analysis").getChild(
