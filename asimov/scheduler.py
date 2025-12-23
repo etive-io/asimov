@@ -496,14 +496,17 @@ class JobList:
                 with open(self.cache_file, "r") as f:
                     cached_data = yaml.safe_load(f)
                     # Only use the cached data if it appears to be a mapping of
-                    # job-like objects (i.e., objects with the attributes/methods
+                    # job-like objects (i.e., dictionaries with the keys
                     # that JobList relies on). Otherwise, fall back to a refresh.
                     if isinstance(cached_data, dict) and cached_data:
                         valid_cache = True
                         for job_obj in cached_data.values():
-                            # We expect each cached job to have at least these
-                            # attributes/methods; plain dicts from YAML won't.
-                            if not hasattr(job_obj, "job_id") or not hasattr(job_obj, "dag_id") or not hasattr(job_obj, "add_subjob"):
+                            # Cached jobs are stored as dictionaries produced by
+                            # Job.to_dict(), so we validate based on required keys.
+                            if not isinstance(job_obj, dict):
+                                valid_cache = False
+                                break
+                            if "job_id" not in job_obj or "dag_id" not in job_obj:
                                 valid_cache = False
                                 break
                         if valid_cache:
@@ -547,9 +550,10 @@ class JobList:
         
         # Save to cache
         os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-        serializable_jobs = {job_id: job.to_dict() for job_id, job in self.jobs.items()}
+        # Store Job objects directly so that cache loading logic, which expects
+        # Job instances with methods, can validate and use the cached data.
         with open(self.cache_file, "w") as f:
-            f.write(yaml.dump(serializable_jobs))
+            f.write(yaml.dump(self.jobs))
     
     def _create_job_from_data(self, job_data):
         """

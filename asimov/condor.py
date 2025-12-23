@@ -106,7 +106,13 @@ def _submit_job_legacy(submit_description):
         )
         schedd = htcondor.Schedd(schedulers)
         logger.info(f"Found scheduler: {schedd}")
-    except Exception:  # Catch all exceptions to fall back to searching for any schedd
+    except (
+        htcondor.HTCondorLocateError,
+        htcondor.HTCondorIOError,
+        configparser.NoOptionError,
+        configparser.NoSectionError,
+        KeyError,
+    ):  # Fall back to searching for any schedd on expected lookup/config errors
         # If you can't find a specified scheduler, try until it works
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
