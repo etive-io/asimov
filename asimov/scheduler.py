@@ -91,8 +91,8 @@ class HTCondor(Scheduler):
                         htcondor.DaemonTypes.Schedd, self.schedd_name
                     )
                     self._schedd = htcondor.Schedd(schedulers)
-                except Exception:
-                    # Fall back to default schedd
+                except (htcondor.HTCondorLocateError, htcondor.HTCondorIOError):
+                    # Fall back to default schedd if we can't locate the named one
                     self._schedd = htcondor.Schedd()
             else:
                 self._schedd = htcondor.Schedd()

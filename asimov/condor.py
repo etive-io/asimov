@@ -81,9 +81,6 @@ def submit_job(submit_description):
         # Fall back to the old implementation for robustness
         logger.info("Falling back to legacy submission method")
         return _submit_job_legacy(submit_description)
-        # Fall back to the old implementation for robustness
-        logger.info("Falling back to legacy submission method")
-        return _submit_job_legacy(submit_description)
 
 
 def _submit_job_legacy(submit_description):
