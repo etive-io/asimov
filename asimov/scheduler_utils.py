@@ -54,7 +54,8 @@ def create_job_from_dict(job_dict):
     Create a JobDescription from a dictionary.
     
     This is a convenience function to convert existing HTCondor-style
-    job dictionaries to JobDescription objects.
+    job dictionaries to JobDescription objects. The input dictionary
+    is not modified.
     
     Parameters
     ----------
@@ -81,15 +82,19 @@ def create_job_from_dict(job_dict):
     ...     "request_memory": "8GB"
     ... }
     >>> job = create_job_from_dict(job_dict)
+    >>> # job_dict is unchanged after the call
     """
+    # Make a copy to avoid modifying the original dictionary
+    job_dict_copy = job_dict.copy()
+    
     # Extract required parameters
-    executable = job_dict.pop("executable")
-    output = job_dict.pop("output")
-    error = job_dict.pop("error")
-    log = job_dict.pop("log")
+    executable = job_dict_copy.pop("executable")
+    output = job_dict_copy.pop("output")
+    error = job_dict_copy.pop("error")
+    log = job_dict_copy.pop("log")
     
     # Convert HTCondor-specific resource parameters to generic ones
-    kwargs = job_dict.copy()
+    kwargs = job_dict_copy
     
     # Map HTCondor resource parameters to generic ones
     if "request_cpus" in kwargs:

@@ -71,7 +71,7 @@ def start(dry_run, use_scheduler_api):
         logger.info("Using new scheduler API")
         try:
             scheduler = get_configured_scheduler()
-            job = create_job_from_dict(submit_description.copy())
+            job = create_job_from_dict(submit_description)
             cluster = scheduler.submit(job)
         except Exception as e:
             logger.error(f"Failed to submit using scheduler API: {e}")
@@ -85,6 +85,7 @@ def start(dry_run, use_scheduler_api):
     ledger.save()
     click.secho(f"  \t  ● Asimov is running ({cluster})", fg="green")
     logger.info(f"Running asimov cronjob as  {cluster}")
+
 
 
 @click.option("--dry-run", "-n", "dry_run", is_flag=True)
