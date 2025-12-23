@@ -111,7 +111,8 @@ def setup_file_logging(logfile=None):
         try:
             log_directory = config.get("logging", "location")
             if not os.path.exists(log_directory):
-                os.makedirs(log_directory)
+                # Create directory with appropriate permissions
+                os.makedirs(log_directory, mode=0o755)
             logfile = os.path.join(log_directory, "asimov.log")
         except (configparser.NoOptionError, configparser.NoSectionError):
             # Fall back to current directory if no config
@@ -125,13 +126,17 @@ def setup_file_logging(logfile=None):
     try:
         # Try to get custom values from config
         max_bytes = int(config.get("logging", "max_bytes"))
-    except (configparser.NoOptionError, configparser.NoSectionError, ValueError):
+    except (configparser.NoOptionError, configparser.NoSectionError):
         pass
+    except ValueError as e:
+        logger.warning(f"Invalid value for logging.max_bytes in config, using default: {e}")
     
     try:
         backup_count = int(config.get("logging", "backup_count"))
-    except (configparser.NoOptionError, configparser.NoSectionError, ValueError):
+    except (configparser.NoOptionError, configparser.NoSectionError):
         pass
+    except ValueError as e:
+        logger.warning(f"Invalid value for logging.backup_count in config, using default: {e}")
     
     _file_handler = RotatingFileHandler(
         logfile, maxBytes=max_bytes, backupCount=backup_count
