@@ -281,10 +281,15 @@ class JobDescription:
         description["error"] = self.error
         description["log"] = self.log 
 
-        # Map generic resource parameters to HTCondor-specific ones
-        description["request_cpus"] = self.kwargs.get("cpus", 1)
-        description["request_memory"] = self.kwargs.get("memory", "1GB")
-        description["request_disk"] = self.kwargs.get("disk", "1GB")
+        # Map generic resource parameters to HTCondor-specific ones using the mapping
+        for generic_key, htcondor_key in self.HTCONDOR_RESOURCE_MAPPING.items():
+            if generic_key in self.kwargs:
+                description[htcondor_key] = self.kwargs[generic_key]
+        
+        # Set defaults for resource parameters if not provided
+        description.setdefault("request_cpus", 1)
+        description.setdefault("request_memory", "1GB")
+        description.setdefault("request_disk", "1GB")
         
         # Add any additional kwargs to the description
         # Skip the generic resource parameters as they've already been mapped

@@ -106,7 +106,7 @@ def _submit_job_legacy(submit_description):
         )
         schedd = htcondor.Schedd(schedulers)
         logger.info(f"Found scheduler: {schedd}")
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to searching for any schedd
         # If you can't find a specified scheduler, try until it works
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -168,7 +168,7 @@ def _delete_job_legacy(cluster_id):
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to default schedd
         # If you can't find a specified scheduler, use the first one you find
         schedd = htcondor.Schedd()
     schedd.act(htcondor.JobAction.Remove, f"ClusterId == {cluster_id}")
@@ -181,7 +181,7 @@ def collect_history(cluster_id):
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to searching for any schedd
         # If you can't find a specified scheduler, use the first one you find
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -413,7 +413,7 @@ class CondorJobList:
                     ],
                 )
                 data += jobs
-            except:  # NoQA
+            except Exception:  # Catch all exceptions to skip problematic schedds
                 pass
 
             retdat = []
