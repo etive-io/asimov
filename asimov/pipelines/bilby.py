@@ -153,6 +153,28 @@ class BilbyPriorInterface(PriorInterface):
         maximum = param_spec.get('maximum')
         boundary = param_spec.get('boundary')
         
+        # Whitelist of allowed prior types to prevent code injection
+        allowed_prior_types = {
+            'Uniform', 'LogUniform', 'PowerLaw', 'Gaussian', 'TruncatedGaussian',
+            'Sine', 'Cosine', 'Interped', 'FromFile',
+            'DeltaFunction', 'Constraint',
+            'bilby.gw.prior.UniformInComponentsChirpMass',
+            'bilby.gw.prior.UniformInComponentsMassRatio',
+            'bilby.gw.prior.AlignedSpin',
+            'bilby.gw.prior.UniformComovingVolume',
+            'bilby.core.prior.Uniform',
+            'bilby.core.prior.LogUniform',
+            'bilby.core.prior.PowerLaw',
+            'bilby.core.prior.Gaussian',
+            'bilby.core.prior.TruncatedGaussian',
+            'bilby.core.prior.Sine',
+            'bilby.core.prior.Cosine',
+            'bilby.core.prior.Interped',
+            'bilby.core.prior.FromFile',
+            'bilby.core.prior.DeltaFunction',
+            'bilby.core.prior.Constraint'
+        }
+        
         # Default prior types for common parameters
         default_types = {
             'chirp_mass': 'bilby.gw.prior.UniformInComponentsChirpMass',
@@ -174,6 +196,14 @@ class BilbyPriorInterface(PriorInterface):
         
         if prior_type is None:
             prior_type = default_types.get(bilby_name, 'Uniform')
+        else:
+            # Validate that the prior type is in the whitelist
+            if prior_type not in allowed_prior_types:
+                raise ValueError(
+                    f"Prior type '{prior_type}' for parameter '{bilby_name}' is not in the "
+                    f"allowed list. This prevents potential code injection. "
+                    f"Allowed types: {sorted(allowed_prior_types)}"
+                )
         
         # Build the prior string
         parts = [f"name='{bilby_name}'"]

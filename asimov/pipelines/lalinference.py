@@ -65,11 +65,16 @@ class LALInferencePriorInterface(PriorInterface):
         -------
         int
             Amplitude order (default: 0)
+            
+        Notes
+        -----
+        Prefers 'amp order' but falls back to 'amplitude order' for backward compatibility.
         """
         if self.prior_dict is None:
             return 0
         
         original_priors = self.prior_dict.to_dict()
+        # Prefer 'amp order' as the canonical name
         return original_priors.get('amp order', original_priors.get('amplitude order', 0))
 
 

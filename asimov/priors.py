@@ -8,7 +8,7 @@ This module provides a flexible prior specification system that:
 """
 
 from typing import Any, Dict, Optional, Union
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class PriorSpecification(BaseModel):
@@ -47,6 +47,14 @@ class PriorSpecification(BaseModel):
     # Allow any additional fields for pipeline-specific settings
     model_config = {"extra": "allow"}
     
+    @model_validator(mode='after')
+    def validate_min_max(self):
+        """Validate that minimum is less than maximum when both are specified."""
+        if self.minimum is not None and self.maximum is not None:
+            if self.minimum >= self.maximum:
+                raise ValueError(f"minimum ({self.minimum}) must be less than maximum ({self.maximum})")
+        return self
+    
     @field_validator('boundary')
     @classmethod
     def validate_boundary(cls, v):
@@ -54,8 +62,7 @@ class PriorSpecification(BaseModel):
         if v is not None:
             allowed = ['periodic', 'reflective', None, 'None']
             if v not in allowed:
-                # Allow it but issue a warning
-                pass
+                raise ValueError(f"boundary must be one of {allowed}, got '{v}'")
         return v
 
 
