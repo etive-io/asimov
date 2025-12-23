@@ -9,6 +9,7 @@ __packagename__ = __name__
 
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 
 try:
     from importlib.metadata import version, PackageNotFoundError
@@ -116,7 +117,25 @@ def setup_file_logging(logfile=None):
             # Fall back to current directory if no config
             logfile = "asimov.log"
     
-    _file_handler = logging.FileHandler(logfile)
+    # Use RotatingFileHandler to prevent log files from growing too large
+    # Default: 10 MB per file, keep 5 backup files
+    max_bytes = 10 * 1024 * 1024  # 10 MB
+    backup_count = 5
+    
+    try:
+        # Try to get custom values from config
+        max_bytes = int(config.get("logging", "max_bytes"))
+    except (configparser.NoOptionError, configparser.NoSectionError, ValueError):
+        pass
+    
+    try:
+        backup_count = int(config.get("logging", "backup_count"))
+    except (configparser.NoOptionError, configparser.NoSectionError, ValueError):
+        pass
+    
+    _file_handler = RotatingFileHandler(
+        logfile, maxBytes=max_bytes, backupCount=backup_count
+    )
     formatter = logging.Formatter(
         "%(asctime)s [%(name)s][%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
     )
