@@ -161,8 +161,10 @@ Advanced topics
 
    analyses
    build-process
-
+   cli-reference
    configuration
+   troubleshooting
+   faq
    test-interface
    clusters
 
