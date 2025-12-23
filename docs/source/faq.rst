@@ -125,7 +125,7 @@ Asimov requires Python 3.9 or later. We recommend using the latest stable Python
 Can I use asimov without LIGO credentials?
 -------------------------------------------
 
-For public data (e.g., from GWOSC), yes! You can analyze public gravitational wave data without LIGO credentials. However, accessing LIGO proprietary data requires:
+For public data (e.g., from GWOSC - the Gravitational Wave Open Science Center), yes! You can analyze public gravitational wave data without LIGO credentials. However, accessing LIGO proprietary data requires:
 
 - LIGO.ORG credentials
 - Kerberos authentication (``kinit``)

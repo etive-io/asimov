@@ -46,10 +46,12 @@ Configuration Sections
 General asimov settings.
 
 ``git_default``
-   Default location for git operations.
+   Default base directory for git repository operations when checking out event repositories.
+   Event repositories will be cloned into subdirectories under this path.
    
    - **Default**: ``.`` (current directory)
    - **Example**: ``git_default = /home/user/repos``
+   - **Usage**: When asimov clones event repositories, it creates ``{git_default}/checkouts/EVENT_NAME/``
 
 ``rundir_default``
    Default name for run directories.

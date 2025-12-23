@@ -193,7 +193,12 @@ Generate configuration files for analyses.
    Build only for specific event.
 
 ``--production TEXT``
-   Build only for specific analysis/production.
+   Build only for specific production/analysis.
+   
+   .. note::
+      "Production" and "analysis" are used interchangeably here. Prior to v0.4.0, 
+      the term "production" was used; it now refers to a ``SimpleAnalysis``.
+      See :ref:`glossary` for more information.
 
 ``--force``
    Force rebuild even if files exist.
