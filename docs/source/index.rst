@@ -159,7 +159,7 @@ Advanced topics
 
    analyses
    build-process
-
+   scheduler-integration
    configuration
    test-interface
    clusters

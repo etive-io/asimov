@@ -207,7 +207,12 @@ class Bilby(Pipeline):
         Notes
         -----
         This overloads the default submission routine, as bilby seems to store
-        its DAG files in a different location
+        its DAG files in a different location.
+        
+        The scheduler property (self.scheduler) is available for accessing the
+        configured scheduler instance if needed for custom job submissions.
+        DAG submission currently uses condor_submit_dag directly as it is
+        HTCondor-specific.
         """
 
         cwd = os.getcwd()
