@@ -6,11 +6,76 @@ import os
 import re
 import subprocess
 
+from typing import Dict, Any
 
 from asimov import config, logger
 from asimov.utils import set_directory
 
 from ..pipeline import Pipeline, PipelineException, PipelineLogger
+from ..priors import PriorInterface
+
+
+class LALInferencePriorInterface(PriorInterface):
+    """
+    Prior interface for the LALInference pipeline.
+    
+    Converts asimov prior specifications into LALInference format.
+    LALInference uses different naming conventions and expects priors
+    as ranges (min/max values) rather than distribution objects.
+    """
+    
+    def convert(self) -> Dict[str, Any]:
+        """
+        Convert asimov priors to LALInference format.
+        
+        Returns
+        -------
+        dict
+            Dictionary with LALInference-specific prior format
+        """
+        if self.prior_dict is None:
+            return {}
+        
+        # Convert to LALInference format
+        # LALInference uses [min, max] arrays for ranges
+        lalinf_priors = {}
+        original_priors = self.prior_dict.to_dict()
+        
+        for param_name, param_spec in original_priors.items():
+            if param_name == 'default':
+                continue
+            
+            if isinstance(param_spec, dict):
+                # Convert to LALInference range format
+                if 'minimum' in param_spec and 'maximum' in param_spec:
+                    lalinf_priors[param_name] = [param_spec['minimum'], param_spec['maximum']]
+                else:
+                    # Pass through as-is if not a min/max prior
+                    lalinf_priors[param_name] = param_spec
+            else:
+                lalinf_priors[param_name] = param_spec
+        
+        return lalinf_priors
+    
+    def get_amp_order(self) -> int:
+        """
+        Get the amplitude order for LALInference.
+        
+        Returns
+        -------
+        int
+            Amplitude order (default: 0)
+            
+        Notes
+        -----
+        Prefers 'amp order' but falls back to 'amplitude order' for backward compatibility.
+        """
+        if self.prior_dict is None:
+            return 0
+        
+        original_priors = self.prior_dict.to_dict()
+        # Prefer 'amp order' as the canonical name
+        return original_priors.get('amp order', original_priors.get('amplitude order', 0))
 
 
 class LALInference(Pipeline):
@@ -39,6 +104,20 @@ class LALInference(Pipeline):
         )
         if not production.pipeline.lower() == "lalinference":
             raise PipelineException("Pipeline mismatch")
+    
+    def get_prior_interface(self):
+        """
+        Get the LALInference-specific prior interface.
+        
+        Returns
+        -------
+        LALInferencePriorInterface
+            The prior interface for LALInference
+        """
+        if self._prior_interface is None:
+            priors = self.production.priors
+            self._prior_interface = LALInferencePriorInterface(priors)
+        return self._prior_interface
 
     def detect_completion(self):
         """
