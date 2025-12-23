@@ -33,10 +33,10 @@ import operator
 
 from liquid import Liquid
 
-from asimov import config, logger, LOGGER_LEVEL
-from asimov.pipelines import known_pipelines
-from asimov.utils import update, diff_dict
-from asimov.storage import Store
+from . import config, logger, LOGGER_LEVEL
+from .pipelines import known_pipelines
+from .utils import update, diff_dict
+from .storage import Store
 
 from .review import Review
 from .ini import RunConfiguration
@@ -337,9 +337,12 @@ class Analysis:
             if hasattr(pipeline, "config_template"):
                 template_file = pipeline.config_template
             else:
-                from pkg_resources import resource_filename
+                try:
+                    from importlib.resources import files
+                except ImportError:
+                    from importlib_resources import files
 
-                template_file = resource_filename("asimov", f"configs/{template}")
+                template_file = str(files("asimov").joinpath(f"configs/{template}"))
 
         liq = Liquid(template_file)
         rendered = liq.render(production=self, analysis=self, config=config)

@@ -9,7 +9,10 @@ import os
 import click
 import pytz
 import yaml
-from pkg_resources import resource_filename
+try:
+    from importlib.resources import files
+except ImportError:
+    from importlib_resources import files
 
 import otter
 import otter.bootstrap as bt
@@ -45,7 +48,7 @@ def html(event, webdir):
         f"{webdir}/index.html",
         author="Asimov",
         title="Asimov project report",
-        theme_location=resource_filename("asimov.cli", "report-theme"),
+        theme_location=str(files("asimov.cli").joinpath("report-theme")),
         config_file=os.path.join(".asimov", "asimov.conf"),
     )
     with report:
