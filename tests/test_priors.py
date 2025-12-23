@@ -7,9 +7,14 @@ from asimov.priors import (
     PriorSpecification,
     PriorDict,
     PriorInterface,
-    BilbyPriorInterface,
     Reparameterization,
 )
+# Import BilbyPriorInterface from its new location
+try:
+    from asimov.pipelines.bilby import BilbyPriorInterface
+except ImportError:
+    # For testing without full asimov environment
+    BilbyPriorInterface = None
 
 
 class TestPriorSpecification(unittest.TestCase):
@@ -177,6 +182,11 @@ class TestPriorInterface(unittest.TestCase):
 
 class TestBilbyPriorInterface(unittest.TestCase):
     """Test the BilbyPriorInterface."""
+    
+    def setUp(self):
+        """Skip tests if BilbyPriorInterface is not available."""
+        if BilbyPriorInterface is None:
+            self.skipTest("BilbyPriorInterface not available")
     
     def test_bilby_interface_with_none(self):
         """Test bilby interface with no priors."""

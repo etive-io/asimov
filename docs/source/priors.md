@@ -174,12 +174,14 @@ except TypeError as e:
     print(f"Validation failed: {e}")
 ```
 
-## Example: Bilby Prior Interface
+## Example: Pipeline Prior Interfaces
 
-The bilby pipeline includes a `BilbyPriorInterface` that demonstrates the pattern:
+### Bilby Prior Interface
+
+The bilby pipeline includes a `BilbyPriorInterface` (in `asimov/pipelines/bilby.py`) that demonstrates the pattern:
 
 ```python
-from asimov.priors import BilbyPriorInterface
+from asimov.pipelines.bilby import BilbyPriorInterface
 
 # Create interface with priors from blueprint
 interface = BilbyPriorInterface({
@@ -199,4 +201,34 @@ bilby_priors = interface.convert()
 default = interface.get_default_prior()  # Returns 'BBHPriorDict'
 ```
 
-The bilby template (`configs/bilby.ini`) can then access these priors through the production object's `priors` property.
+The bilby template (`configs/bilby.ini`) accesses these priors through the pipeline's prior interface.
+
+### LALInference Prior Interface
+
+The LALInference pipeline includes a `LALInferencePriorInterface` (in `asimov/pipelines/lalinference.py`) that converts asimov priors to LALInference format:
+
+```python
+from asimov.pipelines.lalinference import LALInferencePriorInterface
+
+# Create interface with priors from blueprint
+interface = LALInferencePriorInterface({
+    'mass ratio': {
+        'minimum': 0.05,
+        'maximum': 1.0
+    },
+    'luminosity distance': {
+        'minimum': 10,
+        'maximum': 10000
+    },
+    'amp order': 0
+})
+
+# Convert to LALInference format (uses [min, max] arrays)
+lalinf_priors = interface.convert()
+# Returns: {'mass ratio': [0.05, 1.0], 'luminosity distance': [10, 10000]}
+
+# Get amplitude order
+amp_order = interface.get_amp_order()  # Returns 0
+```
+
+The LALInference template (`configs/lalinference.ini`) accesses these priors through the pipeline's prior interface.

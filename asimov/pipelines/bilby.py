@@ -8,11 +8,51 @@ import shutil
 import subprocess
 import time
 
+from typing import Dict, Any
+
 from .. import config
 
 from ..pipeline import Pipeline, PipelineException, PipelineLogger
 from .. import auth
 from .pesummary import PESummary
+from ..priors import PriorInterface
+
+
+class BilbyPriorInterface(PriorInterface):
+    """
+    Prior interface for the Bilby pipeline.
+    
+    Converts asimov prior specifications into bilby prior_dict format.
+    """
+    
+    def convert(self) -> Dict[str, Any]:
+        """
+        Convert asimov priors to bilby prior_dict format.
+        
+        Returns
+        -------
+        dict
+            Dictionary suitable for bilby's prior-dict config option
+        """
+        if self.prior_dict is None:
+            return {}
+        
+        # Return the dictionary representation
+        # The actual rendering to bilby format happens in the template
+        return self.prior_dict.to_dict()
+    
+    def get_default_prior(self) -> str:
+        """
+        Get the default prior set for bilby.
+        
+        Returns
+        -------
+        str
+            The default prior class name (e.g., "BBHPriorDict")
+        """
+        if self.prior_dict is None or self.prior_dict.default is None:
+            return "BBHPriorDict"
+        return self.prior_dict.default
 
 
 class Bilby(Pipeline):
@@ -52,8 +92,6 @@ class Bilby(Pipeline):
         BilbyPriorInterface
             The prior interface for bilby
         """
-        from asimov.priors import BilbyPriorInterface
-        
         if self._prior_interface is None:
             priors = self.production.priors
             self._prior_interface = BilbyPriorInterface(priors)
