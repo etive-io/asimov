@@ -5,10 +5,6 @@ This module provides a Python API for creating and managing asimov projects.
 """
 
 import os
-import shutil
-import getpass
-import pathlib
-from contextlib import contextmanager
 
 try:
     import ConfigParser as configparser
