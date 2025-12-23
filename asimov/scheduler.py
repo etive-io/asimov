@@ -227,6 +227,13 @@ class JobDescription:
 
     This will allow jobs to be easily described in a scheduler-agnostic way.
     """
+    
+    # Mapping of generic resource parameters to HTCondor-specific parameters
+    HTCONDOR_RESOURCE_MAPPING = {
+        "cpus": "request_cpus",
+        "memory": "request_memory",
+        "disk": "request_disk",
+    }
 
     def __init__(self, 
                  executable,
@@ -274,13 +281,15 @@ class JobDescription:
         description["error"] = self.error
         description["log"] = self.log 
 
+        # Map generic resource parameters to HTCondor-specific ones
         description["request_cpus"] = self.kwargs.get("cpus", 1)
         description["request_memory"] = self.kwargs.get("memory", "1GB")
         description["request_disk"] = self.kwargs.get("disk", "1GB")
         
         # Add any additional kwargs to the description
+        # Skip the generic resource parameters as they've already been mapped
         for key, value in self.kwargs.items():
-            if key not in ["cpus", "memory", "disk"]:
+            if key not in self.HTCONDOR_RESOURCE_MAPPING:
                 description[key] = value
         
         return description
