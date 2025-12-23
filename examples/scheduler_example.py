@@ -48,13 +48,13 @@ def main():
     except Exception as e:
         print(f"Failed to query job: {e}")
     
-    # Example 5: Delete the job (optional - uncomment to delete)
-    # print("\nDeleting job...")
-    # try:
+    # Example 5: Delete the job (optional)
+    # To delete the job in your own code, you can call:
     #     scheduler.delete(cluster_id)
-    #     print(f"Job {cluster_id} deleted successfully")
-    # except Exception as e:
-    #     print(f"Failed to delete job: {e}")
+    # and handle any exceptions as appropriate for your application.
+    #
+    # This example script leaves the deletion disabled so that
+    # submitted jobs remain available for inspection.
     
     print("\nExample completed!")
 

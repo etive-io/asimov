@@ -87,7 +87,6 @@ def start(dry_run, use_scheduler_api):
     logger.info(f"Running asimov cronjob as  {cluster}")
 
 
-
 @click.option("--dry-run", "-n", "dry_run", is_flag=True)
 @click.option("--use-scheduler-api", is_flag=True, default=False,
               help="Use the new scheduler API directly (experimental)")

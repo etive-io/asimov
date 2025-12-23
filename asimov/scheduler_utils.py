@@ -43,8 +43,11 @@ def get_configured_scheduler():
         try:
             schedd_name = config.get("condor", "scheduler")
             kwargs["schedd_name"] = schedd_name
-        except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
-            pass
+        except (configparser.NoOptionError, configparser.NoSectionError, KeyError) as exc:
+            logger.debug(
+                "No specific Condor scheduler configured; using default schedd. (%s)",
+                exc,
+            )
     
     return get_scheduler(scheduler_type, **kwargs)
 

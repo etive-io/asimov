@@ -459,7 +459,7 @@ class Job:
         }
         
         if self.dag_id:
-            output["dag id"] = self.dag_id
+            output["dag_id"] = self.dag_id
         
         return output
 
@@ -495,11 +495,22 @@ class JobList:
             if float(age) < float(self.cache_time):
                 with open(self.cache_file, "r") as f:
                     cached_data = yaml.safe_load(f)
-                    if cached_data:
-                        self.jobs = cached_data
-                        return
+                    # Only use the cached data if it appears to be a mapping of
+                    # job-like objects (i.e., objects with the attributes/methods
+                    # that JobList relies on). Otherwise, fall back to a refresh.
+                    if isinstance(cached_data, dict) and cached_data:
+                        valid_cache = True
+                        for job_obj in cached_data.values():
+                            # We expect each cached job to have at least these
+                            # attributes/methods; plain dicts from YAML won't.
+                            if not hasattr(job_obj, "job_id") or not hasattr(job_obj, "dag_id") or not hasattr(job_obj, "add_subjob"):
+                                valid_cache = False
+                                break
+                        if valid_cache:
+                            self.jobs = cached_data
+                            return
         
-        # Cache is stale or doesn't exist, refresh from scheduler
+        # Cache is stale, invalid, or doesn't exist, refresh from scheduler
         self.refresh()
     
     def refresh(self):
@@ -536,8 +547,9 @@ class JobList:
         
         # Save to cache
         os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+        serializable_jobs = {job_id: job.to_dict() for job_id, job in self.jobs.items()}
         with open(self.cache_file, "w") as f:
-            f.write(yaml.dump(self.jobs))
+            f.write(yaml.dump(serializable_jobs))
     
     def _create_job_from_data(self, job_data):
         """
@@ -561,7 +573,7 @@ class JobList:
             hosts=job_data.get("hosts", 0),
             status=job_data.get("status", 0),
             name=job_data.get("name"),
-            dag_id=job_data.get("dag id", job_data.get("dag_id")),
+            dag_id=job_data.get("dag_id", job_data.get("dag id")),
             **{k: v for k, v in job_data.items() if k not in ["id", "job_id", "command", "hosts", "status", "name", "dag id", "dag_id"]}
         )
 

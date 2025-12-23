@@ -45,9 +45,10 @@ Example
 DAG Submission
 --------------
 
-DAG submission (via ``submit_dag`` methods) currently uses HTCondor's ``condor_submit_dag``
-command directly, as DAG workflows are HTCondor-specific. The scheduler property is still
-available in these methods for any additional job submissions that may be needed.
+DAG submission (via ``submit_dag`` methods) now uses the scheduler API. For HTCondor backends,
+this wraps the Python bindings (e.g., ``htcondor.Submit.from_dag()``) rather than calling
+``condor_submit_dag`` directly. The scheduler property remains available in these methods for
+any additional, non-DAG job submissions that may be needed.
 
 Using the Scheduler in CLI Commands
 ------------------------------------
