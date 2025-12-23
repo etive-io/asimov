@@ -350,7 +350,7 @@ class Rift(Pipeline):
 
     def submit_dag(self, dryrun=False):
         """
-        Submit a DAG file to the condor cluster (using the RIFT dag name).
+        Submit a DAG file to the scheduler (using the RIFT dag name).
         This is an overwrite of the near identical parent function submit_dag()
 
         Parameters
@@ -378,18 +378,14 @@ class Rift(Pipeline):
             ifo = psdfile.split("/")[-1].split("-")[1].split(".")[0]
             os.system(f"cp {psdfile} {ifo}-psd.xml.gz")
 
-        command = [
-            "condor_submit_dag",
-            "-batch-name",
-            f"rift/{self.production.event.name}/{self.production.name}",
-            "marginalize_intrinsic_parameters_BasicIterationWorkflow.dag",
-        ]
+        dag_filename = "marginalize_intrinsic_parameters_BasicIterationWorkflow.dag"
+        batch_name = f"rift/{self.production.event.name}/{self.production.name}"
 
         if dryrun:
             for psdfile in self.production.get_psds("xml"):
                 print(f"cp {psdfile} {self.production.rundir}/{psdfile.split('/')[-1]}")
             print("")
-            print(" ".join(command))
+            print(f"Would submit DAG: {dag_filename} with batch name: {batch_name}")
         else:
             for psdfile in self.production.get_psds("xml"):
                 os.system(
@@ -398,32 +394,33 @@ class Rift(Pipeline):
 
             try:
                 with set_directory(self.production.rundir):
-
-                    dagman = subprocess.Popen(
-                        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                    dag_path = os.path.join(self.production.rundir, dag_filename)
+                    
+                    # Use the scheduler API to submit the DAG
+                    cluster_id = self.scheduler.submit_dag(
+                        dag_file=dag_path,
+                        batch_name=batch_name
                     )
-                    self.logger.info(command, production=self.production)
+                    
+                    self.logger.info(f"Submitted DAG to cluster {cluster_id}", production=self.production)
+                    self.production.status = "running"
+                    self.production.job_id = int(cluster_id)
+                    
+                    # Create a mock stdout message for compatibility
+                    stdout_msg = f"DAG submitted to cluster {cluster_id}"
+                    return cluster_id, PipelineLogger(stdout_msg)
+                    
             except FileNotFoundError as exception:
                 raise PipelineException(
-                    "It looks like condor isn't installed on this system.\n"
-                    f"""I wanted to run {" ".join(command)}."""
+                    "It looks like the scheduler isn't properly configured.\n"
+                    f"Failed to submit DAG file: {dag_filename}"
                 ) from exception
-
-            stdout, stderr = dagman.communicate()
-
-            if "submitted to cluster" in str(stdout):
-                cluster = re.search(
-                    r"submitted to cluster ([\d]+)", str(stdout)
-                ).groups()[0]
-                self.production.status = "running"
-                self.production.job_id = int(cluster)
-                return cluster, PipelineLogger(stdout)
-            else:
+            except RuntimeError as exception:
                 raise PipelineException(
-                    f"The DAG file could not be submitted.\n\n{stdout}\n\n{stderr}",
+                    f"The DAG file could not be submitted: {exception}",
                     issue=self.production.event.issue_object,
                     production=self.production.name,
-                )
+                ) from exception
 
     def resurrect(self):
         """

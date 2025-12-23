@@ -62,6 +62,27 @@ class Scheduler(ABC):
             Job status information.
         """
         raise NotImplementedError
+    
+    @abstractmethod
+    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+        """
+        Submit a DAG (Directed Acyclic Graph) workflow to the scheduler.
+        
+        Parameters
+        ----------
+        dag_file : str
+            Path to the DAG file to submit.
+        batch_name : str, optional
+            A name for the batch of jobs.
+        **kwargs
+            Additional scheduler-specific parameters.
+            
+        Returns
+        -------
+        int
+            The job ID (cluster ID) returned by the scheduler.
+        """
+        raise NotImplementedError
 
 
 class HTCondor(Scheduler):
@@ -165,6 +186,60 @@ class HTCondor(Scheduler):
             return list(self.schedd.query(constraint=constraint, projection=projection))
         else:
             return list(self.schedd.query(constraint=constraint))
+    
+    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+        """
+        Submit a DAG file to the HTCondor scheduler.
+        
+        Parameters
+        ----------
+        dag_file : str
+            Path to the DAG submit file.
+        batch_name : str, optional
+            A name for the batch of jobs.
+        **kwargs
+            Additional HTCondor-specific parameters.
+            
+        Returns
+        -------
+        int
+            The cluster ID of the submitted DAG.
+            
+        Raises
+        ------
+        RuntimeError
+            If the DAG submission fails.
+        FileNotFoundError
+            If the DAG file does not exist.
+        """
+        import os
+        
+        if not os.path.exists(dag_file):
+            raise FileNotFoundError(f"DAG file not found: {dag_file}")
+        
+        try:
+            # Use HTCondor's Submit.from_dag to create a submit description from the DAG file
+            submit_obj = htcondor.Submit.from_dag(dag_file, options={})
+            
+            # Add batch name if provided
+            if batch_name:
+                # Set the batch name in the submit description
+                submit_obj['JobBatchName'] = batch_name
+            
+            # Add any additional kwargs to the submit description
+            for key, value in kwargs.items():
+                submit_obj[key] = value
+            
+            # Submit the DAG
+            with self.schedd.transaction() as txn:
+                cluster_id = submit_obj.queue(txn)
+            
+            return cluster_id
+            
+        except htcondor.HTCondorIOError as e:
+            raise RuntimeError(f"Failed to submit DAG to HTCondor: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error submitting DAG: {e}")
 
 
 class Slurm(Scheduler):
@@ -188,6 +263,10 @@ class Slurm(Scheduler):
     
     def query(self, job_id=None):
         """Query Slurm for job status."""
+        raise NotImplementedError("Slurm scheduler is not yet implemented")
+    
+    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+        """Submit a DAG to Slurm."""
         raise NotImplementedError("Slurm scheduler is not yet implemented")
 
 
