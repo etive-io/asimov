@@ -1,0 +1,317 @@
+"""
+Project management and Python API interface.
+
+This module provides a Python API for creating and managing asimov projects.
+"""
+
+import os
+import shutil
+import getpass
+import pathlib
+from contextlib import contextmanager
+
+try:
+    import ConfigParser as configparser
+except ImportError:
+    import configparser
+
+from asimov import config as global_config, storage, logger, LOGGER_LEVEL
+from asimov.ledger import Ledger, YAMLLedger
+from asimov.event import Event
+from asimov.cli.project import make_project
+
+logger = logger.getChild("project")
+logger.setLevel(LOGGER_LEVEL)
+
+
+class Project:
+    """
+    A class representing an asimov project.
+    
+    This class provides a Python API for creating and managing asimov projects,
+    including creating new projects, adding subjects/events, and managing analyses.
+    
+    Examples
+    --------
+    Create a new project::
+    
+        from asimov.project import Project
+        
+        project = Project("My Project", "/path/to/project")
+        
+        with project:
+            subject = project.add_subject(name="GW150914", ...)
+            subject.add_production(name="prod_1", pipeline="bilby", ...)
+    
+    Load an existing project::
+    
+        project = Project.load("/path/to/project")
+        
+        with project:
+            # Make changes
+            pass
+    """
+    
+    def __init__(self, name, location=None, working="working", checkouts="checkouts", 
+                 results="results", logs="logs", user=None):
+        """
+        Initialize a new asimov project.
+        
+        Parameters
+        ----------
+        name : str
+            The name of the project.
+        location : str, optional
+            The root directory for the project. If None, uses the current directory.
+        working : str, optional
+            The location to store working directories. Default is "working".
+        checkouts : str, optional
+            The location to store cloned git repositories. Default is "checkouts".
+        results : str, optional
+            The location where the results store should be created. Default is "results".
+        logs : str, optional
+            The location to store log files. Default is "logs".
+        user : str, optional
+            The user account to be used for accounting purposes. 
+            Defaults to the current user if not set.
+        """
+        self.name = name
+        self.location = location if location else os.getcwd()
+        self.working = working
+        self.checkouts = checkouts
+        self.results = results
+        self.logs = logs
+        self.user = user
+        
+        # Store the original directory to restore later
+        self._original_dir = None
+        self._ledger = None
+        self._in_context = False
+        
+        # Initialize the project structure
+        self._initialize_project()
+    
+    def _initialize_project(self):
+        """
+        Initialize the project structure by calling the make_project function.
+        """
+        # Store current directory
+        original_dir = os.getcwd()
+        
+        try:
+            # Create the project
+            make_project(
+                name=self.name,
+                root=self.location,
+                working=self.working,
+                checkouts=self.checkouts,
+                results=self.results,
+                logs=self.logs,
+                user=self.user
+            )
+            
+            logger.info(f"Created new project '{self.name}' at {self.location}")
+            
+        finally:
+            # Return to original directory
+            os.chdir(original_dir)
+    
+    @classmethod
+    def load(cls, location):
+        """
+        Load an existing project from a directory.
+        
+        Parameters
+        ----------
+        location : str
+            The root directory of the existing project.
+            
+        Returns
+        -------
+        Project
+            A Project instance loaded from the specified location.
+            
+        Raises
+        ------
+        FileNotFoundError
+            If the project directory or configuration file does not exist.
+        """
+        config_path = os.path.join(location, ".asimov", "asimov.conf")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(
+                f"No project found at {location}. "
+                f"Missing configuration file at {config_path}"
+            )
+        
+        # Read the project configuration
+        config = configparser.ConfigParser()
+        config.read(config_path)
+        
+        # Create a Project instance without initializing
+        project = cls.__new__(cls)
+        project.name = config.get("project", "name")
+        project.location = location
+        project.working = config.get("general", "rundir_default")
+        project.checkouts = config.get("general", "git_default")
+        project.results = config.get("storage", "directory")
+        project.logs = config.get("logging", "directory")
+        project.user = config.get("condor", "user")
+        project._original_dir = None
+        project._ledger = None
+        project._in_context = False
+        
+        logger.info(f"Loaded existing project '{project.name}' from {location}")
+        
+        return project
+    
+    @property
+    def ledger(self):
+        """
+        Get the project ledger.
+        
+        Returns
+        -------
+        Ledger
+            The project's ledger instance.
+        """
+        if self._ledger is None:
+            # Change to project directory to load the ledger
+            original_dir = os.getcwd()
+            try:
+                os.chdir(self.location)
+                ledger_path = os.path.join(".asimov", "ledger.yml")
+                self._ledger = YAMLLedger(location=ledger_path)
+            finally:
+                os.chdir(original_dir)
+        
+        return self._ledger
+    
+    def __enter__(self):
+        """
+        Enter the context manager, enabling transactional updates.
+        
+        Returns
+        -------
+        Project
+            The project instance.
+        """
+        self._original_dir = os.getcwd()
+        os.chdir(self.location)
+        self._in_context = True
+        
+        # Reload the ledger in the project directory
+        ledger_path = os.path.join(".asimov", "ledger.yml")
+        self._ledger = YAMLLedger(location=ledger_path)
+        
+        logger.debug(f"Entered context for project '{self.name}'")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the context manager, saving changes to the ledger.
+        
+        Parameters
+        ----------
+        exc_type : type
+            The exception type, if an exception was raised.
+        exc_val : Exception
+            The exception value, if an exception was raised.
+        exc_tb : traceback
+            The exception traceback, if an exception was raised.
+        """
+        try:
+            # Only save if no exception occurred
+            if exc_type is None and self._ledger is not None:
+                self._ledger.save()
+                logger.debug(f"Saved ledger for project '{self.name}'")
+                # Invalidate the ledger cache so it will be reloaded on next access
+                self._ledger = None
+        finally:
+            self._in_context = False
+            if self._original_dir:
+                os.chdir(self._original_dir)
+                logger.debug(f"Exited context for project '{self.name}'")
+    
+    def add_subject(self, name, **kwargs):
+        """
+        Add a new subject (event) to the project.
+        
+        Parameters
+        ----------
+        name : str
+            The name of the subject/event.
+        **kwargs
+            Additional keyword arguments to pass to the Event constructor.
+            
+        Returns
+        -------
+        Event
+            The created event/subject.
+            
+        Raises
+        ------
+        RuntimeError
+            If called outside of a context manager.
+        """
+        if not self._in_context:
+            raise RuntimeError(
+                "add_subject must be called within a context manager. "
+                "Use 'with project:' to enter a transactional context."
+            )
+        
+        # Create the event
+        event = Event(name=name, ledger=self._ledger, **kwargs)
+        
+        # Add to ledger
+        self._ledger.add_event(event)
+        
+        logger.info(f"Added subject '{name}' to project '{self.name}'")
+        
+        return event
+    
+    def add_event(self, name, **kwargs):
+        """
+        Add a new event to the project.
+        
+        This is an alias for add_subject for backward compatibility.
+        
+        Parameters
+        ----------
+        name : str
+            The name of the event.
+        **kwargs
+            Additional keyword arguments to pass to the Event constructor.
+            
+        Returns
+        -------
+        Event
+            The created event.
+        """
+        return self.add_subject(name=name, **kwargs)
+    
+    def get_event(self, name=None):
+        """
+        Get one or all events from the project.
+        
+        Parameters
+        ----------
+        name : str, optional
+            The name of the event to retrieve. If None, returns all events.
+            
+        Returns
+        -------
+        Event or list of Event
+            The requested event(s).
+        """
+        return self.ledger.get_event(event=name)
+    
+    def __repr__(self):
+        """
+        Return a string representation of the project.
+        
+        Returns
+        -------
+        str
+            A string representation of the project.
+        """
+        return f"<Project '{self.name}' at {self.location}>"

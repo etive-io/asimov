@@ -1,0 +1,165 @@
+"""
+Tests for the Project Python API.
+"""
+
+import unittest
+import os
+import shutil
+import tempfile
+from asimov.project import Project
+from asimov.event import Event
+
+
+class TestProject(unittest.TestCase):
+    """Test the Project class."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+        self.project_name = "Test Project"
+    
+    def tearDown(self):
+        """Clean up test fixtures."""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+    
+    def test_project_creation(self):
+        """Test that a project can be created programmatically."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        # Check that the project directory was created
+        self.assertTrue(os.path.exists(self.test_dir))
+        
+        # Check that the config file was created
+        config_path = os.path.join(self.test_dir, ".asimov", "asimov.conf")
+        self.assertTrue(os.path.exists(config_path))
+        
+        # Check that the ledger was created
+        ledger_path = os.path.join(self.test_dir, ".asimov", "ledger.yml")
+        self.assertTrue(os.path.exists(ledger_path))
+        
+        # Check that subdirectories were created
+        self.assertTrue(os.path.exists(os.path.join(self.test_dir, "working")))
+        self.assertTrue(os.path.exists(os.path.join(self.test_dir, "checkouts")))
+        self.assertTrue(os.path.exists(os.path.join(self.test_dir, "results")))
+        self.assertTrue(os.path.exists(os.path.join(self.test_dir, "logs")))
+    
+    def test_project_load(self):
+        """Test that an existing project can be loaded."""
+        # First create a project
+        project1 = Project(self.project_name, location=self.test_dir)
+        
+        # Now load it
+        project2 = Project.load(self.test_dir)
+        
+        # Check that the loaded project has the same name
+        self.assertEqual(project2.name, self.project_name)
+        self.assertEqual(project2.location, self.test_dir)
+    
+    def test_project_load_nonexistent(self):
+        """Test that loading a nonexistent project raises an error."""
+        nonexistent_dir = os.path.join(self.test_dir, "nonexistent")
+        
+        with self.assertRaises(FileNotFoundError):
+            Project.load(nonexistent_dir)
+    
+    def test_project_context_manager(self):
+        """Test that the project works as a context manager."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        # Should be able to use as a context manager
+        with project:
+            # The ledger should be accessible
+            self.assertIsNotNone(project.ledger)
+    
+    def test_add_subject(self):
+        """Test adding a subject to the project."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        with project:
+            # Add a subject
+            subject = project.add_subject(name="GW150914")
+            
+            # Check that the subject was created
+            self.assertIsInstance(subject, Event)
+            self.assertEqual(subject.name, "GW150914")
+        
+        # After exiting the context, the subject should be in the ledger
+        events = project.get_event()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].name, "GW150914")
+    
+    def test_add_subject_outside_context(self):
+        """Test that adding a subject outside a context manager raises an error."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        # Should raise an error when not in a context
+        with self.assertRaises(RuntimeError):
+            project.add_subject(name="GW150914")
+    
+    def test_add_event_alias(self):
+        """Test that add_event is an alias for add_subject."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        with project:
+            # Add an event
+            event = project.add_event(name="GW150914")
+            
+            # Check that the event was created
+            self.assertIsInstance(event, Event)
+            self.assertEqual(event.name, "GW150914")
+    
+    def test_project_repr(self):
+        """Test the string representation of a project."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        repr_str = repr(project)
+        self.assertIn(self.project_name, repr_str)
+        self.assertIn(self.test_dir, repr_str)
+    
+    def test_add_multiple_subjects(self):
+        """Test adding multiple subjects to a project."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        with project:
+            subject1 = project.add_subject(name="GW150914")
+            subject2 = project.add_subject(name="GW151226")
+        
+        # Check that both subjects are in the ledger
+        events = project.get_event()
+        self.assertEqual(len(events), 2)
+        event_names = {event.name for event in events}
+        self.assertEqual(event_names, {"GW150914", "GW151226"})
+    
+    def test_add_analysis_to_subject(self):
+        """Test adding an analysis to a subject within a project context."""
+        project = Project(self.project_name, location=self.test_dir)
+        
+        # First, ensure the ledger has a pipelines section
+        with project:
+            # Add pipelines section to ledger data if not present
+            if "pipelines" not in project.ledger.data:
+                project.ledger.data["pipelines"] = {}
+            
+            subject = project.add_subject(name="GW150914")
+            # Add a production/analysis to the subject
+            from asimov.analysis import GravitationalWaveTransient
+            production = GravitationalWaveTransient(
+                subject=subject,
+                name="prod_bilby",
+                pipeline="bilby",
+                status="ready",
+                ledger=project.ledger
+            )
+            subject.add_production(production)
+            project.ledger.update_event(subject)
+        
+        # Reload and check that the production was saved
+        events = project.get_event()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(len(events[0].productions), 1)
+        self.assertEqual(events[0].productions[0].name, "prod_bilby")
+
+
+if __name__ == "__main__":
+    unittest.main()
