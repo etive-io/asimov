@@ -5,15 +5,20 @@ An important function of asimov is interaction with condor schedulers in order t
 
 In order to improve performance the code caches results from the query to the scheduler.
 
+Note: This module now uses the asimov.scheduler module internally for improved
+      scheduler abstraction. The functions here maintain backward compatibility.
+
 """
 
 import os
 import datetime
+import configparser
 from dateutil import tz
 import htcondor
 import yaml
 
 from asimov import config, logger, LOGGER_LEVEL
+from asimov.scheduler import HTCondor as HTCondorScheduler
 
 UTC = tz.tzutc()
 
@@ -42,9 +47,56 @@ def datetime_from_epoch(dt, tzinfo=UTC):
 
 def submit_job(submit_description):
     """
-    Submit a new job to the condor scheduller
+    Submit a new job to the condor scheduler.
+    
+    This function now uses the asimov.scheduler module internally while
+    maintaining backward compatibility with the original interface.
+    
+    Parameters
+    ----------
+    submit_description : dict
+        A dictionary containing the HTCondor submit description.
+        
+    Returns
+    -------
+    int
+        The cluster ID of the submitted job.
     """
+    # Try to get the configured scheduler name
+    try:
+        schedd_name = config.get("condor", "scheduler")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        schedd_name = None
+    
+    # Create the scheduler instance
+    scheduler = HTCondorScheduler(schedd_name=schedd_name)
+    
+    # Try to submit using the new scheduler interface
+    try:
+        cluster_id = scheduler.submit(submit_description)
+        logger.info(f"Submitted job with cluster ID: {cluster_id}")
+        return cluster_id
+    except Exception as e:
+        logger.error(f"Failed to submit job: {e}")
+        # Fall back to the old implementation for robustness
+        logger.info("Falling back to legacy submission method")
+        return _submit_job_legacy(submit_description)
 
+
+def _submit_job_legacy(submit_description):
+    """
+    Legacy job submission implementation (for backward compatibility).
+    
+    Parameters
+    ----------
+    submit_description : dict
+        A dictionary containing the HTCondor submit description.
+        
+    Returns
+    -------
+    int
+        The cluster ID of the submitted job.
+    """
     hostname_job = htcondor.Submit(submit_description)
 
     try:
@@ -54,7 +106,7 @@ def submit_job(submit_description):
         )
         schedd = htcondor.Schedd(schedulers)
         logger.info(f"Found scheduler: {schedd}")
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to searching for any schedd
         # If you can't find a specified scheduler, try until it works
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -72,13 +124,51 @@ def submit_job(submit_description):
 
 
 def delete_job(cluster_id):
+    """
+    Delete a job from the condor scheduler.
+    
+    This function now uses the asimov.scheduler module internally while
+    maintaining backward compatibility with the original interface.
+    
+    Parameters
+    ----------
+    cluster_id : int
+        The cluster ID of the job to delete.
+    """
+    # Try to get the configured scheduler name
+    try:
+        schedd_name = config.get("condor", "scheduler")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        schedd_name = None
+    
+    # Create the scheduler instance and delete the job
+    try:
+        scheduler = HTCondorScheduler(schedd_name=schedd_name)
+        scheduler.delete(cluster_id)
+        logger.info(f"Deleted job with cluster ID: {cluster_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete job using new scheduler: {e}")
+        # Fall back to the old implementation
+        logger.info("Falling back to legacy deletion method")
+        _delete_job_legacy(cluster_id)
+
+
+def _delete_job_legacy(cluster_id):
+    """
+    Legacy job deletion implementation (for backward compatibility).
+    
+    Parameters
+    ----------
+    cluster_id : int
+        The cluster ID of the job to delete.
+    """
     try:
         # There should really be a specified submit node, and if there is, use it.
         schedulers = htcondor.Collector().locate(
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to default schedd
         # If you can't find a specified scheduler, use the first one you find
         schedd = htcondor.Schedd()
     schedd.act(htcondor.JobAction.Remove, f"ClusterId == {cluster_id}")
@@ -91,7 +181,7 @@ def collect_history(cluster_id):
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to searching for any schedd
         # If you can't find a specified scheduler, use the first one you find
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -323,7 +413,7 @@ class CondorJobList:
                     ],
                 )
                 data += jobs
-            except:  # NoQA
+            except Exception:  # Catch all exceptions to skip problematic schedds
                 pass
 
             retdat = []

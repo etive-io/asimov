@@ -171,7 +171,7 @@ class LALInference(Pipeline):
 
     def submit_dag(self, dryrun=False):
         """
-        Submit a DAG file to the condor cluster.
+        Submit a DAG file to the scheduler.
 
         Parameters
         ----------
@@ -204,40 +204,37 @@ class LALInference(Pipeline):
             self.before_submit(dryrun=dryrun)
 
             try:
-                command = [
-                    "condor_submit_dag",
-                    "-batch-name",
-                    f"lalinf/{self.production.event.name}/{self.production.name}",
-                    os.path.join(self.production.rundir, "multidag.dag"),
-                ]
+                dag_path = os.path.join(self.production.rundir, "multidag.dag")
+                batch_name = f"lalinf/{self.production.event.name}/{self.production.name}"
 
                 if dryrun:
-                    print(" ".join(command))
+                    print(f"Would submit DAG: {dag_path} with batch name: {batch_name}")
                 else:
-                    dagman = subprocess.Popen(
-                        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-                    )
-
-                    stdout, stderr = dagman.communicate()
-
-                    if "submitted to cluster" in str(stdout):
-                        cluster = re.search(
-                            r"submitted to cluster ([\d]+)", str(stdout)
-                        ).groups()[0]
+                    try:
+                        # Use the scheduler API to submit the DAG
+                        cluster_id = self.scheduler.submit_dag(
+                            dag_file=dag_path,
+                            batch_name=batch_name
+                        )
+                        
                         self.production.status = "running"
-                        self.production.job_id = cluster
-                        return cluster, PipelineLogger(stdout)
-                    else:
+                        self.production.job_id = cluster_id
+                        
+                        # Create a mock stdout message for compatibility
+                        stdout_msg = f"DAG submitted to cluster {cluster_id}"
+                        return cluster_id, PipelineLogger(stdout_msg)
+                        
+                    except (FileNotFoundError, RuntimeError) as error:
                         raise PipelineException(
-                            f"The DAG file could not be submitted.\n\n{stdout}\n\n{stderr}",
+                            f"The DAG file could not be submitted: {error}",
                             issue=self.production.event.issue_object,
                             production=self.production.name,
-                        )
+                        ) from error
 
             except FileNotFoundError as error:
                 raise PipelineException(
-                    "It looks like condor isn't installed on this system.\n"
-                    f"""I wanted to run {" ".join(command)}."""
+                    "It looks like the scheduler isn't properly configured.\n"
+                    f"Failed to submit DAG file: {dag_path}"
                 ) from error
 
     def after_completion(self):

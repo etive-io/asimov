@@ -183,7 +183,7 @@ class Bilby(Pipeline):
 
     def submit_dag(self, dryrun=False):
         """
-        Submit a DAG file to the condor cluster.
+        Submit a DAG file to the scheduler.
 
         Parameters
         ----------
@@ -207,7 +207,10 @@ class Bilby(Pipeline):
         Notes
         -----
         This overloads the default submission routine, as bilby seems to store
-        its DAG files in a different location
+        its DAG files in a different location.
+        
+        This method now uses the scheduler API for DAG submission, making it
+        scheduler-agnostic and easier to support multiple scheduling systems.
         """
 
         cwd = os.getcwd()
@@ -220,53 +223,51 @@ class Bilby(Pipeline):
                 job_label = self.production.meta["job label"]
             else:
                 job_label = self.production.name
+            
             dag_filename = f"dag_{job_label}.submit"
-            command = [
-                # "ssh", f"{config.get('scheduler', 'server')}",
-                "condor_submit_dag",
-                "-batch-name",
-                f"bilby/{self.production.event.name}/{self.production.name}",
-                os.path.join(self.production.rundir, "submit", dag_filename),
-            ]
+            dag_path = os.path.join(self.production.rundir, "submit", dag_filename)
+            batch_name = f"bilby/{self.production.event.name}/{self.production.name}"
 
             if dryrun:
-                print(" ".join(command))
+                print(f"Would submit DAG: {dag_path} with batch name: {batch_name}")
             else:
-
                 self.logger.info(f"Working in {os.getcwd()}")
+                self.logger.info(f"Submitting DAG: {dag_path}")
 
-                dagman = subprocess.Popen(
-                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-                )
-
-                self.logger.info(" ".join(command))
-
-                stdout, stderr = dagman.communicate()
-
-                if "submitted to cluster" in str(stdout):
-                    cluster = re.search(
-                        r"submitted to cluster ([\d]+)", str(stdout)
-                    ).groups()[0]
+                try:
+                    # Use the scheduler API to submit the DAG
+                    cluster_id = self.scheduler.submit_dag(
+                        dag_file=dag_path,
+                        batch_name=batch_name
+                    )
+                    
                     self.logger.info(
-                        f"Submitted successfully. Running with job id {int(cluster)}"
+                        f"Submitted successfully. Running with job id {int(cluster_id)}"
                     )
                     self.production.status = "running"
-                    self.production.job_id = int(cluster)
-                    return cluster, PipelineLogger(stdout)
-                else:
-                    self.logger.error("Could not submit the job to the cluster")
-                    self.logger.info(stdout)
-                    self.logger.error(stderr)
-
+                    self.production.job_id = int(cluster_id)
+                    
+                    # Create a mock stdout message for compatibility
+                    stdout_msg = f"DAG submitted to cluster {cluster_id}"
+                    return cluster_id, PipelineLogger(stdout_msg)
+                    
+                except FileNotFoundError as error:
+                    self.logger.error(f"DAG file not found: {dag_path}")
+                    raise PipelineException(
+                        f"The DAG file could not be found at {dag_path}.",
+                    ) from error
+                except RuntimeError as error:
+                    self.logger.error("Could not submit the job to the scheduler")
+                    self.logger.exception(error)
                     raise PipelineException(
                         "The DAG file could not be submitted.",
-                    )
+                    ) from error
 
         except FileNotFoundError as error:
             self.logger.exception(error)
             raise PipelineException(
-                "It looks like condor isn't installed on this system.\n"
-                f"""I wanted to run {" ".join(command)}."""
+                "It looks like the scheduler isn't properly configured.\n"
+                f"Failed to submit DAG file: {dag_path}"
             ) from error
 
     def collect_assets(self):

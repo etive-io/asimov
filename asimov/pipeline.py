@@ -97,6 +97,26 @@ class Pipeline:
 
         self.logger = logger.getChild(full_name)
         self.logger.setLevel(LOGGER_LEVEL)
+        
+        # Initialize scheduler instance (lazy-loaded via property)
+        self._scheduler = None
+
+    @property
+    def scheduler(self):
+        """
+        Get the configured scheduler instance for this pipeline.
+        
+        The scheduler is lazy-loaded on first access and cached for reuse.
+        
+        Returns
+        -------
+        Scheduler
+            A configured scheduler instance
+        """
+        if self._scheduler is None:
+            from asimov.scheduler_utils import get_configured_scheduler
+            self._scheduler = get_configured_scheduler()
+        return self._scheduler
 
     def __repr__(self):
         return self.name.lower()
