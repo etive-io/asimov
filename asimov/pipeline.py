@@ -97,6 +97,9 @@ class Pipeline:
 
         self.logger = logger.getChild(full_name)
         self.logger.setLevel(LOGGER_LEVEL)
+        
+        # Initialize prior interface
+        self._prior_interface = None
 
     def __repr__(self):
         return self.name.lower()
@@ -204,6 +207,25 @@ class Pipeline:
             self.production.status = "uploaded"
         except Exception as e:
             raise ValueError(e)
+    
+    def get_prior_interface(self):
+        """
+        Get the prior interface for this pipeline.
+        
+        This method should be overridden by pipeline-specific implementations
+        to return their custom prior interface.
+        
+        Returns
+        -------
+        PriorInterface
+            The prior interface for this pipeline
+        """
+        from asimov.priors import PriorInterface
+        
+        if self._prior_interface is None:
+            priors = self.production.priors
+            self._prior_interface = PriorInterface(priors)
+        return self._prior_interface
 
     def eject_job(self):
         """

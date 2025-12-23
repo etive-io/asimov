@@ -42,6 +42,22 @@ class Bilby(Pipeline):
 
         if not production.pipeline.lower() == "bilby":
             raise PipelineException("Pipeline mismatch")
+    
+    def get_prior_interface(self):
+        """
+        Get the bilby-specific prior interface.
+        
+        Returns
+        -------
+        BilbyPriorInterface
+            The prior interface for bilby
+        """
+        from asimov.priors import BilbyPriorInterface
+        
+        if self._prior_interface is None:
+            priors = self.production.priors
+            self._prior_interface = BilbyPriorInterface(priors)
+        return self._prior_interface
 
     def detect_completion(self):
         """
