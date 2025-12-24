@@ -50,6 +50,7 @@ dependencies = [
 	     "flask",
 	     "tinydb",
 	     "pillow>=10.2.0",
+	     "pydantic>=2.0.0"
 ]
 
 [project.optional-dependencies]

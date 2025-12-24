@@ -161,6 +161,29 @@ class Analysis:
         else:
             priors = None
         return priors
+    
+    @priors.setter
+    def priors(self, value):
+        """
+        Set priors with validation.
+        
+        Parameters
+        ----------
+        value : dict or PriorDict
+            The prior specification
+        """
+        from asimov.priors import PriorDict
+        
+        if value is None:
+            self.meta["priors"] = None
+        elif isinstance(value, PriorDict):
+            self.meta["priors"] = value.to_dict()
+        elif isinstance(value, dict):
+            # Validate using pydantic
+            validated = PriorDict.from_dict(value)
+            self.meta["priors"] = validated.to_dict()
+        else:
+            raise TypeError(f"priors must be dict or PriorDict, got {type(value)}")
 
     @property
     def finished(self):
