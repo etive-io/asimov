@@ -66,7 +66,7 @@ class SubjectTestPipeline(Pipeline):
         category : str, optional
             The category of the job.
         """
-        super(SubjectTestPipeline, self).__init__(production, category)
+        super().__init__(production, category)
         self.logger.info("Using the SubjectTestPipeline for testing")
     
     def _ensure_rundir(self):
@@ -190,7 +190,7 @@ class SubjectTestPipeline(Pipeline):
                     f.write("combined_metric: 1.5\n")
                     f.write("uncertainty: 0.2\n")
                     
-        super(SubjectTestPipeline, self).after_completion()
+        super().after_completion()
         
     def samples(self, absolute=False):
         """

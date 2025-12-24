@@ -70,7 +70,7 @@ class ProjectTestPipeline(Pipeline):
         category : str, optional
             The category of the job.
         """
-        super(ProjectTestPipeline, self).__init__(production, category)
+        super().__init__(production, category)
         self.logger.info("Using the ProjectTestPipeline for testing")
     
     def _ensure_rundir(self):
@@ -208,7 +208,7 @@ class ProjectTestPipeline(Pipeline):
                     f.write("rate_uncertainty: 2.3\n")
                     f.write("selection_effects: 0.85\n")
                     
-        super(ProjectTestPipeline, self).after_completion()
+        super().after_completion()
         
     def samples(self, absolute=False):
         """

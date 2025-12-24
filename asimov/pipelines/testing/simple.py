@@ -64,7 +64,7 @@ class SimpleTestPipeline(Pipeline):
         category : str, optional
             The category of the job (e.g., calibration version).
         """
-        super(SimpleTestPipeline, self).__init__(production, category)
+        super().__init__(production, category)
         self.logger.info("Using the SimpleTestPipeline for testing")
     
     def _ensure_rundir(self):
@@ -171,7 +171,7 @@ class SimpleTestPipeline(Pipeline):
                     f.write("test_parameter: 1.0\n")
                     f.write("test_error: 0.1\n")
                     
-        super(SimpleTestPipeline, self).after_completion()
+        super().after_completion()
         
     def samples(self, absolute=False):
         """
