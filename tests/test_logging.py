@@ -17,6 +17,9 @@ class TestLogging(unittest.TestCase):
         """Set up test environment."""
         self.test_dir = tempfile.mkdtemp()
         self.original_cwd = os.getcwd()
+        # Reset the global file handler to ensure test isolation
+        import asimov
+        asimov._file_handler = None
         
     def tearDown(self):
         """Clean up test environment."""
@@ -51,21 +54,6 @@ class TestLogging(unittest.TestCase):
         os.chdir(self.test_dir)
         runner = CliRunner()
         result = runner.invoke(project.init, ['Test Project', '--root', self.test_dir])
-        
-        # Debug: Print directory contents
-        if result.exit_code != 0:
-            print(f"Command failed with exit code {result.exit_code}")
-            print(f"Output: {result.output}")
-            if result.exception:
-                import traceback
-                traceback.print_exception(type(result.exception), result.exception, result.exception.__traceback__)
-        
-        # Debug: Check directory contents
-        print(f"Current directory: {os.getcwd()}")
-        print(f"Test directory: {self.test_dir}")
-        print(f"Files in current dir: {os.listdir('.')}")
-        if os.path.exists('logs'):
-            print(f"Files in logs dir: {os.listdir('logs')}")
         
         # Check that log was created in logs directory, not current directory
         self.assertFalse(os.path.exists('asimov.log'),
