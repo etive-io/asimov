@@ -1,6 +1,9 @@
 name: Testing Pipelines with HTCondor
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test-pipelines:
     name: "Testing Pipelines HTCondor Test"

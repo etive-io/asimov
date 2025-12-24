@@ -66,6 +66,20 @@ class SimpleTestPipeline(Pipeline):
         """
         super(SimpleTestPipeline, self).__init__(production, category)
         self.logger.info("Using the SimpleTestPipeline for testing")
+    
+    def _ensure_rundir(self):
+        """
+        Ensure the run directory exists.
+        
+        Returns
+        -------
+        bool
+            True if rundir exists or was created, False if no rundir is configured.
+        """
+        if not self.production.rundir:
+            return False
+        Path(self.production.rundir).mkdir(parents=True, exist_ok=True)
+        return True
         
     def submit_dag(self, dryrun=False):
         """
@@ -87,9 +101,7 @@ class SimpleTestPipeline(Pipeline):
         """
         if not dryrun:
             # Ensure run directory exists
-            if self.production.rundir:
-                Path(self.production.rundir).mkdir(parents=True, exist_ok=True)
-                
+            if self._ensure_rundir():
                 # Create a simple job script
                 job_script = os.path.join(self.production.rundir, "test_job.sh")
                 with open(job_script, "w") as f:
@@ -141,8 +153,7 @@ class SimpleTestPipeline(Pipeline):
         dryrun : bool, optional
             If True, only simulate the preparation.
         """
-        if not dryrun and self.production.rundir:
-            Path(self.production.rundir).mkdir(parents=True, exist_ok=True)
+        if not dryrun and self._ensure_rundir():
             self.logger.info(f"Prepared run directory: {self.production.rundir}")
             
     def after_completion(self):
@@ -178,9 +189,9 @@ class SimpleTestPipeline(Pipeline):
         """
         if not self.production.rundir:
             return []
-            
+        
         # Ensure directory exists
-        Path(self.production.rundir).mkdir(parents=True, exist_ok=True)
+        self._ensure_rundir()
         
         samples_file = os.path.join(self.production.rundir, "posterior_samples.dat")
         
