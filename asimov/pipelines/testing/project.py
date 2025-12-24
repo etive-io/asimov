@@ -86,6 +86,38 @@ class ProjectTestPipeline(Pipeline):
             return False
         Path(self.production.rundir).mkdir(parents=True, exist_ok=True)
         return True
+    
+    def build_dag(self, user=None, dryrun=False):
+        """
+        Build the DAG for this project analysis pipeline.
+        
+        For the test pipeline, this simply ensures the run directory exists
+        and creates a minimal DAG file.
+        
+        Parameters
+        ----------
+        user : str, optional
+            The user account for job submission (not used in test pipeline).
+        dryrun : bool, optional
+            If True, only simulate the build without creating files.
+            
+        Returns
+        -------
+        None
+        """
+        if not dryrun:
+            if self._ensure_rundir():
+                # Create a minimal DAG file
+                dag_file = os.path.join(self.production.rundir, "test_project.dag")
+                with open(dag_file, "w") as f:
+                    f.write("# Project test pipeline DAG\n")
+                    f.write("JOB test_project_job test_project_job.sub\n")
+                    
+                self.logger.info(f"Built project test DAG in {self.production.rundir}")
+            else:
+                self.logger.warning("No run directory specified, cannot build DAG")
+        else:
+            self.logger.info("Dry run: would build project test DAG")
         
     def submit_dag(self, dryrun=False):
         """
