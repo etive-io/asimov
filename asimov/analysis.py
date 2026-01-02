@@ -362,6 +362,8 @@ class Analysis:
 
             - processing status
 
+            - pipeline
+
             - name
 
         In addition, any quantity contained in the analysis metadata
@@ -388,6 +390,7 @@ class Analysis:
         is_review = False
         is_status = False
         is_name = False
+        is_pipeline = False
         in_meta = False
         
         if attribute[0] == "review":
@@ -399,13 +402,23 @@ class Analysis:
             is_status = match.lower() == self.status.lower()
         elif attribute[0] == "name":
             is_name = match == self.name
+        elif attribute[0] == "pipeline":
+            # Check pipeline.name attribute first
+            if hasattr(self, 'pipeline'):
+                if hasattr(self.pipeline, 'name'):
+                    is_pipeline = match.lower() == self.pipeline.name.lower()
+                elif isinstance(self.pipeline, str):
+                    is_pipeline = match.lower() == self.pipeline.lower()
+            # Also check in metadata as fallback
+            if not is_pipeline and 'pipeline' in self.meta:
+                is_pipeline = match.lower() == self.meta['pipeline'].lower()
         else:
             try:
                 in_meta = reduce(operator.getitem, attribute, self.meta) == match
             except KeyError:
                 in_meta = False
 
-        result = is_name | in_meta | is_status | is_review
+        result = is_name | in_meta | is_status | is_review | is_pipeline
         
         # Apply negation if requested
         if negate:
