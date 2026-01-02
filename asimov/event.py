@@ -467,6 +467,36 @@ class Event:
         <h3 class="card-title">{self.name}</h3>
         """
 
+        # Add event metadata if available
+        if hasattr(self, 'meta') and self.meta:
+            if "gps" in self.meta:
+                card += f"""<p class="text-muted">GPS Time: {self.meta['gps']}</p>"""
+            if "interferometers" in self.meta:
+                ifos = ", ".join(self.meta["interferometers"]) if isinstance(self.meta["interferometers"], list) else self.meta["interferometers"]
+                card += f"""<p class="text-muted">Interferometers: {ifos}</p>"""
+
+        # Show workflow dependencies if they exist
+        if hasattr(self, 'graph') and self.graph and len(self.graph.nodes()) > 1:
+            card += """<div class="workflow-flow">"""
+            card += """<h5 style="font-size: 1rem; margin-bottom: 0.5rem;">Workflow Dependencies</h5>"""
+            
+            # Try to show a simple dependency flow
+            try:
+                import networkx as nx
+                # Get topologically sorted nodes if possible
+                if nx.is_directed_acyclic_graph(self.graph):
+                    sorted_nodes = list(nx.topological_sort(self.graph))
+                    for i, node in enumerate(sorted_nodes[:5]):  # Limit to first 5
+                        card += f"""<span class="flow-step">{node.name}</span>"""
+                        if i < len(sorted_nodes) - 1 and i < 4:
+                            card += """<span class="flow-arrow">→</span>"""
+                    if len(sorted_nodes) > 5:
+                        card += """<span class="text-muted">... and {len(sorted_nodes) - 5} more</span>"""
+            except Exception:
+                pass  # If dependency visualization fails, just skip it
+            
+            card += """</div>"""
+
         card += "<h4>Analyses</h4>"
         card += """<div class="list-group">"""
 
