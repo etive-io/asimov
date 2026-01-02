@@ -177,11 +177,6 @@ def html(event, webdir):
             opacity: 0.7;
         }
 
-        .asimov-analysis-stop {
-            background: #ffe6e6;
-            border-left-color: #dc3545;
-        }
-
         .asimov-status {
             position: absolute;
             top: 1rem;
@@ -253,7 +248,7 @@ def html(event, webdir):
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background-color: #28a745;
+            background-color: #0366d6;
             animation: pulse 2s ease-in-out infinite;
             margin-right: 0.5rem;
         }
@@ -308,7 +303,7 @@ def html(event, webdir):
     };
 
     function setupRefresh() {
-      setTimeout("refreshPage();", 1000*60*15); // milliseconds
+      setTimeout(refreshPage, 1000*60*15); // Refresh every 15 minutes (in milliseconds)
     }
     
     function refreshPage() {
@@ -376,12 +371,25 @@ def html(event, webdir):
         var showAllBtn = document.getElementById('show-all');
         if (showAllBtn) {
             showAllBtn.addEventListener('click', function() {
+                // Clear status filters
                 document.querySelectorAll('.filter-status').forEach(function(b) {
                     b.classList.remove('active');
                 });
+
+                // Deactivate "Hide Cancelled" and unhide all related items
+                if (hideCancelledBtn) {
+                    hideCancelledBtn.classList.remove('active');
+                }
+
+                // Show all analyses and remove any hidden state
                 document.querySelectorAll('.asimov-analysis').forEach(function(analysis) {
                     analysis.style.display = '';
                     analysis.classList.remove('hidden');
+                });
+
+                // Also unhide any reviews that were hidden by "Hide Cancelled"
+                document.querySelectorAll('.review-deprecated, .review-rejected').forEach(function(review) {
+                    review.classList.remove('hidden');
                 });
             });
         }
@@ -443,7 +451,7 @@ def html(event, webdir):
     }
 </script>
         """
-        report + script
+        report += script
     with report:
         navbar = bt.Navbar(
             f"Asimov  |  {current_ledger.data['project']['name']}",

@@ -509,7 +509,7 @@ class Event:
                         if i < len(sorted_nodes) - 1 and i < 4:
                             card += """<span class="flow-arrow">→</span>"""
                     if len(sorted_nodes) > 5:
-                        card += """<span class="text-muted">... and {len(sorted_nodes) - 5} more</span>"""
+                        card += f"""<span class="text-muted">... and {len(sorted_nodes) - 5} more</span>"""
             except Exception:
                 pass  # If dependency visualization fails, just skip it
             

@@ -384,7 +384,13 @@ class Analysis:
             card += f"""<p class="asimov-pipeline-name"><strong>Pipeline:</strong> {self.pipeline.name}</p>"""
 
         # Build collapsible details section
-        has_details = bool(self.rundir or "approximant" in production.meta or self.pipeline)
+        has_details = bool(
+            self.rundir or 
+            "approximant" in production.meta or 
+            "sampler" in production.meta or
+            "quality" in production.meta or
+            self.pipeline
+        )
         
         if has_details:
             card += """<a class="toggle-details">▶ Show details</a>"""
