@@ -90,6 +90,9 @@ runs:
             fi
           fi
 
+          cat *.err
+          cat *.out
+          cat *.log
           echo "Elapsed: ${ELAPSED}s / ${TIMEOUT}s - Files not yet present ($FOUND_COUNT/$PATTERN_COUNT patterns matched), waiting..."
           sleep "$INTERVAL"
           ELAPSED=$((ELAPSED + INTERVAL))
