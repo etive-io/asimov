@@ -152,7 +152,8 @@ class Analysis:
             # Should have exactly one key-value pair
             if len(need) == 1:
                 key, value = list(need.items())[0]
-                attribute = key.strip().split(".")
+                key_str = str(key).strip()
+                attribute = key_str.split(".")
                 match_value = str(value).strip()
                 
                 # Check for negation
@@ -161,11 +162,16 @@ class Analysis:
                     match_value = match_value[1:].strip()
                     
                 return (attribute, match_value, negate)
+            else:
+                raise ValueError(
+                    f"Invalid dependency dict format: expected a single key-value pair, "
+                    f"got {len(need)} entries: {need}"
+                )
         
         # Handle string format (with quotes in YAML)
         try:
             # Handle "attribute: value" format
-            parts = need.split(":")
+            parts = need.split(":", 1)
             attribute = parts[0].strip().split(".")
             match_value = parts[1].strip()
             
@@ -173,7 +179,7 @@ class Analysis:
             if match_value.startswith("!"):
                 negate = True
                 match_value = match_value[1:].strip()
-                
+            
             return (attribute, match_value, negate)
         except (IndexError, AttributeError):
             # Plain name without colon
@@ -276,8 +282,6 @@ class Analysis:
         value : list
             List of analysis names that are current dependencies
         """
-        if "resolved_dependencies" not in self.meta:
-            self.meta["resolved_dependencies"] = []
         self.meta["resolved_dependencies"] = value
     
     @property
@@ -417,10 +421,7 @@ class Analysis:
         in_meta = False
         
         if attribute[0] == "review":
-            if len(attribute) > 1 and attribute[1] == "status":
-                is_review = match.lower() == str(self.review.status).lower()
-            else:
-                is_review = match.lower() == str(self.review.status).lower()
+            is_review = match.lower() == str(self.review.status).lower()
         elif attribute[0] == "status":
             is_status = match.lower() == self.status.lower()
         elif attribute[0] == "name":
@@ -437,8 +438,9 @@ class Analysis:
                 is_pipeline = match.lower() == self.meta['pipeline'].lower()
         else:
             try:
-                in_meta = reduce(operator.getitem, attribute, self.meta) == match
-            except KeyError:
+                meta_value = reduce(operator.getitem, attribute, self.meta)
+                in_meta = str(meta_value).lower() == str(match).lower()
+            except (KeyError, TypeError, AttributeError):
                 in_meta = False
 
         result = is_name | in_meta | is_status | is_review | is_pipeline

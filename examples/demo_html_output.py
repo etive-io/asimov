@@ -86,16 +86,6 @@ def generate_demo_html():
     stale_analysis.meta['resolved_dependencies'] = ['BayesWave-PSD']
     # Current dependencies would be different if we add more bayeswave analyses
     
-    # Create a refreshable stale analysis
-    refreshable = DemoAnalysis('Auto-Refresh',
-                              pipeline='bilby',
-                              status='finished',
-                              event=event,
-                              needs=['review.status: approved'],
-                              rundir=None,
-                              meta={'refreshable': True,
-                                   'resolved_dependencies': ['IMRPhenomXPHM-PE']})
-    
     print("=" * 80)
     print("HTML OUTPUT DEMONSTRATION")
     print("=" * 80)
@@ -108,8 +98,6 @@ def generate_demo_html():
     
     print("\n2. Stale analysis (dependencies changed):")
     print("-" * 80)
-    # Simulate staleness by having different current vs resolved deps
-    stale_html = stale_analysis.html()
     # Manually show what stale would look like
     print("<div class='asimov-analysis asimov-analysis-finished'>")
     print('<span class="stale-indicator stale" title="Dependencies have changed since this analysis was run">Stale</span>')

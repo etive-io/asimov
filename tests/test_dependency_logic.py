@@ -248,7 +248,7 @@ class DependencyLogicTests(unittest.TestCase):
         # Now dependencies changed, should be stale
         current_deps = set(analysis.dependencies)
         resolved_deps = set(analysis.resolved_dependencies)
-        self.assertTrue(current_deps != resolved_deps)
+        self.assertNotEqual(current_deps, resolved_deps)
     
     def test_refreshable_flag(self):
         """Test refreshable flag."""
