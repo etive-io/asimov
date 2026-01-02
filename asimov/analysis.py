@@ -530,6 +530,12 @@ class Analysis:
         if self.status in ["running", "processing"]:
             card += """<span class="running-indicator"></span>"""
         
+        # Add stale indicator if applicable
+        if self.is_stale:
+            stale_class = "stale-refreshable" if self.is_refreshable else "stale"
+            stale_text = "Stale (will refresh)" if self.is_refreshable else "Stale"
+            card += f"""<span class="stale-indicator {stale_class}" title="Dependencies have changed since this analysis was run">{stale_text}</span>"""
+        
         card += f"<h4>{self.name}"
 
         if self.comment:
@@ -552,12 +558,26 @@ class Analysis:
             "approximant" in production.meta or 
             "sampler" in production.meta or
             "quality" in production.meta or
-            self.pipeline
+            self.pipeline or
+            self.dependencies or
+            self.resolved_dependencies
         )
         
         if has_details:
             card += """<a class="toggle-details">▶ Show details</a>"""
             card += """<div class="details-content">"""
+            
+            # Show dependencies
+            if self.dependencies:
+                card += """<p class="asimov-dependencies"><strong>Current Dependencies:</strong><br>"""
+                card += ", ".join(self.dependencies)
+                card += """</p>"""
+            
+            # Show resolved dependencies if different from current
+            if self.resolved_dependencies and self.resolved_dependencies != self.dependencies:
+                card += """<p class="asimov-resolved-dependencies"><strong>Resolved Dependencies (when run):</strong><br>"""
+                card += ", ".join(self.resolved_dependencies)
+                card += """</p>"""
             
             if self.pipeline:
                 # self.pipeline.collect_pages()
