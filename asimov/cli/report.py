@@ -754,6 +754,11 @@ def html(event, webdir):
                     b.classList.remove('active');
                 });
 
+                // Clear review filters
+                document.querySelectorAll('.filter-review').forEach(function(b) {
+                    b.classList.remove('active');
+                });
+
                 // Deactivate "Hide Cancelled" and unhide all related items
                 if (hideCancelledBtn) {
                     hideCancelledBtn.classList.remove('active');

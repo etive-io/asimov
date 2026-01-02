@@ -512,8 +512,8 @@ class Event:
             if hasattr(node, 'review') and len(node.review) > 0:
                 # Get the latest review (last one in the list)
                 latest_review = node.review[-1]
-                review_status = latest_review.status.lower() if hasattr(latest_review, 'status') and latest_review.status else 'none'
-                review_message = latest_review.message if hasattr(latest_review, 'message') and latest_review.message else ''
+                review_status = latest_review.status.lower() if latest_review.status else 'none'
+                review_message = latest_review.message if latest_review.message else ''
             return review_status, review_message
         
         # Helper function to generate review indicator HTML
