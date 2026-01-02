@@ -265,6 +265,51 @@ class DependencyLogicTests(unittest.TestCase):
         # Set to False
         analysis.is_refreshable = False
         self.assertFalse(analysis.is_refreshable)
+    
+    def test_parse_dict_format_dependency(self):
+        """Test parsing dict format (YAML without quotes)."""
+        analysis = MockAnalysis('TestAnalysis', event=self.event)
+        
+        # Dict format as parsed by YAML when no quotes are used
+        dict_need = {'waveform.approximant': 'IMRPhenomXPHM'}
+        result = analysis._parse_single_dependency(dict_need)
+        
+        expected = (['waveform', 'approximant'], 'IMRPhenomXPHM', False)
+        self.assertEqual(result, expected)
+    
+    def test_parse_dict_format_with_negation(self):
+        """Test parsing dict format with negation."""
+        analysis = MockAnalysis('TestAnalysis', event=self.event)
+        
+        dict_need = {'pipeline': '!bayeswave'}
+        result = analysis._parse_single_dependency(dict_need)
+        
+        expected = (['pipeline'], 'bayeswave', True)
+        self.assertEqual(result, expected)
+    
+    def test_self_dependency_exclusion(self):
+        """Test that an analysis is never a dependency of itself."""
+        # Create analyses where ProdA would match its own filter
+        event = Mock()
+        
+        prod1 = MockAnalysis('Prod1', meta={'pipeline': 'bilby'})
+        prod1.event = event
+        
+        prod2 = MockAnalysis('Prod2', meta={'pipeline': 'bilby'})
+        prod2.event = event
+        
+        prodA = MockAnalysis('ProdA', meta={'pipeline': 'bilby'}, 
+                            needs=[{'pipeline': 'bilby'}])
+        prodA.event = event
+        
+        event.analyses = [prod1, prod2, prodA]
+        
+        deps = prodA.dependencies
+        
+        # Should include Prod1 and Prod2, but NOT ProdA itself
+        self.assertIn('Prod1', deps)
+        self.assertIn('Prod2', deps)
+        self.assertNotIn('ProdA', deps)
 
 
 if __name__ == '__main__':

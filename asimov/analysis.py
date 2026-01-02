@@ -71,7 +71,7 @@ class Analysis:
     """
 
     meta = {}
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": {}, "likelihood": {}}
+    meta_defaults = {"scheduler": {}, "sampler": {}, "review": [], "likelihood": {}}
     _reviews = Review()
 
     @property
@@ -131,6 +131,10 @@ class Analysis:
         """
         Parse a single dependency specification into (attribute, match, negate) tuple.
         
+        Handles both formats:
+        - String: "waveform.approximant: IMRPhenomXPHM" (with quotes in YAML)
+        - Dict: {waveform.approximant: IMRPhenomXPHM} (without quotes in YAML)
+        
         Parameters
         ----------
         need : str or dict
@@ -142,6 +146,23 @@ class Analysis:
             (attribute_list, match_value, is_negated)
         """
         negate = False
+        
+        # Handle dict format (when YAML parses without quotes)
+        if isinstance(need, dict):
+            # Should have exactly one key-value pair
+            if len(need) == 1:
+                key, value = list(need.items())[0]
+                attribute = key.strip().split(".")
+                match_value = str(value).strip()
+                
+                # Check for negation
+                if match_value.startswith("!"):
+                    negate = True
+                    match_value = match_value[1:].strip()
+                    
+                return (attribute, match_value, negate)
+        
+        # Handle string format (with quotes in YAML)
         try:
             # Handle "attribute: value" format
             parts = need.split(":")
@@ -221,8 +242,10 @@ class Analysis:
                     )
                     matches = set.union(matches, set(filtered_analyses))
             
+            # Exclude self-dependencies
             for analysis in matches:
-                all_matches.append(analysis.name)
+                if analysis.name != self.name:
+                    all_matches.append(analysis.name)
 
             return all_matches
     
@@ -944,7 +967,7 @@ class ProjectAnalysis(Analysis):
     A multi-subject analysis.
     """
 
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": {}}
+    meta_defaults = {"scheduler": {}, "sampler": {}, "review": []}
 
     def __init__(self, name, pipeline, ledger=None, **kwargs):
         """ """
