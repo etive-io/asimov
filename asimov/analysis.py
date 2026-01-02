@@ -81,7 +81,8 @@ class Analysis:
         if "review" in self.meta:
             if len(self.meta["review"]) > 0:
                 self._reviews = Review.from_dict(self.meta["review"], production=self)
-                self.meta.pop("review")
+            # Always remove 'review' from meta since we manage it via _reviews
+            self.meta.pop("review")
         return self._reviews
 
     def _process_dependencies(self, needs):
