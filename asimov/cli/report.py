@@ -556,12 +556,13 @@ def html(event, webdir):
         document.querySelectorAll('.filter-status').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 var status = this.getAttribute('data-status');
-                var analyses = document.querySelectorAll('.asimov-analysis');
+                var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
                 
                 if (this.classList.contains('active')) {
                     // Deactivate filter - show all
                     analyses.forEach(function(analysis) {
                         analysis.style.display = '';
+                        analysis.classList.remove('filtered-hidden');
                     });
                     this.classList.remove('active');
                 } else {
@@ -572,10 +573,23 @@ def html(event, webdir):
                     this.classList.add('active');
                     
                     analyses.forEach(function(analysis) {
-                        if (analysis.classList.contains('asimov-analysis-' + status)) {
+                        var matchesFilter = false;
+                        
+                        // Check both graph node status classes and legacy analysis classes
+                        if (analysis.classList.contains('status-' + status) || 
+                            analysis.classList.contains('asimov-analysis-' + status)) {
+                            matchesFilter = true;
+                        }
+                        
+                        if (matchesFilter) {
                             analysis.style.display = '';
+                            analysis.classList.remove('filtered-hidden');
                         } else {
                             analysis.style.display = 'none';
+                            analysis.classList.add('filtered-hidden');
+                            
+                            // Hide all downstream dependencies
+                            hideDownstreamDependencies(analysis);
                         }
                     });
                 }
@@ -587,12 +601,16 @@ def html(event, webdir):
         if (hideCancelledBtn) {
             hideCancelledBtn.addEventListener('click', function() {
                 this.classList.toggle('active');
-                var analyses = document.querySelectorAll('.asimov-analysis-cancelled, .asimov-analysis-stopped');
+                var analyses = document.querySelectorAll('.graph-node.status-cancelled, .graph-node.status-stopped, .asimov-analysis-cancelled, .asimov-analysis-stopped');
                 analyses.forEach(function(analysis) {
                     if (hideCancelledBtn.classList.contains('active')) {
                         analysis.classList.add('hidden');
+                        analysis.style.display = 'none';
+                        // Hide downstream dependencies of cancelled analyses
+                        hideDownstreamDependencies(analysis);
                     } else {
                         analysis.classList.remove('hidden');
+                        analysis.style.display = '';
                     }
                 });
                 var reviews = document.querySelectorAll('.review-deprecated, .review-rejected');
@@ -623,9 +641,10 @@ def html(event, webdir):
                 }
 
                 // Show all analyses and remove any hidden state
-                document.querySelectorAll('.asimov-analysis').forEach(function(analysis) {
+                document.querySelectorAll('.graph-node, .asimov-analysis').forEach(function(analysis) {
                     analysis.style.display = '';
                     analysis.classList.remove('hidden');
+                    analysis.classList.remove('filtered-hidden');
                 });
 
                 // Also unhide any reviews that were hidden by "Hide Cancelled"
@@ -634,6 +653,23 @@ def html(event, webdir):
                 });
             });
         }
+    }
+
+    // Helper function to hide downstream dependencies recursively
+    function hideDownstreamDependencies(node) {
+        if (!node.dataset || !node.dataset.successors) return;
+        
+        var successorNames = node.dataset.successors.split(',').filter(function(name) { return name.trim(); });
+        
+        successorNames.forEach(function(successorName) {
+            var successorNode = document.getElementById('node-' + successorName.trim());
+            if (successorNode && successorNode.style.display !== 'none') {
+                successorNode.style.display = 'none';
+                successorNode.classList.add('filtered-hidden');
+                // Recursively hide its dependencies
+                hideDownstreamDependencies(successorNode);
+            }
+        });
     }
 
     function initializeToggles() {
@@ -781,6 +817,7 @@ def html(event, webdir):
                     analyses.forEach(function(analysis) {
                         if (!analysis.classList.contains('hidden')) {
                             analysis.style.display = '';
+                            analysis.classList.remove('filtered-hidden');
                         }
                     });
                     this.classList.remove('active');
@@ -795,8 +832,12 @@ def html(event, webdir):
                         var analysisReview = analysis.dataset.review || 'none';
                         if (analysisReview === reviewStatus) {
                             analysis.style.display = '';
+                            analysis.classList.remove('filtered-hidden');
                         } else {
                             analysis.style.display = 'none';
+                            analysis.classList.add('filtered-hidden');
+                            // Hide downstream dependencies
+                            hideDownstreamDependencies(analysis);
                         }
                     });
                 }

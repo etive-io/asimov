@@ -524,11 +524,23 @@ class Event:
                             # Get pipeline name
                             pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
                             
+                            # Get dependencies (predecessors in the graph)
+                            predecessors = list(self.graph.predecessors(node))
+                            predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
+                            
+                            # Get dependents (successors in the graph)
+                            successors = list(self.graph.successors(node))
+                            successor_names = ','.join([succ.name for succ in successors]) if successors else ''
+                            
                             # Create graph node with click handler
                             card += f"""
                             <div class="graph-node status-{status}" 
+                                 id="node-{node.name}"
                                  data-review="{review_status}" 
                                  data-status="{status}"
+                                 data-node-name="{node.name}"
+                                 data-predecessors="{predecessor_names}"
+                                 data-successors="{successor_names}"
                                  onclick="openAnalysisModal('{node.name}')">
                                 <div class="graph-node-status">
                                     <span class="badge badge-pill badge-{status_badge}">{status}</span>
@@ -576,10 +588,21 @@ class Event:
                         if hasattr(node, 'review') and len(node.review) > 0:
                             review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
                         
+                        # Get dependencies even for non-DAG
+                        predecessors = list(self.graph.predecessors(node)) if hasattr(self.graph, 'predecessors') else []
+                        predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
+                        
+                        successors = list(self.graph.successors(node)) if hasattr(self.graph, 'successors') else []
+                        successor_names = ','.join([succ.name for succ in successors]) if successors else ''
+                        
                         card += f"""
                         <div class="graph-node status-{status}" 
+                             id="node-{node.name}"
                              data-review="{review_status}"
                              data-status="{status}"
+                             data-node-name="{node.name}"
+                             data-predecessors="{predecessor_names}"
+                             data-successors="{successor_names}"
                              onclick="openAnalysisModal('{node.name}')">
                             <div class="graph-node-status">
                                 <span class="badge badge-pill badge-{status_badge}">{status}</span>
