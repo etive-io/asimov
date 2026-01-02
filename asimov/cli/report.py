@@ -830,6 +830,14 @@ def html(event, webdir):
                 document.getElementById('modal-comment-section').style.display = 'none';
             }
             
+            if (analysisData.dataset.dependencies) {
+                document.getElementById('modal-analysis-dependencies').textContent = analysisData.dataset.dependencies;
+                document.getElementById('modal-dependencies-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-analysis-dependencies').textContent = 'None';
+                document.getElementById('modal-dependencies-section').style.display = 'block';
+            }
+            
             modal.classList.add('show');
             backdrop.classList.add('show');
         }
@@ -1171,6 +1179,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-approximant-section">
             <h5>Waveform Approximant</h5>
             <p id="modal-analysis-approximant">-</p>
+        </div>
+        <div class="modal-section" id="modal-dependencies-section">
+            <h5>Dependencies</h5>
+            <p id="modal-analysis-dependencies">-</p>
         </div>
     </div>
 </div>
