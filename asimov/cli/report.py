@@ -951,7 +951,6 @@ def html(event, webdir):
                     svg.appendChild(path);
                 });
             });
-            }
             
             // Insert SVG at the beginning of container so it's behind nodes
             container.insertBefore(svg, container.firstChild);
