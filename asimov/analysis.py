@@ -381,18 +381,15 @@ class Analysis:
 
         card += """&nbsp;"""
         
-        # Add review button if there are review messages
+        # Add review button and modal if there are review messages
         if len(self.review) > 0:
             modal_id = f"review-modal-{self.event.name}-{self.name}".replace(" ", "-").replace("_", "-")
             card += f"""<button type="button" class="btn btn-sm btn-info" data-toggle="modal" data-target="#{modal_id}">
     View Review
 </button>"""
+            card += """</div>"""
             
-        card += """</div>"""
-
-        # Create modal for review messages
-        if len(self.review) > 0:
-            modal_id = f"review-modal-{self.event.name}-{self.name}".replace(" ", "-").replace("_", "-")
+            # Create modal for review messages
             card += f"""
 <div class="modal fade" id="{modal_id}" tabindex="-1" role="dialog" aria-labelledby="{modal_id}-label" aria-hidden="true">
   <div class="modal-dialog" role="document">
@@ -416,6 +413,8 @@ class Analysis:
   </div>
 </div>
 """
+        else:
+            card += """</div>"""
 
         return card
 

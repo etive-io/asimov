@@ -126,8 +126,6 @@ class ReviewTests(unittest.TestCase):
 
     def test_html_rejected_includes_overlay(self):
         """Check that rejected analyses include rejection overlay."""
-        # Temporarily change status to rejected
-        original_status = self.event.productions[0].review.status
         # Create a production with rejected status
         test_yaml_rejected = """
 name: TestEvent

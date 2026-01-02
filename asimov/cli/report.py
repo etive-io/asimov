@@ -163,10 +163,10 @@ def html(event, webdir):
 
         script = """
 <script type="text/javascript">
-    window.onload = function() {
+    document.addEventListener('DOMContentLoaded', function() {
         setupRefresh();
         setupFilters();
-    };
+    });
 
     function setupRefresh() {
       setTimeout("refreshPage();", 1000*60*15); // milliseconds
