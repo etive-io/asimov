@@ -49,7 +49,7 @@ jobs:
       - name: Start MockGWDataFindServer in background
         run: |
           python3 << 'EOF' &
-          from datafind.tests.mock_gwdatafind_server import MockGWDataFindServer
+          from tests.mock_gwdatafind_server import MockGWDataFindServer
           import time
           
           frame_configs = {
