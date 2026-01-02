@@ -335,7 +335,21 @@ class Analysis:
 
         card = ""
 
-        card += f"<div class='asimov-analysis asimov-analysis-{self.status}'>"
+        # Get review status for CSS classes
+        review_status_class = ""
+        if len(self.review) > 0 and self.review.status:
+            review_status_class = f" review-{self.review.status.lower()}"
+
+        card += f"<div class='asimov-analysis asimov-analysis-{self.status}{review_status_class}'>"
+        
+        # Add visual indicator for approved analyses
+        if len(self.review) > 0 and self.review.status == "APPROVED":
+            card += """<div class="review-approved-badge">✓</div>"""
+        
+        # Add visual indicator for rejected analyses
+        if len(self.review) > 0 and self.review.status == "REJECTED":
+            card += """<div class="review-rejected-overlay"></div>"""
+        
         card += f"<h4>{self.name}"
 
         if self.comment:
@@ -366,11 +380,42 @@ class Analysis:
 </p>"""
 
         card += """&nbsp;"""
+        
+        # Add review button if there are review messages
+        if len(self.review) > 0:
+            modal_id = f"review-modal-{self.event.name}-{self.name}".replace(" ", "-").replace("_", "-")
+            card += f"""<button type="button" class="btn btn-sm btn-info" data-toggle="modal" data-target="#{modal_id}">
+    View Review
+</button>"""
+            
         card += """</div>"""
 
+        # Create modal for review messages
         if len(self.review) > 0:
+            modal_id = f"review-modal-{self.event.name}-{self.name}".replace(" ", "-").replace("_", "-")
+            card += f"""
+<div class="modal fade" id="{modal_id}" tabindex="-1" role="dialog" aria-labelledby="{modal_id}-label" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="{modal_id}-label">Review for {self.name}</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+"""
             for review in self.review:
                 card += review.html()
+            card += """
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+"""
 
         return card
 

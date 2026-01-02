@@ -56,10 +56,6 @@ def html(event, webdir):
         background-color: #f2f2f2;
         }
 
-        .review-deprecated, .status-cancelled, .review-rejected {
-        display: none;
-        }
-
         .event-data {
         margin: 1rem;
         margin-bottom: 2rem;
@@ -77,6 +73,7 @@ def html(event, webdir):
         background: lavenderblush;
         margin: 0.5rem;
         border-radius: 0.5rem;
+        position: relative;
         }
 
         .asimov-analysis-running, .asimov-analysis-processing {
@@ -94,19 +91,139 @@ def html(event, webdir):
         float: right;
         clear: both;
         }
+
+        /* Review status visual indicators */
+        .review-approved-badge {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 30px;
+        height: 30px;
+        background-color: #28a745;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: bold;
+        z-index: 10;
+        }
+
+        .review-rejected-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 10px,
+            rgba(220, 53, 69, 0.1) 10px,
+            rgba(220, 53, 69, 0.1) 20px
+        );
+        pointer-events: none;
+        border-radius: 0.5rem;
+        }
+
+        .review-rejected-overlay::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(to bottom right, 
+            transparent calc(50% - 2px), 
+            rgba(220, 53, 69, 0.8) calc(50% - 2px), 
+            rgba(220, 53, 69, 0.8) calc(50% + 2px), 
+            transparent calc(50% + 2px));
+        }
+
+        /* Filter controls */
+        .review-filters {
+        margin: 1rem 0;
+        padding: 1rem;
+        background-color: white;
+        border-radius: 0.5rem;
+        }
+
+        .review-filters .btn {
+        margin: 0.25rem;
+        }
+
+        /* Filter states - hidden by default based on active filters */
+        .asimov-analysis.filter-hidden {
+        display: none !important;
+        }
 </style>
         """
         report + style
 
         script = """
 <script type="text/javascript">
-    window.onload = setupRefresh;
+    window.onload = function() {
+        setupRefresh();
+        setupFilters();
+    };
 
     function setupRefresh() {
       setTimeout("refreshPage();", 1000*60*15); // milliseconds
     }
     function refreshPage() {
        window.location = location.href;
+    }
+
+    function setupFilters() {
+        // Get all filter buttons
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        
+        filterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const filter = this.getAttribute('data-filter');
+                
+                // Update active button state
+                filterButtons.forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+                
+                // Get all analyses
+                const analyses = document.querySelectorAll('.asimov-analysis');
+                
+                analyses.forEach(analysis => {
+                    if (filter === 'all') {
+                        analysis.classList.remove('filter-hidden');
+                    } else if (filter === 'approved') {
+                        if (analysis.classList.contains('review-approved')) {
+                            analysis.classList.remove('filter-hidden');
+                        } else {
+                            analysis.classList.add('filter-hidden');
+                        }
+                    } else if (filter === 'rejected') {
+                        if (analysis.classList.contains('review-rejected')) {
+                            analysis.classList.remove('filter-hidden');
+                        } else {
+                            analysis.classList.add('filter-hidden');
+                        }
+                    } else if (filter === 'deprecated') {
+                        if (analysis.classList.contains('review-deprecated')) {
+                            analysis.classList.remove('filter-hidden');
+                        } else {
+                            analysis.classList.add('filter-hidden');
+                        }
+                    } else if (filter === 'no-review') {
+                        // Show analyses that don't have any review class
+                        if (!analysis.classList.contains('review-approved') && 
+                            !analysis.classList.contains('review-rejected') && 
+                            !analysis.classList.contains('review-deprecated')) {
+                            analysis.classList.remove('filter-hidden');
+                        } else {
+                            analysis.classList.add('filter-hidden');
+                        }
+                    }
+                });
+            });
+        });
     }
 </script>
         """
@@ -125,7 +242,19 @@ def html(event, webdir):
     for event in events:
         toc += f"""<li><a href="#card-{event.name}">{event.name}</a></li>"""
 
-    toc += "</ul></nav>"
+    toc += """</ul></nav>"""
+    
+    # Add review filter buttons
+    toc += """
+    <div class="review-filters">
+        <h6>Review Filters</h6>
+        <button class="btn btn-sm btn-primary filter-btn active" data-filter="all">All</button>
+        <button class="btn btn-sm btn-success filter-btn" data-filter="approved">Approved</button>
+        <button class="btn btn-sm btn-danger filter-btn" data-filter="rejected">Rejected</button>
+        <button class="btn btn-sm btn-warning filter-btn" data-filter="deprecated">Deprecated</button>
+        <button class="btn btn-sm btn-secondary filter-btn" data-filter="no-review">No Review</button>
+    </div>
+    """
 
     cards += toc
     cards += """</div><div class='events col-md-9 col-xl-10'
