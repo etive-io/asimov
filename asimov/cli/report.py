@@ -289,6 +289,221 @@ def html(event, webdir):
             font-size: 0.85rem;
             padding: 0.35em 0.65em;
         }
+
+        /* Graph visualization styles */
+        .workflow-graph {
+            padding: 2rem 1rem;
+            background: white;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            min-height: 200px;
+            position: relative;
+        }
+
+        .graph-node {
+            display: inline-block;
+            padding: 0.75rem 1.25rem;
+            background: white;
+            border: 2px solid #e1e4e8;
+            border-radius: 0.5rem;
+            margin: 0.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .graph-node:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+
+        .graph-node.status-running,
+        .graph-node.status-processing {
+            border-color: #0366d6;
+            background: #e7f3ff;
+        }
+
+        .graph-node.status-finished,
+        .graph-node.status-uploaded {
+            border-color: #28a745;
+            background: #e6f7ed;
+        }
+
+        .graph-node.status-stuck {
+            border-color: #ffc107;
+            background: #fff8e6;
+        }
+
+        .graph-node.status-stopped,
+        .graph-node.status-cancelled {
+            border-color: #6c757d;
+            background: #f6f8fa;
+            opacity: 0.7;
+        }
+
+        .graph-node.hidden {
+            display: none;
+        }
+
+        .graph-node-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .graph-node-subtitle {
+            font-size: 0.85rem;
+            color: #586069;
+        }
+
+        .graph-node-status {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+        }
+
+        .graph-container {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 2rem;
+        }
+
+        .graph-layer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .graph-arrow {
+            font-size: 2rem;
+            color: #586069;
+            margin: 0 1rem;
+        }
+
+        /* Modal styles */
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1040;
+        }
+
+        .modal-backdrop.show {
+            display: block;
+        }
+
+        .analysis-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 1050;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .analysis-modal.show {
+            display: block;
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 2rem;
+            line-height: 1;
+            cursor: pointer;
+            color: #586069;
+        }
+
+        .modal-close:hover {
+            color: #24292e;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-section h5 {
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: #24292e;
+        }
+
+        .modal-section p {
+            margin-bottom: 0.5rem;
+            color: #586069;
+        }
+
+        /* Search box */
+        .search-box {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            border: 1px solid #e1e4e8;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #0366d6;
+            box-shadow: 0 0 0 3px rgba(3,102,214,0.1);
+        }
+
+        /* Event collapsing */
+        .event-data.collapsed .workflow-graph,
+        .event-data.collapsed .asimov-analysis {
+            display: none;
+        }
+
+        .event-data.collapsed .event-toggle::after {
+            content: ' (No visible analyses)';
+            font-size: 0.9rem;
+            color: #586069;
+            font-weight: normal;
+        }
+
+        .event-toggle {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .event-toggle:hover {
+            color: #0366d6;
+        }
+
 </style>
         """
         report + style
@@ -449,6 +664,156 @@ def html(event, webdir):
             document.getElementById('stat-cancelled').textContent = stats.cancelled;
         }
     }
+
+    // Modal functionality
+    function openAnalysisModal(analysisId) {
+        var modal = document.getElementById('analysis-modal');
+        var backdrop = document.getElementById('modal-backdrop');
+        var analysisData = document.getElementById('analysis-data-' + analysisId);
+        
+        if (modal && backdrop && analysisData) {
+            // Populate modal with analysis data
+            document.getElementById('modal-analysis-name').textContent = analysisData.dataset.name;
+            document.getElementById('modal-analysis-status').textContent = analysisData.dataset.status;
+            document.getElementById('modal-analysis-status').className = 'badge badge-' + analysisData.dataset.statusBadge;
+            document.getElementById('modal-analysis-pipeline').textContent = analysisData.dataset.pipeline;
+            
+            if (analysisData.dataset.rundir) {
+                document.getElementById('modal-analysis-rundir').textContent = analysisData.dataset.rundir;
+                document.getElementById('modal-rundir-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-rundir-section').style.display = 'none';
+            }
+            
+            if (analysisData.dataset.approximant) {
+                document.getElementById('modal-analysis-approximant').textContent = analysisData.dataset.approximant;
+                document.getElementById('modal-approximant-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-approximant-section').style.display = 'none';
+            }
+            
+            if (analysisData.dataset.comment) {
+                document.getElementById('modal-analysis-comment').textContent = analysisData.dataset.comment;
+                document.getElementById('modal-comment-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-comment-section').style.display = 'none';
+            }
+            
+            modal.classList.add('show');
+            backdrop.classList.add('show');
+        }
+    }
+
+    function closeAnalysisModal() {
+        var modal = document.getElementById('analysis-modal');
+        var backdrop = document.getElementById('modal-backdrop');
+        
+        if (modal && backdrop) {
+            modal.classList.remove('show');
+            backdrop.classList.remove('show');
+        }
+    }
+
+    // Subject search functionality
+    function initializeSearch() {
+        var searchBox = document.getElementById('subject-search');
+        if (searchBox) {
+            searchBox.addEventListener('input', function() {
+                var searchTerm = this.value.toLowerCase();
+                document.querySelectorAll('.event-data').forEach(function(event) {
+                    var eventName = event.dataset.eventName.toLowerCase();
+                    if (eventName.includes(searchTerm)) {
+                        event.style.display = '';
+                    } else {
+                        event.style.display = 'none';
+                    }
+                });
+            });
+        }
+    }
+
+    // Review status filters
+    function initializeReviewFilters() {
+        document.querySelectorAll('.filter-review').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var reviewStatus = this.dataset.review;
+                var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
+                
+                if (this.classList.contains('active')) {
+                    // Deactivate filter - show all
+                    analyses.forEach(function(analysis) {
+                        if (!analysis.classList.contains('hidden')) {
+                            analysis.style.display = '';
+                        }
+                    });
+                    this.classList.remove('active');
+                } else {
+                    // Activate filter
+                    document.querySelectorAll('.filter-review').forEach(function(b) {
+                        b.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                    
+                    analyses.forEach(function(analysis) {
+                        var analysisReview = analysis.dataset.review || 'none';
+                        if (analysisReview === reviewStatus) {
+                            analysis.style.display = '';
+                        } else {
+                            analysis.style.display = 'none';
+                        }
+                    });
+                }
+                checkEventVisibility();
+            });
+        });
+    }
+
+    // Check and collapse events with no visible analyses
+    function checkEventVisibility() {
+        document.querySelectorAll('.event-data').forEach(function(event) {
+            var visibleAnalyses = 0;
+            event.querySelectorAll('.graph-node, .asimov-analysis').forEach(function(analysis) {
+                if (analysis.style.display !== 'none' && !analysis.classList.contains('hidden')) {
+                    visibleAnalyses++;
+                }
+            });
+            
+            if (visibleAnalyses === 0) {
+                event.classList.add('collapsed');
+            } else {
+                event.classList.remove('collapsed');
+            }
+        });
+    }
+
+    // Enhanced initialization
+    window.onload = function() {
+        setupRefresh();
+        initializeFilters();
+        initializeToggles();
+        initializeSearch();
+        initializeReviewFilters();
+        calculateStats();
+        
+        // Add modal close handlers
+        var closeBtn = document.getElementById('modal-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeAnalysisModal);
+        }
+        
+        var backdrop = document.getElementById('modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', closeAnalysisModal);
+        }
+        
+        // Add filter change listener to check event visibility
+        document.querySelectorAll('.filter-status, .filter-review, #hide-cancelled').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                setTimeout(checkEventVisibility, 100);
+            });
+        });
+    };
+
 </script>
         """
         report += script
@@ -496,19 +861,33 @@ def html(event, webdir):
     filters = """
 <div class='container-fluid'>
     <div class='filter-controls'>
-        <h5>Filters</h5>
+        <h5>Status Filters</h5>
         <button class='btn btn-sm btn-outline-secondary filter-btn' id='show-all'>Show All</button>
         <button class='btn btn-sm btn-outline-primary filter-btn filter-status' data-status='running'>Running</button>
         <button class='btn btn-sm btn-outline-success filter-btn filter-status' data-status='finished'>Finished</button>
         <button class='btn btn-sm btn-outline-success filter-btn filter-status' data-status='uploaded'>Uploaded</button>
         <button class='btn btn-sm btn-outline-warning filter-btn filter-status' data-status='stuck'>Stuck</button>
-        <button class='btn btn-sm btn-outline-danger filter-btn filter-status' data-status='stop'>Stopped</button>
+        <button class='btn btn-sm btn-outline-danger filter-btn filter-status' data-status='stopped'>Stopped</button>
         <button class='btn btn-sm btn-outline-secondary filter-btn' id='hide-cancelled'>Hide Cancelled</button>
+        <br>
+        <h5 style="margin-top: 1rem;">Review Status Filters</h5>
+        <button class='btn btn-sm btn-outline-success filter-btn filter-review' data-review='approved'>Approved</button>
+        <button class='btn btn-sm btn-outline-info filter-btn filter-review' data-review='checked'>Checked</button>
+        <button class='btn btn-sm btn-outline-danger filter-btn filter-review' data-review='rejected'>Rejected</button>
+        <button class='btn btn-sm btn-outline-warning filter-btn filter-review' data-review='deprecated'>Deprecated</button>
+        <button class='btn btn-sm btn-outline-secondary filter-btn filter-review' data-review='none'>No Review</button>
     </div>
 </div>
     """
     
-    cards = summary + filters
+    # Build search box
+    search_box = """
+<div class='container-fluid'>
+    <input type='text' id='subject-search' class='search-box' placeholder='Search events/subjects...'>
+</div>
+    """
+    
+    cards = summary + filters + search_box
     cards += """
 <div class='container-fluid'><div class='row'><div class='col-12 col-md-3 col-xl-2  asimov-sidebar'>
 """
@@ -535,12 +914,48 @@ def html(event, webdir):
         cards += card
 
     cards += "</div></div>"
+    
+    # Add modal HTML structure
+    modal_html = """
+<div id="modal-backdrop" class="modal-backdrop"></div>
+<div id="analysis-modal" class="analysis-modal">
+    <div class="modal-header">
+        <h3 class="modal-title" id="modal-analysis-name">Analysis Details</h3>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+    </div>
+    <div class="modal-body">
+        <div class="modal-section">
+            <h5>Status</h5>
+            <p><span id="modal-analysis-status" class="badge">Unknown</span></p>
+        </div>
+        <div class="modal-section">
+            <h5>Pipeline</h5>
+            <p id="modal-analysis-pipeline">-</p>
+        </div>
+        <div class="modal-section" id="modal-comment-section">
+            <h5>Comment</h5>
+            <p id="modal-analysis-comment">-</p>
+        </div>
+        <div class="modal-section" id="modal-rundir-section">
+            <h5>Run Directory</h5>
+            <p><code id="modal-analysis-rundir">-</code></p>
+        </div>
+        <div class="modal-section" id="modal-approximant-section">
+            <h5>Waveform Approximant</h5>
+            <p id="modal-analysis-approximant">-</p>
+        </div>
+    </div>
+</div>
+"""
+    
+    cards += modal_html
+    
     with report:
-        report + cards
+        report += cards
 
     with report:
         time = f"Report generated at {datetime.now(tz):%Y-%m-%d %H:%M}"
-        report + time
+        report += time
 
 
 @click.argument("event", default=None, required=False)
