@@ -455,52 +455,55 @@ def html(event, webdir):
     
     # Build summary dashboard
     summary = """
-    <div class='container-fluid'>
-        <div class='asimov-summary'>
-            <h2>Project Summary</h2>
-            <div class='summary-stats'>
-                <div class='stat-box'>
-                    <span class='stat-number' id='stat-total'>0</span>
-                    <span class='stat-label'>Total Analyses</span>
-                </div>
-                <div class='stat-box'>
-                    <span class='stat-number' id='stat-running'>0</span>
-                    <span class='stat-label'>Running</span>
-                </div>
-                <div class='stat-box'>
-                    <span class='stat-number' id='stat-finished'>0</span>
-                    <span class='stat-label'>Finished</span>
-                </div>
-                <div class='stat-box'>
-                    <span class='stat-number' id='stat-stuck'>0</span>
-                    <span class='stat-label'>Stuck</span>
-                </div>
-                <div class='stat-box'>
-                    <span class='stat-number' id='stat-cancelled'>0</span>
-                    <span class='stat-label'>Cancelled</span>
-                </div>
+<div class='container-fluid pt-5'>
+    <div class='asimov-summary'>
+        <h2>Project Summary</h2>
+        <div class='summary-stats'>
+            <div class='stat-box'>
+                <span class='stat-number' id='stat-total'>0</span>
+                <span class='stat-label'>Total Analyses</span>
+            </div>
+            <div class='stat-box'>
+                <span class='stat-number' id='stat-running'>0</span>
+                <span class='stat-label'>Running</span>
+            </div>
+            <div class='stat-box'>
+                <span class='stat-number' id='stat-finished'>0</span>
+                <span class='stat-label'>Finished</span>
+            </div>
+            <div class='stat-box'>
+                <span class='stat-number' id='stat-stuck'>0</span>
+                <span class='stat-label'>Stuck</span>
+            </div>
+            <div class='stat-box'>
+                <span class='stat-number' id='stat-cancelled'>0</span>
+                <span class='stat-label'>Cancelled</span>
             </div>
         </div>
     </div>
+</div>
     """
     
     # Build filter controls
     filters = """
-    <div class='container-fluid'>
-        <div class='filter-controls'>
-            <h5>Filters</h5>
-            <button class='btn btn-sm btn-outline-secondary filter-btn' id='show-all'>Show All</button>
-            <button class='btn btn-sm btn-outline-primary filter-btn filter-status' data-status='running'>Running</button>
-            <button class='btn btn-sm btn-outline-success filter-btn filter-status' data-status='finished'>Finished</button>
-            <button class='btn btn-sm btn-outline-warning filter-btn filter-status' data-status='stuck'>Stuck</button>
-            <button class='btn btn-sm btn-outline-danger filter-btn filter-status' data-status='stop'>Stopped</button>
-            <button class='btn btn-sm btn-outline-secondary filter-btn' id='hide-cancelled'>Hide Cancelled</button>
-        </div>
+<div class='container-fluid'>
+    <div class='filter-controls'>
+        <h5>Filters</h5>
+        <button class='btn btn-sm btn-outline-secondary filter-btn' id='show-all'>Show All</button>
+        <button class='btn btn-sm btn-outline-primary filter-btn filter-status' data-status='running'>Running</button>
+        <button class='btn btn-sm btn-outline-success filter-btn filter-status' data-status='finished'>Finished</button>
+        <button class='btn btn-sm btn-outline-success filter-btn filter-status' data-status='uploaded'>Uploaded</button>
+        <button class='btn btn-sm btn-outline-warning filter-btn filter-status' data-status='stuck'>Stuck</button>
+        <button class='btn btn-sm btn-outline-danger filter-btn filter-status' data-status='stop'>Stopped</button>
+        <button class='btn btn-sm btn-outline-secondary filter-btn' id='hide-cancelled'>Hide Cancelled</button>
     </div>
+</div>
     """
     
     cards = summary + filters
-    cards += "<div class='container-fluid'><div class='row'><div class='col-12 col-md-3 col-xl-2  asimov-sidebar'>"
+    cards += """
+<div class='container-fluid'><div class='row'><div class='col-12 col-md-3 col-xl-2  asimov-sidebar'>
+"""
 
     toc = """<nav><h6>Subjects</h6><ul class="list-unstyled">"""
     for event in events:
