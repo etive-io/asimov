@@ -592,6 +592,9 @@ def html(event, webdir):
                             hideDownstreamDependencies(analysis);
                         }
                     });
+                    
+                    // Redraw connections after filtering
+                    setTimeout(drawGraphConnections, 50);
                 }
             });
         });
@@ -621,6 +624,9 @@ def html(event, webdir):
                         review.classList.remove('hidden');
                     }
                 });
+                
+                // Redraw connections after hiding cancelled
+                setTimeout(drawGraphConnections, 50);
             });
             // Auto-hide on page load
             hideCancelledBtn.click();
@@ -651,6 +657,9 @@ def html(event, webdir):
                 document.querySelectorAll('.review-deprecated, .review-rejected').forEach(function(review) {
                     review.classList.remove('hidden');
                 });
+                
+                // Redraw connections after showing all
+                setTimeout(drawGraphConnections, 50);
             });
         }
     }
@@ -841,6 +850,9 @@ def html(event, webdir):
                         }
                     });
                 }
+                
+                // Redraw connections after review filter
+                setTimeout(drawGraphConnections, 50);
                 checkEventVisibility();
             });
         });
@@ -879,55 +891,66 @@ def html(event, webdir):
             var container = graphContainer.querySelector('.graph-container');
             if (!container) return;
             
-            // Get all layers
-            var layers = container.querySelectorAll('.graph-layer');
-            if (layers.length < 2) return;
+            // Get all graph nodes (not layers, since we need actual dependencies)
+            var allNodes = container.querySelectorAll('.graph-node');
+            if (allNodes.length === 0) return;
             
             // Calculate SVG dimensions
             var containerRect = container.getBoundingClientRect();
             svg.setAttribute('width', containerRect.width);
             svg.setAttribute('height', containerRect.height);
             
-            // Draw connections between consecutive layers
-            for (var i = 0; i < layers.length - 1; i++) {
-                var sourceLayer = layers[i];
-                var targetLayer = layers[i + 1];
+            // Draw connections based on actual dependencies
+            allNodes.forEach(function(sourceNode) {
+                // Skip if source node is hidden
+                if (sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
+                    return;
+                }
                 
-                var sourceNodes = sourceLayer.querySelectorAll('.graph-node');
-                var targetNodes = targetLayer.querySelectorAll('.graph-node');
+                // Get successors from data attribute
+                var successors = sourceNode.dataset.successors;
+                if (!successors || !successors.trim()) return;
                 
-                sourceNodes.forEach(function(sourceNode) {
-                    targetNodes.forEach(function(targetNode) {
-                        var sourceRect = sourceNode.getBoundingClientRect();
-                        var targetRect = targetNode.getBoundingClientRect();
-                        
-                        // Calculate connection points (center right of source, center left of target)
-                        var x1 = sourceRect.right - containerRect.left;
-                        var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
-                        var x2 = targetRect.left - containerRect.left;
-                        var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-                        
-                        // Create curved path
-                        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                        
-                        // Calculate control points for bezier curve
-                        var controlPointOffset = Math.abs(x2 - x1) / 2;
-                        var cx1 = x1 + controlPointOffset;
-                        var cy1 = y1;
-                        var cx2 = x2 - controlPointOffset;
-                        var cy2 = y2;
-                        
-                        // Create smooth cubic bezier curve
-                        var d = 'M ' + x1 + ' ' + y1 + 
-                                ' C ' + cx1 + ' ' + cy1 + ', ' + 
-                                       cx2 + ' ' + cy2 + ', ' + 
-                                       x2 + ' ' + y2;
-                        
-                        path.setAttribute('d', d);
-                        path.classList.add('connection-line');
-                        svg.appendChild(path);
-                    });
+                var successorNames = successors.split(',').map(function(name) { return name.trim(); }).filter(function(name) { return name; });
+                
+                successorNames.forEach(function(successorName) {
+                    var targetNode = document.getElementById('node-' + successorName);
+                    
+                    // Skip if target node doesn't exist or is hidden
+                    if (!targetNode || targetNode.style.display === 'none' || targetNode.classList.contains('hidden') || targetNode.classList.contains('filtered-hidden')) {
+                        return;
+                    }
+                    
+                    var sourceRect = sourceNode.getBoundingClientRect();
+                    var targetRect = targetNode.getBoundingClientRect();
+                    
+                    // Calculate connection points (center right of source, center left of target)
+                    var x1 = sourceRect.right - containerRect.left;
+                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
+                    var x2 = targetRect.left - containerRect.left;
+                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
+                    
+                    // Create curved path
+                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    
+                    // Calculate control points for bezier curve
+                    var controlPointOffset = Math.abs(x2 - x1) / 2;
+                    var cx1 = x1 + controlPointOffset;
+                    var cy1 = y1;
+                    var cx2 = x2 - controlPointOffset;
+                    var cy2 = y2;
+                    
+                    // Create smooth cubic bezier curve
+                    var d = 'M ' + x1 + ' ' + y1 + 
+                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
+                                   cx2 + ' ' + cy2 + ', ' + 
+                                   x2 + ' ' + y2;
+                    
+                    path.setAttribute('d', d);
+                    path.classList.add('connection-line');
+                    svg.appendChild(path);
                 });
+            });
             }
             
             // Insert SVG at the beginning of container so it's behind nodes
