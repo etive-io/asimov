@@ -544,8 +544,12 @@ class Event:
                             # Get status and review for styling
                             status = node.status if hasattr(node, 'status') else 'unknown'
                             review_status = 'none'
+                            review_message = ''
                             if hasattr(node, 'review') and len(node.review) > 0:
-                                review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
+                                # Get the latest review (last one in the list)
+                                latest_review = node.review[-1]
+                                review_status = latest_review.status.lower() if hasattr(latest_review, 'status') and latest_review.status else 'none'
+                                review_message = latest_review.message if hasattr(latest_review, 'message') and latest_review.message else ''
                             
                             status_badge = status_map.get(status, 'secondary')
                             
@@ -566,8 +570,17 @@ class Event:
                             if status in ['running', 'processing']:
                                 running_indicator = '<span class="graph-running-indicator"></span>'
                             
+                            # Add review status indicator
+                            review_indicator = ''
+                            if review_status == 'approved':
+                                review_indicator = '<span class="review-indicator review-approved" title="Approved">✓</span>'
+                            elif review_status == 'rejected':
+                                review_indicator = '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
+                            elif review_status == 'deprecated':
+                                review_indicator = '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
+                            
                             card += f"""
-                            <div class="graph-node status-{status}" 
+                            <div class="graph-node status-{status} review-{review_status}" 
                                  id="node-{node.name}"
                                  data-review="{review_status}" 
                                  data-status="{status}"
@@ -576,6 +589,7 @@ class Event:
                                  data-successors="{successor_names}"
                                  onclick="openAnalysisModal('{node.name}')">
                                 {running_indicator}
+                                {review_indicator}
                                 <div class="graph-node-title">{node.name}</div>
                                 <div class="graph-node-subtitle">{pipeline_name}</div>
                             </div>
@@ -590,6 +604,9 @@ class Event:
                             dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                             dependencies_str = ', '.join(dependencies) if dependencies else ''
                             
+                            # Escape review message for HTML attribute
+                            review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
+                            
                             card += f"""
                             <div id="analysis-data-{node.name}" style="display:none;"
                                  data-name="{node.name}"
@@ -599,7 +616,9 @@ class Event:
                                  data-rundir="{rundir}"
                                  data-approximant="{approximant}"
                                  data-comment="{comment}"
-                                 data-dependencies="{dependencies_str}">
+                                 data-dependencies="{dependencies_str}"
+                                 data-review-status="{review_status}"
+                                 data-review-message="{review_message_escaped}">
                             </div>
                             """
                         
@@ -621,8 +640,12 @@ class Event:
                         pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
                         
                         review_status = 'none'
+                        review_message = ''
                         if hasattr(node, 'review') and len(node.review) > 0:
-                            review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
+                            # Get the latest review (last one in the list)
+                            latest_review = node.review[-1]
+                            review_status = latest_review.status.lower() if hasattr(latest_review, 'status') and latest_review.status else 'none'
+                            review_message = latest_review.message if hasattr(latest_review, 'message') and latest_review.message else ''
                         
                         # Get dependencies even for non-DAG
                         predecessors = list(self.graph.predecessors(node)) if hasattr(self.graph, 'predecessors') else []
@@ -636,8 +659,17 @@ class Event:
                         if status in ['running', 'processing']:
                             running_indicator = '<span class="graph-running-indicator"></span>'
                         
+                        # Add review status indicator
+                        review_indicator = ''
+                        if review_status == 'approved':
+                            review_indicator = '<span class="review-indicator review-approved" title="Approved">✓</span>'
+                        elif review_status == 'rejected':
+                            review_indicator = '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
+                        elif review_status == 'deprecated':
+                            review_indicator = '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
+                        
                         card += f"""
-                        <div class="graph-node status-{status}" 
+                        <div class="graph-node status-{status} review-{review_status}" 
                              id="node-{node.name}"
                              data-review="{review_status}"
                              data-status="{status}"
@@ -646,6 +678,7 @@ class Event:
                              data-successors="{successor_names}"
                              onclick="openAnalysisModal('{node.name}')">
                             {running_indicator}
+                            {review_indicator}
                             <div class="graph-node-title">{node.name}</div>
                             <div class="graph-node-subtitle">{pipeline_name}</div>
                         </div>
@@ -659,6 +692,9 @@ class Event:
                         dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                         dependencies_str = ', '.join(dependencies) if dependencies else ''
                         
+                        # Escape review message for HTML attribute
+                        review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
+                        
                         card += f"""
                         <div id="analysis-data-{node.name}" style="display:none;"
                              data-name="{node.name}"
@@ -668,7 +704,9 @@ class Event:
                              data-rundir="{rundir}"
                              data-approximant="{approximant}"
                              data-comment="{comment}"
-                             data-dependencies="{dependencies_str}">
+                             data-dependencies="{dependencies_str}"
+                             data-review-status="{review_status}"
+                             data-review-message="{review_message_escaped}">
                         </div>
                         """
                     card += """</div>"""
