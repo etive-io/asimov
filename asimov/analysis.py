@@ -72,7 +72,6 @@ class Analysis:
 
     meta = {}
     meta_defaults = {"scheduler": {}, "sampler": {}, "review": [], "likelihood": {}}
-    _reviews = Review()
 
     @property
     def review(self):
@@ -754,6 +753,9 @@ class SimpleAnalysis(Analysis):
             self.status_str = "none"
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
 
         # Start by adding pipeline defaults
         if "pipelines" in self.event.ledger.data:
@@ -840,6 +842,10 @@ class SubjectAnalysis(Analysis):
             self.status_str = "none"
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
+        
         self.meta = update(self.meta, deepcopy(self.subject.meta))
         self.meta = update(self.meta, deepcopy(kwargs))
 
@@ -1057,6 +1063,9 @@ class ProjectAnalysis(Analysis):
             self.comment = None
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
 
         # Start by adding pipeline defaults
         if "pipelines" in self.ledger.data:
