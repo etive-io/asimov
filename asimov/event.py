@@ -480,18 +480,166 @@ class Event:
 
     def html(self):
         card = f"""
-        <div class="card event-data" id="card-{self.name}">
+        <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
         <div class="card-body">
-        <h3 class="card-title">{self.name}</h3>
+        <h3 class="card-title event-toggle">{self.name}</h3>
         """
 
-        card += "<h4>Analyses</h4>"
-        card += """<div class="list-group">"""
+        # Add event metadata if available
+        if hasattr(self, 'meta') and self.meta:
+            if "gps" in self.meta:
+                card += f"""<p class="text-muted">GPS Time: {self.meta['gps']}</p>"""
+            if "interferometers" in self.meta:
+                ifos = ", ".join(self.meta["interferometers"]) if isinstance(self.meta["interferometers"], list) else self.meta["interferometers"]
+                card += f"""<p class="text-muted">Interferometers: {ifos}</p>"""
 
-        for production in self.productions:
-            card += production.html()
-
-        card += """</div>"""
+        # Generate graph-based workflow visualization
+        if hasattr(self, 'graph') and self.graph and len(self.graph.nodes()) > 0:
+            card += """<div class="workflow-graph">"""
+            card += """<h4>Workflow Graph</h4>"""
+            
+            try:
+                import networkx as nx
+                from asimov.event import status_map
+                
+                # Organize nodes by dependency layers
+                if nx.is_directed_acyclic_graph(self.graph):
+                    # Get layers using topological generations
+                    layers = list(nx.topological_generations(self.graph))
+                    
+                    card += """<div class="graph-container">"""
+                    
+                    for layer_idx, layer in enumerate(layers):
+                        card += """<div class="graph-layer">"""
+                        
+                        for node in layer:
+                            # Get status and review for styling
+                            status = node.status if hasattr(node, 'status') else 'unknown'
+                            review_status = 'none'
+                            if hasattr(node, 'review') and len(node.review) > 0:
+                                review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
+                            
+                            status_badge = status_map.get(status, 'secondary')
+                            
+                            # Get pipeline name
+                            pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
+                            
+                            # Get dependencies (predecessors in the graph)
+                            predecessors = list(self.graph.predecessors(node))
+                            predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
+                            
+                            # Get dependents (successors in the graph)
+                            successors = list(self.graph.successors(node))
+                            successor_names = ','.join([succ.name for succ in successors]) if successors else ''
+                            
+                            # Create graph node with click handler
+                            # Add running indicator for active analyses
+                            running_indicator = ''
+                            if status in ['running', 'processing']:
+                                running_indicator = '<span class="graph-running-indicator"></span>'
+                            
+                            card += f"""
+                            <div class="graph-node status-{status}" 
+                                 id="node-{node.name}"
+                                 data-review="{review_status}" 
+                                 data-status="{status}"
+                                 data-node-name="{node.name}"
+                                 data-predecessors="{predecessor_names}"
+                                 data-successors="{successor_names}"
+                                 onclick="openAnalysisModal('{node.name}')">
+                                {running_indicator}
+                                <div class="graph-node-title">{node.name}</div>
+                                <div class="graph-node-subtitle">{pipeline_name}</div>
+                            </div>
+                            """
+                            
+                            # Add hidden data container for modal
+                            comment = node.comment if hasattr(node, 'comment') and node.comment else ''
+                            rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
+                            approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
+                            
+                            card += f"""
+                            <div id="analysis-data-{node.name}" style="display:none;"
+                                 data-name="{node.name}"
+                                 data-status="{status}"
+                                 data-status-badge="{status_badge}"
+                                 data-pipeline="{pipeline_name}"
+                                 data-rundir="{rundir}"
+                                 data-approximant="{approximant}"
+                                 data-comment="{comment}">
+                            </div>
+                            """
+                        
+                        card += """</div>"""
+                        
+                        # Add arrow between layers
+                        if layer_idx < len(layers) - 1:
+                            card += """<div class="graph-arrow">→</div>"""
+                    
+                    card += """</div>"""
+                    
+                else:
+                    # Fallback for non-DAG: just list nodes
+                    card += """<div class="graph-container">"""
+                    card += """<div class="graph-layer">"""
+                    for node in self.graph.nodes():
+                        status = node.status if hasattr(node, 'status') else 'unknown'
+                        status_badge = status_map.get(status, 'secondary')
+                        pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
+                        
+                        review_status = 'none'
+                        if hasattr(node, 'review') and len(node.review) > 0:
+                            review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
+                        
+                        # Get dependencies even for non-DAG
+                        predecessors = list(self.graph.predecessors(node)) if hasattr(self.graph, 'predecessors') else []
+                        predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
+                        
+                        successors = list(self.graph.successors(node)) if hasattr(self.graph, 'successors') else []
+                        successor_names = ','.join([succ.name for succ in successors]) if successors else ''
+                        
+                        # Add running indicator for active analyses
+                        running_indicator = ''
+                        if status in ['running', 'processing']:
+                            running_indicator = '<span class="graph-running-indicator"></span>'
+                        
+                        card += f"""
+                        <div class="graph-node status-{status}" 
+                             id="node-{node.name}"
+                             data-review="{review_status}"
+                             data-status="{status}"
+                             data-node-name="{node.name}"
+                             data-predecessors="{predecessor_names}"
+                             data-successors="{successor_names}"
+                             onclick="openAnalysisModal('{node.name}')">
+                            {running_indicator}
+                            <div class="graph-node-title">{node.name}</div>
+                            <div class="graph-node-subtitle">{pipeline_name}</div>
+                        </div>
+                        """
+                        
+                        comment = node.comment if hasattr(node, 'comment') and node.comment else ''
+                        rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
+                        approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
+                        
+                        card += f"""
+                        <div id="analysis-data-{node.name}" style="display:none;"
+                             data-name="{node.name}"
+                             data-status="{status}"
+                             data-status-badge="{status_badge}"
+                             data-pipeline="{pipeline_name}"
+                             data-rundir="{rundir}"
+                             data-approximant="{approximant}"
+                             data-comment="{comment}">
+                        </div>
+                        """
+                    card += """</div>"""
+                    card += """</div>"""
+                    
+            except Exception as e:
+                card += f"""<p class="text-muted">Error rendering graph: {str(e)}</p>"""
+            
+            card += """</div>"""
 
         # card += """
         # </div></div>

@@ -362,6 +362,11 @@ class Analysis:
         card = ""
 
         card += f"<div class='asimov-analysis asimov-analysis-{self.status}'>"
+        
+        # Add running indicator for active analyses
+        if self.status in ["running", "processing"]:
+            card += """<span class="running-indicator"></span>"""
+        
         card += f"<h4>{self.name}"
 
         if self.comment:
@@ -369,29 +374,51 @@ class Analysis:
                 f"""  <small class="asimov-comment text-muted">{self.comment}</small>"""
             )
         card += "</h4>"
+        
         if self.status:
             card += f"""<p class="asimov-status">
   <span class="badge badge-pill badge-{status_map[self.status]}">{self.status}</span>
 </p>"""
 
         if self.pipeline:
-            card += f"""<p class="asimov-pipeline-name">{self.pipeline.name}</p>"""
+            card += f"""<p class="asimov-pipeline-name"><strong>Pipeline:</strong> {self.pipeline.name}</p>"""
 
-        if self.pipeline:
-            # self.pipeline.collect_pages()
-            card += self.pipeline.html()
+        # Build collapsible details section
+        has_details = bool(
+            self.rundir or 
+            "approximant" in production.meta or 
+            "sampler" in production.meta or
+            "quality" in production.meta or
+            self.pipeline
+        )
+        
+        if has_details:
+            card += """<a class="toggle-details">▶ Show details</a>"""
+            card += """<div class="details-content">"""
+            
+            if self.pipeline:
+                # self.pipeline.collect_pages()
+                card += self.pipeline.html()
 
-        if self.rundir:
-            card += f"""<p class="asimov-rundir"><code>{production.rundir}</code></p>"""
-        else:
-            card += """&nbsp;"""
+            if self.rundir:
+                card += f"""<p class="asimov-rundir"><strong>Run directory:</strong><br><code>{production.rundir}</code></p>"""
 
-        if "approximant" in production.meta:
-            card += f"""<p class="asimov-attribute">Waveform approximant:
+            if "approximant" in production.meta:
+                card += f"""<p class="asimov-attribute"><strong>Waveform approximant:</strong>
    <span class="asimov-approximant">{production.meta['approximant']}</span>
 </p>"""
 
-        card += """&nbsp;"""
+            # Add more metadata if available
+            if "sampler" in production.meta and production.meta["sampler"]:
+                if isinstance(production.meta["sampler"], dict):
+                    for key, value in production.meta["sampler"].items():
+                        card += f"""<p class="asimov-attribute"><strong>{key}:</strong> {value}</p>"""
+                        
+            if "quality" in production.meta:
+                card += f"""<p class="asimov-attribute"><strong>Quality:</strong> {production.meta['quality']}</p>"""
+
+            card += """</div>"""
+        
         card += """</div>"""
 
         if len(self.review) > 0:

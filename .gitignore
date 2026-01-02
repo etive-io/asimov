@@ -1,6 +1,9 @@
-# Byte-compiled / optimized / DLL files
+# Python build artifacts
+*.egg-info/
 __pycache__/
-*.py[cod]
+*.pyc
+*.pyo
+*.pyd
 *$py.class
 
 # C extensions
