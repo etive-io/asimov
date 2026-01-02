@@ -533,6 +533,11 @@ class Event:
                             successor_names = ','.join([succ.name for succ in successors]) if successors else ''
                             
                             # Create graph node with click handler
+                            # Add running indicator for active analyses
+                            running_indicator = ''
+                            if status in ['running', 'processing']:
+                                running_indicator = '<span class="graph-running-indicator"></span>'
+                            
                             card += f"""
                             <div class="graph-node status-{status}" 
                                  id="node-{node.name}"
@@ -542,9 +547,7 @@ class Event:
                                  data-predecessors="{predecessor_names}"
                                  data-successors="{successor_names}"
                                  onclick="openAnalysisModal('{node.name}')">
-                                <div class="graph-node-status">
-                                    <span class="badge badge-pill badge-{status_badge}">{status}</span>
-                                </div>
+                                {running_indicator}
                                 <div class="graph-node-title">{node.name}</div>
                                 <div class="graph-node-subtitle">{pipeline_name}</div>
                             </div>
@@ -595,6 +598,11 @@ class Event:
                         successors = list(self.graph.successors(node)) if hasattr(self.graph, 'successors') else []
                         successor_names = ','.join([succ.name for succ in successors]) if successors else ''
                         
+                        # Add running indicator for active analyses
+                        running_indicator = ''
+                        if status in ['running', 'processing']:
+                            running_indicator = '<span class="graph-running-indicator"></span>'
+                        
                         card += f"""
                         <div class="graph-node status-{status}" 
                              id="node-{node.name}"
@@ -604,9 +612,7 @@ class Event:
                              data-predecessors="{predecessor_names}"
                              data-successors="{successor_names}"
                              onclick="openAnalysisModal('{node.name}')">
-                            <div class="graph-node-status">
-                                <span class="badge badge-pill badge-{status_badge}">{status}</span>
-                            </div>
+                            {running_indicator}
                             <div class="graph-node-title">{node.name}</div>
                             <div class="graph-node-subtitle">{pipeline_name}</div>
                         </div>

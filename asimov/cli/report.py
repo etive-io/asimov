@@ -357,10 +357,15 @@ def html(event, webdir):
             color: #586069;
         }
 
-        .graph-node-status {
+        .graph-running-indicator {
             position: absolute;
             top: 0.5rem;
             right: 0.5rem;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #0366d6;
+            animation: pulse 2s ease-in-out infinite;
         }
 
         .graph-container {
