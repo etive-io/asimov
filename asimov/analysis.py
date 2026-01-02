@@ -71,7 +71,7 @@ class Analysis:
     """
 
     meta = {}
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": [], "likelihood": {}}
+    meta_defaults = {"scheduler": {}, "sampler": {}, "likelihood": {}}
 
     @property
     def review(self):
@@ -975,7 +975,7 @@ class ProjectAnalysis(Analysis):
     A multi-subject analysis.
     """
 
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": []}
+    meta_defaults = {"scheduler": {}, "sampler": {}}
 
     def __init__(self, name, pipeline, ledger=None, **kwargs):
         """ """
