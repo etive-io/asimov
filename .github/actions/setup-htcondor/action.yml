@@ -1,0 +1,11 @@
+name: 'Setup HTCondor'
+description: 'Start and verify HTCondor service'
+runs:
+  using: "composite"
+  steps:
+    - name: Start HTCondor
+      shell: bash
+      run: |
+        condor_master &
+        sleep 10
+        condor_status

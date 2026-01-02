@@ -131,14 +131,30 @@ class Event:
 
         if "productions" in kwargs:
             for production in kwargs["productions"]:
-                if ("analyses" in production) or ("productions" in production):
+                # Normalise stored production structures. They may arrive either as
+                # {name: {..metadata..}} (preferred) or a flat dict. Ensure the
+                # inner dict carries the production name so downstream factories
+                # have the required fields.
+                if isinstance(production, dict) and len(production) == 1:
+                    prod_name, prod_meta = next(iter(production.items()))
+                    if prod_meta is None:
+                        prod_meta = {}
+                    if "name" not in prod_meta:
+                        prod_meta["name"] = prod_name
+                elif isinstance(production, dict):
+                    prod_meta = dict(production)
+                else:
+                    # Unknown structure; skip
+                    continue
+
+                if ("analyses" in prod_meta) or ("productions" in prod_meta):
                     self.add_production(
-                        SubjectAnalysis.from_dict(production, subject=self)
+                        SubjectAnalysis.from_dict(prod_meta, subject=self)
                     )
                 else:
                     self.add_production(
                         Production.from_dict(
-                            production, subject=self, ledger=self.ledger
+                            prod_meta, subject=self, ledger=self.ledger
                         )
                     )
         self._check_required()
@@ -381,7 +397,9 @@ class Event:
         if productions:
             data["productions"] = []
             for production in self.productions:
-                data["productions"].append(production.to_dict(event=False))
+                # Store production metadata keyed by its name so it can be
+                # reconstructed losslessly when reloading the ledger.
+                data["productions"].append({production.name: production.to_dict(event=False)})
 
         data["working directory"] = self.work_dir
         if "ledger" in data:

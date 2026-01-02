@@ -79,7 +79,13 @@ def make_project(
     config.set("ledger", "location", os.path.join(".asimov", "ledger.yml"))
 
     # Set the default environment
-    python_loc = shutil.which("python").split("/")[:-2]
+    if (python_loc := shutil.which("python")) is not None:
+        python_loc = python_loc.split("/")[:-2]
+    elif (python_loc := shutil.which("python3")) is not None:
+        python_loc = python_loc.split("/")[:-2]
+    else:
+        raise RuntimeError("Unable to find python executable in PATH")
+    
     config.set("pipelines", "environment", os.path.join("/", *python_loc))
     config.set("rift", "environment", os.path.join("/", *python_loc))
 

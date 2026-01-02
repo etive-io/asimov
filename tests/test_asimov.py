@@ -5,13 +5,16 @@ from unittest.mock import patch
 from importlib import reload
 import asimov
 
-from pkg_resources import DistributionNotFound
+try:
+    from importlib.metadata import PackageNotFoundError
+except ImportError:
+    from importlib_metadata import PackageNotFoundError
 
 class TestAsimovBase(unittest.TestCase):
 
-    @patch("pkg_resources.get_distribution",
+    @patch("importlib.metadata.version",
            **{
-               'side_effect': DistributionNotFound,#("Not found", "asimov"),
+               'side_effect': PackageNotFoundError,
            })
     def testImports(self, blah):
         reload(asimov)

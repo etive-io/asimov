@@ -1,0 +1,15 @@
+name: 'Create Submit User'
+description: 'Create submituser account with sudo privileges'
+runs:
+  using: "composite"
+  steps:
+    - name: Create submit user
+      shell: bash
+      run: |
+        id -u submituser >/dev/null 2>&1 || useradd -m -s /bin/bash submituser
+        {
+          echo 'Defaults:submituser !requiretty'
+          echo 'submituser ALL=(ALL) NOPASSWD:ALL'
+        } > /etc/sudoers.d/submituser
+        chmod 0440 /etc/sudoers.d/submituser
+        chown -R submituser:submituser "$GITHUB_WORKSPACE"

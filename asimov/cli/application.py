@@ -27,7 +27,7 @@ logger = logger.getChild("cli").getChild("apply")
 logger.setLevel(LOGGER_LEVEL)
 
 
-def apply_page(file, event, ledger=ledger, update_page=False):
+def apply_page(file, event=None, ledger=ledger, update_page=False):
     if file[:4] == "http":
         r = requests.get(file)
         if r.status_code == 200:
@@ -53,12 +53,29 @@ def apply_page(file, event, ledger=ledger, update_page=False):
                 old_event = deepcopy(ledger.events[event.name])
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
-                analyses = [
-                    # I appreciate this looks insane, but the way the yaml stores these
-                    # is poorly designed.
-                    {list(prod.keys())[0]: update(list(prod.values())[0], old_event)}
-                    for prod in ledger.events[event.name]["productions"]
-                ]
+                analyses = []
+                for prod in ledger.events[event.name].get("productions", []):
+                    prod_name = None
+                    prod_data = None
+
+                    if isinstance(prod, dict) and len(prod) == 1:
+                        prod_name, prod_data = next(iter(prod.items()))
+                    elif isinstance(prod, dict):
+                        prod_name = prod.get("name")
+                        if prod_name:
+                            prod_data = {k: v for k, v in prod.items() if k != "name"}
+                        else:
+                            prod_data = prod
+
+                    if prod_data is None:
+                        prod_data = {}
+
+                    merged = update(prod_data, old_event, inplace=False)
+
+                    if prod_name:
+                        analyses.append({prod_name: merged})
+                    else:
+                        analyses.append(merged)
 
                 # Add the old version to the history
                 if "history" not in ledger.data:
