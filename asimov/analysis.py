@@ -71,8 +71,7 @@ class Analysis:
     """
 
     meta = {}
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": [], "likelihood": {}}
-    _reviews = Review()
+    meta_defaults = {"scheduler": {}, "sampler": {}, "likelihood": {}}
 
     @property
     def review(self):
@@ -82,7 +81,8 @@ class Analysis:
         if "review" in self.meta:
             if len(self.meta["review"]) > 0:
                 self._reviews = Review.from_dict(self.meta["review"], production=self)
-                self.meta.pop("review")
+            # Always remove 'review' from meta since we manage it via _reviews
+            self.meta.pop("review")
         return self._reviews
 
     def _process_dependencies(self, needs):
@@ -754,6 +754,9 @@ class SimpleAnalysis(Analysis):
             self.status_str = "none"
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
 
         # Start by adding pipeline defaults
         if "pipelines" in self.event.ledger.data:
@@ -840,6 +843,10 @@ class SubjectAnalysis(Analysis):
             self.status_str = "none"
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
+        
         self.meta = update(self.meta, deepcopy(self.subject.meta))
         self.meta = update(self.meta, deepcopy(kwargs))
 
@@ -969,7 +976,7 @@ class ProjectAnalysis(Analysis):
     A multi-subject analysis.
     """
 
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": []}
+    meta_defaults = {"scheduler": {}, "sampler": {}}
 
     def __init__(self, name, pipeline, ledger=None, **kwargs):
         """ """
@@ -1057,6 +1064,9 @@ class ProjectAnalysis(Analysis):
             self.comment = None
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
 
         # Start by adding pipeline defaults
         if "pipelines" in self.ledger.data:

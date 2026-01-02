@@ -262,6 +262,70 @@ def html(event, webdir):
             }
         }
 
+        /* Review status indicators */
+        .review-indicator {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 24px;
+            font-weight: bold;
+            font-size: 1rem;
+            z-index: 10;
+        }
+
+        .review-indicator.review-approved {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .review-indicator.review-rejected {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .review-indicator.review-deprecated {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        /* Visual indicators for rejected analyses */
+        .graph-node.review-rejected::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom right, transparent 45%, #dc3545 47%, #dc3545 53%, transparent 55%);
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        .graph-node.review-deprecated {
+            opacity: 0.6;
+        }
+
+        .asimov-analysis.review-rejected::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom right, transparent 45%, #dc3545 47%, #dc3545 53%, transparent 55%);
+            pointer-events: none;
+            opacity: 0.3;
+        }
+
+        .asimov-analysis.review-deprecated {
+            opacity: 0.6;
+        }
+
         /* Stale analysis indicators */
         .stale-indicator {
             display: inline-block;
@@ -690,6 +754,11 @@ def html(event, webdir):
                     b.classList.remove('active');
                 });
 
+                // Clear review filters
+                document.querySelectorAll('.filter-review').forEach(function(b) {
+                    b.classList.remove('active');
+                });
+
                 // Deactivate "Hide Cancelled" and unhide all related items
                 if (hideCancelledBtn) {
                     hideCancelledBtn.classList.remove('active');
@@ -808,6 +877,39 @@ def html(event, webdir):
             document.getElementById('modal-analysis-status').textContent = analysisData.dataset.status;
             document.getElementById('modal-analysis-status').className = 'badge badge-' + analysisData.dataset.statusBadge;
             document.getElementById('modal-analysis-pipeline').textContent = analysisData.dataset.pipeline;
+            
+            // Populate review status
+            var reviewStatus = analysisData.dataset.reviewStatus || 'none';
+            var reviewMessage = analysisData.dataset.reviewMessage || '';
+            var reviewBadge = document.getElementById('modal-review-status');
+            var reviewMessageEl = document.getElementById('modal-review-message');
+            
+            // Map review status to badge classes
+            var reviewBadgeMap = {
+                'approved': 'badge-success',
+                'rejected': 'badge-danger',
+                'deprecated': 'badge-warning',
+                'checked': 'badge-info',
+                'none': 'badge-secondary'
+            };
+            
+            var reviewLabelMap = {
+                'approved': 'Approved',
+                'rejected': 'Rejected',
+                'deprecated': 'Deprecated',
+                'checked': 'Checked',
+                'none': 'No Review'
+            };
+            
+            reviewBadge.textContent = reviewLabelMap[reviewStatus] || 'No Review';
+            reviewBadge.className = 'badge ' + (reviewBadgeMap[reviewStatus] || 'badge-secondary');
+            
+            if (reviewMessage) {
+                reviewMessageEl.textContent = reviewMessage;
+                reviewMessageEl.style.display = 'block';
+            } else {
+                reviewMessageEl.style.display = 'none';
+            }
             
             if (analysisData.dataset.rundir) {
                 document.getElementById('modal-analysis-rundir').textContent = analysisData.dataset.rundir;
@@ -1163,6 +1265,11 @@ def html(event, webdir):
         <div class="modal-section">
             <h5>Status</h5>
             <p><span id="modal-analysis-status" class="badge">Unknown</span></p>
+        </div>
+        <div class="modal-section" id="modal-review-section">
+            <h5>Review Status</h5>
+            <p><span id="modal-review-status" class="badge">No Review</span></p>
+            <p id="modal-review-message" style="margin-top: 0.5rem; font-style: italic;"></p>
         </div>
         <div class="modal-section">
             <h5>Pipeline</h5>

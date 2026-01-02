@@ -504,6 +504,30 @@ class Event:
             production.build_report()
 
     def html(self):
+        # Helper function to get review info from a node
+        def get_review_info(node):
+            """Extract review status and message from a node."""
+            review_status = 'none'
+            review_message = ''
+            if hasattr(node, 'review') and len(node.review) > 0:
+                # Get the latest review message (Review class implements __getitem__)
+                latest_review = node.review[-1]
+                if latest_review:
+                    review_status = latest_review.status.lower() if latest_review.status else 'none'
+                    review_message = latest_review.message if latest_review.message else ''
+            return review_status, review_message
+        
+        # Helper function to generate review indicator HTML
+        def get_review_indicator(review_status):
+            """Generate HTML for review status indicator."""
+            if review_status == 'approved':
+                return '<span class="review-indicator review-approved" title="Approved">✓</span>'
+            elif review_status == 'rejected':
+                return '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
+            elif review_status == 'deprecated':
+                return '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
+            return ''
+        
         card = f"""
         <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
         <div class="card-body">
@@ -543,9 +567,7 @@ class Event:
                         for node in layer:
                             # Get status and review for styling
                             status = node.status if hasattr(node, 'status') else 'unknown'
-                            review_status = 'none'
-                            if hasattr(node, 'review') and len(node.review) > 0:
-                                review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
+                            review_status, review_message = get_review_info(node)
                             
                             status_badge = status_map.get(status, 'secondary')
                             
@@ -566,8 +588,11 @@ class Event:
                             if status in ['running', 'processing']:
                                 running_indicator = '<span class="graph-running-indicator"></span>'
                             
+                            # Add review status indicator
+                            review_indicator = get_review_indicator(review_status)
+                            
                             card += f"""
-                            <div class="graph-node status-{status}" 
+                            <div class="graph-node status-{status} review-{review_status}" 
                                  id="node-{node.name}"
                                  data-review="{review_status}" 
                                  data-status="{status}"
@@ -576,6 +601,7 @@ class Event:
                                  data-successors="{successor_names}"
                                  onclick="openAnalysisModal('{node.name}')">
                                 {running_indicator}
+                                {review_indicator}
                                 <div class="graph-node-title">{node.name}</div>
                                 <div class="graph-node-subtitle">{pipeline_name}</div>
                             </div>
@@ -590,6 +616,9 @@ class Event:
                             dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                             dependencies_str = ', '.join(dependencies) if dependencies else ''
                             
+                            # Escape review message for HTML attribute
+                            review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
+                            
                             card += f"""
                             <div id="analysis-data-{node.name}" style="display:none;"
                                  data-name="{node.name}"
@@ -599,7 +628,9 @@ class Event:
                                  data-rundir="{rundir}"
                                  data-approximant="{approximant}"
                                  data-comment="{comment}"
-                                 data-dependencies="{dependencies_str}">
+                                 data-dependencies="{dependencies_str}"
+                                 data-review-status="{review_status}"
+                                 data-review-message="{review_message_escaped}">
                             </div>
                             """
                         
@@ -620,9 +651,7 @@ class Event:
                         status_badge = status_map.get(status, 'secondary')
                         pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
                         
-                        review_status = 'none'
-                        if hasattr(node, 'review') and len(node.review) > 0:
-                            review_status = node.review[0].status if hasattr(node.review[0], 'status') else 'none'
+                        review_status, review_message = get_review_info(node)
                         
                         # Get dependencies even for non-DAG
                         predecessors = list(self.graph.predecessors(node)) if hasattr(self.graph, 'predecessors') else []
@@ -636,8 +665,11 @@ class Event:
                         if status in ['running', 'processing']:
                             running_indicator = '<span class="graph-running-indicator"></span>'
                         
+                        # Add review status indicator
+                        review_indicator = get_review_indicator(review_status)
+                        
                         card += f"""
-                        <div class="graph-node status-{status}" 
+                        <div class="graph-node status-{status} review-{review_status}" 
                              id="node-{node.name}"
                              data-review="{review_status}"
                              data-status="{status}"
@@ -646,6 +678,7 @@ class Event:
                              data-successors="{successor_names}"
                              onclick="openAnalysisModal('{node.name}')">
                             {running_indicator}
+                            {review_indicator}
                             <div class="graph-node-title">{node.name}</div>
                             <div class="graph-node-subtitle">{pipeline_name}</div>
                         </div>
@@ -659,6 +692,9 @@ class Event:
                         dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                         dependencies_str = ', '.join(dependencies) if dependencies else ''
                         
+                        # Escape review message for HTML attribute
+                        review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
+                        
                         card += f"""
                         <div id="analysis-data-{node.name}" style="display:none;"
                              data-name="{node.name}"
@@ -668,7 +704,9 @@ class Event:
                              data-rundir="{rundir}"
                              data-approximant="{approximant}"
                              data-comment="{comment}"
-                             data-dependencies="{dependencies_str}">
+                             data-dependencies="{dependencies_str}"
+                             data-review-status="{review_status}"
+                             data-review-message="{review_message_escaped}">
                         </div>
                         """
                     card += """</div>"""
