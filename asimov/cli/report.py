@@ -565,6 +565,10 @@ def html(event, webdir):
                         analysis.classList.remove('filtered-hidden');
                     });
                     this.classList.remove('active');
+                    
+                    // Redraw connections after deactivating filter
+                    setTimeout(drawGraphConnections, 50);
+                    checkEventVisibility();
                 } else {
                     // Activate filter
                     document.querySelectorAll('.filter-status').forEach(function(b) {
@@ -595,6 +599,7 @@ def html(event, webdir):
                     
                     // Redraw connections after filtering
                     setTimeout(drawGraphConnections, 50);
+                    checkEventVisibility();
                 }
             });
         });
