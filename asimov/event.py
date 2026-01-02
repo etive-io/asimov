@@ -504,6 +504,29 @@ class Event:
             production.build_report()
 
     def html(self):
+        # Helper function to get review info from a node
+        def get_review_info(node):
+            """Extract review status and message from a node."""
+            review_status = 'none'
+            review_message = ''
+            if hasattr(node, 'review') and len(node.review) > 0:
+                # Get the latest review (last one in the list)
+                latest_review = node.review[-1]
+                review_status = latest_review.status.lower() if hasattr(latest_review, 'status') and latest_review.status else 'none'
+                review_message = latest_review.message if hasattr(latest_review, 'message') and latest_review.message else ''
+            return review_status, review_message
+        
+        # Helper function to generate review indicator HTML
+        def get_review_indicator(review_status):
+            """Generate HTML for review status indicator."""
+            if review_status == 'approved':
+                return '<span class="review-indicator review-approved" title="Approved">✓</span>'
+            elif review_status == 'rejected':
+                return '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
+            elif review_status == 'deprecated':
+                return '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
+            return ''
+        
         card = f"""
         <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
         <div class="card-body">
@@ -543,13 +566,7 @@ class Event:
                         for node in layer:
                             # Get status and review for styling
                             status = node.status if hasattr(node, 'status') else 'unknown'
-                            review_status = 'none'
-                            review_message = ''
-                            if hasattr(node, 'review') and len(node.review) > 0:
-                                # Get the latest review (last one in the list)
-                                latest_review = node.review[-1]
-                                review_status = latest_review.status.lower() if hasattr(latest_review, 'status') and latest_review.status else 'none'
-                                review_message = latest_review.message if hasattr(latest_review, 'message') and latest_review.message else ''
+                            review_status, review_message = get_review_info(node)
                             
                             status_badge = status_map.get(status, 'secondary')
                             
@@ -571,13 +588,7 @@ class Event:
                                 running_indicator = '<span class="graph-running-indicator"></span>'
                             
                             # Add review status indicator
-                            review_indicator = ''
-                            if review_status == 'approved':
-                                review_indicator = '<span class="review-indicator review-approved" title="Approved">✓</span>'
-                            elif review_status == 'rejected':
-                                review_indicator = '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
-                            elif review_status == 'deprecated':
-                                review_indicator = '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
+                            review_indicator = get_review_indicator(review_status)
                             
                             card += f"""
                             <div class="graph-node status-{status} review-{review_status}" 
@@ -639,13 +650,7 @@ class Event:
                         status_badge = status_map.get(status, 'secondary')
                         pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
                         
-                        review_status = 'none'
-                        review_message = ''
-                        if hasattr(node, 'review') and len(node.review) > 0:
-                            # Get the latest review (last one in the list)
-                            latest_review = node.review[-1]
-                            review_status = latest_review.status.lower() if hasattr(latest_review, 'status') and latest_review.status else 'none'
-                            review_message = latest_review.message if hasattr(latest_review, 'message') and latest_review.message else ''
+                        review_status, review_message = get_review_info(node)
                         
                         # Get dependencies even for non-DAG
                         predecessors = list(self.graph.predecessors(node)) if hasattr(self.graph, 'predecessors') else []
@@ -660,13 +665,7 @@ class Event:
                             running_indicator = '<span class="graph-running-indicator"></span>'
                         
                         # Add review status indicator
-                        review_indicator = ''
-                        if review_status == 'approved':
-                            review_indicator = '<span class="review-indicator review-approved" title="Approved">✓</span>'
-                        elif review_status == 'rejected':
-                            review_indicator = '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
-                        elif review_status == 'deprecated':
-                            review_indicator = '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
+                        review_indicator = get_review_indicator(review_status)
                         
                         card += f"""
                         <div class="graph-node status-{status} review-{review_status}" 
