@@ -369,6 +369,7 @@ def html(event, webdir):
             align-items: center;
             justify-content: center;
             gap: 2rem;
+            position: relative;
         }
 
         .graph-layer {
@@ -376,12 +377,37 @@ def html(event, webdir):
             flex-direction: column;
             align-items: center;
             gap: 0.5rem;
+            position: relative;
         }
 
         .graph-arrow {
             font-size: 2rem;
-            color: #586069;
+            color: transparent;
             margin: 0 1rem;
+            user-select: none;
+        }
+
+        /* SVG connection lines */
+        .graph-connections {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .graph-node {
+            position: relative;
+            z-index: 1;
+        }
+
+        .connection-line {
+            fill: none;
+            stroke: #586069;
+            stroke-width: 2;
+            opacity: 0.6;
         }
 
         /* Modal styles */
@@ -631,17 +657,28 @@ def html(event, webdir):
             cancelled: 0
         };
 
-        document.querySelectorAll('.asimov-analysis').forEach(function(analysis) {
+        // Count both graph nodes and legacy asimov-analysis elements
+        var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
+        analyses.forEach(function(analysis) {
             stats.total++;
-            if (analysis.classList.contains('asimov-analysis-running') || 
+            
+            // Check for graph node status classes
+            if (analysis.classList.contains('status-running') || 
+                analysis.classList.contains('status-processing') ||
+                analysis.classList.contains('asimov-analysis-running') || 
                 analysis.classList.contains('asimov-analysis-processing')) {
                 stats.running++;
-            } else if (analysis.classList.contains('asimov-analysis-finished') || 
+            } else if (analysis.classList.contains('status-finished') || 
+                       analysis.classList.contains('status-uploaded') ||
+                       analysis.classList.contains('asimov-analysis-finished') || 
                        analysis.classList.contains('asimov-analysis-uploaded')) {
                 stats.finished++;
-            } else if (analysis.classList.contains('asimov-analysis-stuck')) {
+            } else if (analysis.classList.contains('status-stuck') ||
+                       analysis.classList.contains('asimov-analysis-stuck')) {
                 stats.stuck++;
-            } else if (analysis.classList.contains('asimov-analysis-cancelled') || 
+            } else if (analysis.classList.contains('status-cancelled') || 
+                       analysis.classList.contains('status-stopped') ||
+                       analysis.classList.contains('asimov-analysis-cancelled') || 
                        analysis.classList.contains('asimov-analysis-stopped')) {
                 stats.cancelled++;
             }
@@ -786,6 +823,77 @@ def html(event, webdir):
         });
     }
 
+    // Draw SVG connections between graph layers
+    function drawGraphConnections() {
+        document.querySelectorAll('.workflow-graph').forEach(function(graphContainer) {
+            // Create or get SVG element
+            var existingSvg = graphContainer.querySelector('.graph-connections');
+            if (existingSvg) {
+                existingSvg.remove();
+            }
+            
+            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.classList.add('graph-connections');
+            
+            var container = graphContainer.querySelector('.graph-container');
+            if (!container) return;
+            
+            // Get all layers
+            var layers = container.querySelectorAll('.graph-layer');
+            if (layers.length < 2) return;
+            
+            // Calculate SVG dimensions
+            var containerRect = container.getBoundingClientRect();
+            svg.setAttribute('width', containerRect.width);
+            svg.setAttribute('height', containerRect.height);
+            
+            // Draw connections between consecutive layers
+            for (var i = 0; i < layers.length - 1; i++) {
+                var sourceLayer = layers[i];
+                var targetLayer = layers[i + 1];
+                
+                var sourceNodes = sourceLayer.querySelectorAll('.graph-node');
+                var targetNodes = targetLayer.querySelectorAll('.graph-node');
+                
+                sourceNodes.forEach(function(sourceNode) {
+                    targetNodes.forEach(function(targetNode) {
+                        var sourceRect = sourceNode.getBoundingClientRect();
+                        var targetRect = targetNode.getBoundingClientRect();
+                        
+                        // Calculate connection points (center right of source, center left of target)
+                        var x1 = sourceRect.right - containerRect.left;
+                        var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
+                        var x2 = targetRect.left - containerRect.left;
+                        var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
+                        
+                        // Create curved path
+                        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        
+                        // Calculate control points for bezier curve
+                        var controlPointOffset = Math.abs(x2 - x1) / 2;
+                        var cx1 = x1 + controlPointOffset;
+                        var cy1 = y1;
+                        var cx2 = x2 - controlPointOffset;
+                        var cy2 = y2;
+                        
+                        // Create smooth cubic bezier curve
+                        var d = 'M ' + x1 + ' ' + y1 + 
+                                ' C ' + cx1 + ' ' + cy1 + ', ' + 
+                                       cx2 + ' ' + cy2 + ', ' + 
+                                       x2 + ' ' + y2;
+                        
+                        path.setAttribute('d', d);
+                        path.classList.add('connection-line');
+                        svg.appendChild(path);
+                    });
+                });
+            }
+            
+            // Insert SVG at the beginning of container so it's behind nodes
+            container.insertBefore(svg, container.firstChild);
+        });
+    }
+
     // Enhanced initialization
     window.onload = function() {
         setupRefresh();
@@ -794,6 +902,9 @@ def html(event, webdir):
         initializeSearch();
         initializeReviewFilters();
         calculateStats();
+        
+        // Draw graph connections after DOM is ready
+        setTimeout(drawGraphConnections, 100);
         
         // Add modal close handlers
         var closeBtn = document.getElementById('modal-close-btn');
@@ -811,6 +922,11 @@ def html(event, webdir):
             btn.addEventListener('click', function() {
                 setTimeout(checkEventVisibility, 100);
             });
+        });
+        
+        // Redraw connections on window resize
+        window.addEventListener('resize', function() {
+            setTimeout(drawGraphConnections, 100);
         });
     };
 
