@@ -432,7 +432,7 @@ class Analysis:
         """
         Return the run directory for this analysis.
         """
-        if "rundir" in self.meta:
+        if "rundir" in self.meta and self.meta["rundir"] is not None:
             return os.path.abspath(self.meta["rundir"])
         elif "working directory" in self.subject.meta:
             value = os.path.join(self.subject.meta["working directory"], self.name)
