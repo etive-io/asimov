@@ -71,7 +71,7 @@ class Analysis:
     """
 
     meta = {}
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": {}, "likelihood": {}}
+    meta_defaults = {"scheduler": {}, "sampler": {}, "review": [], "likelihood": {}}
     _reviews = Review()
 
     @property
@@ -92,27 +92,98 @@ class Analysis:
         The dependencies can be provided either as the name of a production,
         or a query against the analysis's attributes.
 
+        The needs list supports complex dependency specifications:
+        - Simple name: "Prod1" matches analysis with name "Prod1"
+        - Property query: "waveform.approximant: IMRPhenomXPHM" matches analyses
+          with that waveform approximant
+        - Negation: "review.status: !approved" matches analyses that are NOT approved
+        - Nested lists for AND logic: [["review.status: approved", "waveform.approximant: IMRPhenomXPHM"]]
+          matches analyses that satisfy ALL conditions in the nested list
+        - Top-level items are OR'd together
+
         Parameters
         ----------
         needs : list
-           A list of all the requirements
+           A list of all the requirements. Can contain strings (OR'd together),
+           or lists of strings (AND'd together internally, OR'd with other items)
 
         Returns
         -------
         list
            A list of all the requirements processed for evaluation.
+           Each item is either a tuple (attribute, match, negate) for simple filters,
+           or a list of tuples for AND groups.
         """
         all_requirements = []
         for need in deepcopy(needs):
-            try:
-                requirement = need.split(":")
-                requirement = [requirement[0].split("."), requirement[1]]
-            except IndexError:
-                requirement = [["name"], need]
-            except AttributeError:
-                requirement = need
-            all_requirements.append(requirement)
+            # Check if this is an AND group (list of conditions)
+            if isinstance(need, list):
+                and_group = []
+                for condition in need:
+                    and_group.append(self._parse_single_dependency(condition))
+                all_requirements.append(and_group)
+            else:
+                # Single condition
+                all_requirements.append(self._parse_single_dependency(need))
         return all_requirements
+    
+    def _parse_single_dependency(self, need):
+        """
+        Parse a single dependency specification into (attribute, match, negate) tuple.
+        
+        Handles both formats:
+        - String: "waveform.approximant: IMRPhenomXPHM" (with quotes in YAML)
+        - Dict: {waveform.approximant: IMRPhenomXPHM} (without quotes in YAML)
+        
+        Parameters
+        ----------
+        need : str or dict
+            A single dependency specification
+            
+        Returns
+        -------
+        tuple
+            (attribute_list, match_value, is_negated)
+        """
+        negate = False
+        
+        # Handle dict format (when YAML parses without quotes)
+        if isinstance(need, dict):
+            # Should have exactly one key-value pair
+            if len(need) == 1:
+                key, value = list(need.items())[0]
+                key_str = str(key).strip()
+                attribute = key_str.split(".")
+                match_value = str(value).strip()
+                
+                # Check for negation
+                if match_value.startswith("!"):
+                    negate = True
+                    match_value = match_value[1:].strip()
+                    
+                return (attribute, match_value, negate)
+            else:
+                raise ValueError(
+                    f"Invalid dependency dict format: expected a single key-value pair, "
+                    f"got {len(need)} entries: {need}"
+                )
+        
+        # Handle string format (with quotes in YAML)
+        try:
+            # Handle "attribute: value" format
+            parts = need.split(":", 1)
+            attribute = parts[0].strip().split(".")
+            match_value = parts[1].strip()
+            
+            # Check for negation
+            if match_value.startswith("!"):
+                negate = True
+                match_value = match_value[1:].strip()
+            
+            return (attribute, match_value, negate)
+        except (IndexError, AttributeError):
+            # Plain name without colon
+            return (["name"], need, False)
 
     @property
     def job_id(self):
@@ -133,26 +204,134 @@ class Analysis:
 
     @property
     def dependencies(self):
-        """Return a list of analyses which this analysis depends upon."""
+        """
+        Return a list of analyses which this analysis depends upon.
+        
+        The dependency resolution supports complex logic:
+        - Top-level items in needs are OR'd together
+        - Nested lists represent AND conditions (all must match)
+        - Individual filters can be negated with !
+        
+        Returns
+        -------
+        list
+            List of analysis names that this analysis depends on
+        """
         all_matches = []
         if len(self._needs) == 0:
             return []
         else:
-            matches = set({})  # set(self.event.analyses)
-            # matches.remove(self)
+            matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
-            for attribute, match in requirements:
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x.matches_filter(attribute, match),
-                        self.event.analyses,
+            
+            for requirement in requirements:
+                if isinstance(requirement, list):
+                    # This is an AND group - all conditions must match
+                    and_matches = set(self.event.analyses)
+                    for attribute, match, negate in requirement:
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate),
+                                and_matches,
+                            )
+                        )
+                        and_matches = set(filtered_analyses)
+                    matches = set.union(matches, and_matches)
+                else:
+                    # Single condition
+                    attribute, match, negate = requirement
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            self.event.analyses,
+                        )
                     )
-                )
-                matches = set.union(matches, set(filtered_analyses))
+                    matches = set.union(matches, set(filtered_analyses))
+            
+            # Exclude self-dependencies
             for analysis in matches:
-                all_matches.append(analysis.name)
+                if analysis.name != self.name:
+                    all_matches.append(analysis.name)
 
             return all_matches
+    
+    @property
+    def resolved_dependencies(self):
+        """
+        Get the list of dependencies that were resolved when this analysis was run.
+        
+        This is used to track if dependencies have changed since the analysis ran,
+        which would make the analysis stale.
+        
+        Returns
+        -------
+        list or None
+            List of analysis names that were dependencies when this ran, or None if not yet run
+        """
+        if "resolved_dependencies" in self.meta:
+            return self.meta["resolved_dependencies"]
+        return None
+    
+    @resolved_dependencies.setter
+    def resolved_dependencies(self, value):
+        """
+        Store the resolved dependencies for this analysis.
+        
+        Parameters
+        ----------
+        value : list
+            List of analysis names that are current dependencies
+        """
+        self.meta["resolved_dependencies"] = value
+    
+    @property
+    def is_stale(self):
+        """
+        Check if this analysis is stale (dependencies have changed since it was run).
+        
+        An analysis is considered stale if:
+        1. It has been run (has resolved_dependencies)
+        2. The current dependencies differ from the resolved dependencies
+        
+        Returns
+        -------
+        bool
+            True if the analysis is stale, False otherwise
+        """
+        if self.resolved_dependencies is None:
+            # Never run, so not stale
+            return False
+        
+        current_deps = set(self.dependencies)
+        resolved_deps = set(self.resolved_dependencies)
+        
+        return current_deps != resolved_deps
+    
+    @property
+    def is_refreshable(self):
+        """
+        Check if this analysis should be automatically refreshed when stale.
+        
+        Returns
+        -------
+        bool
+            True if the analysis is marked as refreshable
+        """
+        if "refreshable" in self.meta:
+            return self.meta["refreshable"]
+        return False
+    
+    @is_refreshable.setter
+    def is_refreshable(self, value):
+        """
+        Mark this analysis as refreshable or not.
+        
+        Parameters
+        ----------
+        value : bool
+            Whether the analysis should be automatically refreshed
+        """
+        self.meta["refreshable"] = bool(value)
 
     @property
     def priors(self):
@@ -198,7 +377,7 @@ class Analysis:
     def status(self, value):
         self.status_str = value.lower()
 
-    def matches_filter(self, attribute, match):
+    def matches_filter(self, attribute, match, negate=False):
         """
         Checks to see if this analysis matches a given filtering
         criterion.
@@ -210,6 +389,8 @@ class Analysis:
 
             - processing status
 
+            - pipeline
+
             - name
 
         In addition, any quantity contained in the analysis metadata
@@ -220,10 +401,12 @@ class Analysis:
 
         Parameters
         ----------
-        attribute : str
-           The name of the attribute to be tested
+        attribute : list
+           The attribute path to be tested (e.g., ["waveform", "approximant"])
         match : str
            The string to be matched against the value of the attribute
+        negate : bool, optional
+           If True, invert the match result (default: False)
 
         Returns
         -------
@@ -234,20 +417,38 @@ class Analysis:
         is_review = False
         is_status = False
         is_name = False
+        is_pipeline = False
         in_meta = False
+        
         if attribute[0] == "review":
             is_review = match.lower() == str(self.review.status).lower()
         elif attribute[0] == "status":
             is_status = match.lower() == self.status.lower()
         elif attribute[0] == "name":
             is_name = match == self.name
+        elif attribute[0] == "pipeline":
+            # Check pipeline.name attribute first
+            if hasattr(self, 'pipeline'):
+                if hasattr(self.pipeline, 'name'):
+                    is_pipeline = match.lower() == self.pipeline.name.lower()
+                elif isinstance(self.pipeline, str):
+                    is_pipeline = match.lower() == self.pipeline.lower()
+            # Also check in metadata as fallback
+            if not is_pipeline and 'pipeline' in self.meta:
+                is_pipeline = match.lower() == self.meta['pipeline'].lower()
         else:
             try:
-                in_meta = reduce(operator.getitem, attribute, self.meta) == match
-            except KeyError:
+                meta_value = reduce(operator.getitem, attribute, self.meta)
+                in_meta = str(meta_value).lower() == str(match).lower()
+            except (KeyError, TypeError, AttributeError):
                 in_meta = False
 
-        return is_name | in_meta | is_status | is_review
+        result = is_name | in_meta | is_status | is_review | is_pipeline
+        
+        # Apply negation if requested
+        if negate:
+            return not result
+        return result
 
     def results(self, filename=None, handle=False, hash=None):
         store = Store(root=config.get("storage", "results_store"))
@@ -269,7 +470,7 @@ class Analysis:
         """
         Return the run directory for this analysis.
         """
-        if "rundir" in self.meta:
+        if "rundir" in self.meta and self.meta["rundir"] is not None:
             return os.path.abspath(self.meta["rundir"])
         elif "working directory" in self.subject.meta:
             value = os.path.join(self.subject.meta["working directory"], self.name)
@@ -367,6 +568,12 @@ class Analysis:
         if self.status in ["running", "processing"]:
             card += """<span class="running-indicator"></span>"""
         
+        # Add stale indicator if applicable
+        if self.is_stale:
+            stale_class = "stale-refreshable" if self.is_refreshable else "stale"
+            stale_text = "Stale (will refresh)" if self.is_refreshable else "Stale"
+            card += f"""<span class="stale-indicator {stale_class}" title="Dependencies have changed since this analysis was run">{stale_text}</span>"""
+        
         card += f"<h4>{self.name}"
 
         if self.comment:
@@ -389,12 +596,26 @@ class Analysis:
             "approximant" in production.meta or 
             "sampler" in production.meta or
             "quality" in production.meta or
-            self.pipeline
+            self.pipeline or
+            self.dependencies or
+            self.resolved_dependencies
         )
         
         if has_details:
             card += """<a class="toggle-details">▶ Show details</a>"""
             card += """<div class="details-content">"""
+            
+            # Show dependencies
+            if self.dependencies:
+                card += """<p class="asimov-dependencies"><strong>Current Dependencies:</strong><br>"""
+                card += ", ".join(self.dependencies)
+                card += """</p>"""
+            
+            # Show resolved dependencies if different from current
+            if self.resolved_dependencies and self.resolved_dependencies != self.dependencies:
+                card += """<p class="asimov-resolved-dependencies"><strong>Resolved Dependencies (when run):</strong><br>"""
+                card += ", ".join(self.resolved_dependencies)
+                card += """</p>"""
             
             if self.pipeline:
                 # self.pipeline.collect_pages()
@@ -627,17 +848,34 @@ class SubjectAnalysis(Analysis):
         if self._analysis_spec:
             requirements = self._process_dependencies(self._analysis_spec)
             self.analyses = []
-            for attribute, match in requirements:
-                matches = set(self.subject.analyses)
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x.matches_filter(attribute, match), subject.analyses
+            
+            for requirement in requirements:
+                if isinstance(requirement, list):
+                    # This is an AND group - all conditions must match
+                    and_matches = set(self.subject.analyses)
+                    for attribute, match, negate in requirement:
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate), and_matches
+                            )
+                        )
+                        and_matches = set(filtered_analyses)
+                    # Add all matches from this AND group
+                    for analysis in and_matches:
+                        if analysis not in self.analyses:
+                            self.analyses.append(analysis)
+                else:
+                    # Single condition
+                    attribute, match, negate = requirement
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate), subject.analyses
+                        )
                     )
-                )
-                matches = set.intersection(matches, set(filtered_analyses))
-
-                for analysis in matches:
-                    self.analyses.append(analysis)
+                    # Add all matches from this single condition
+                    for analysis in filtered_analyses:
+                        if analysis not in self.analyses:
+                            self.analyses.append(analysis)
             self.productions = self.analyses
         if "needs" in self.meta:
             self.meta.pop("needs")
@@ -731,7 +969,7 @@ class ProjectAnalysis(Analysis):
     A multi-subject analysis.
     """
 
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": {}}
+    meta_defaults = {"scheduler": {}, "sampler": {}, "review": []}
 
     def __init__(self, name, pipeline, ledger=None, **kwargs):
         """ """
@@ -767,17 +1005,35 @@ class ProjectAnalysis(Analysis):
         self._subject_obs = []
         for subject in self.subjects:
             if self._analysis_spec:
-                matches = set(subject.analyses)
-                for attribute, match in requirements:
-                    filtered_analyses = list(
-                        filter(
-                            lambda x: x.matches_filter(attribute, match),
-                            subject.analyses,
+                for requirement in requirements:
+                    if isinstance(requirement, list):
+                        # This is an AND group - all conditions must match
+                        and_matches = set(subject.analyses)
+                        for attribute, match, negate in requirement:
+                            filtered_analyses = list(
+                                filter(
+                                    lambda x: x.matches_filter(attribute, match, negate),
+                                    and_matches,
+                                )
+                            )
+                            and_matches = set(filtered_analyses)
+                        # Add all matches from this AND group
+                        for analysis in and_matches:
+                            if analysis not in self.analyses:
+                                self.analyses.append(analysis)
+                    else:
+                        # Single condition
+                        attribute, match, negate = requirement
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate),
+                                subject.analyses,
+                            )
                         )
-                    )
-                    matches = set.intersection(matches, set(filtered_analyses))
-                for analysis in matches:
-                    self.analyses.append(analysis)
+                        # Add all matches from this single condition
+                        for analysis in filtered_analyses:
+                            if analysis not in self.analyses:
+                                self.analyses.append(analysis)
         if "status" in kwargs:
             self.status_str = kwargs["status"].lower()
         else:
@@ -856,13 +1112,24 @@ class ProjectAnalysis(Analysis):
 
     @property
     def dependencies(self):
-        """Return a list of analyses which this analysis depends upon."""
+        """
+        Return a list of analyses which this analysis depends upon.
+        
+        The dependency resolution supports complex logic:
+        - Top-level items in needs are OR'd together
+        - Nested lists represent AND conditions (all must match)
+        - Individual filters can be negated with !
+        
+        Returns
+        -------
+        list
+            List of analysis names that this analysis depends on
+        """
         all_matches = []
         if len(self._needs) == 0:
             return []
         else:
-            matches = set({})  # set(self.event.analyses)
-            # matches.remove(self)
+            matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
             analyses = []
             for subject in self._subjects:
@@ -870,14 +1137,31 @@ class ProjectAnalysis(Analysis):
                 self._subject_obs.append(sub)
                 for analysis in sub.analyses:
                     analyses.append(analysis)
-            for attribute, match in requirements:
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x.matches_filter(attribute, match),
-                        analyses,
+            
+            for requirement in requirements:
+                if isinstance(requirement, list):
+                    # This is an AND group - all conditions must match
+                    and_matches = set(analyses)
+                    for attribute, match, negate in requirement:
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate),
+                                and_matches,
+                            )
+                        )
+                        and_matches = set(filtered_analyses)
+                    matches = set.union(matches, and_matches)
+                else:
+                    # Single condition
+                    attribute, match, negate = requirement
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            analyses,
+                        )
                     )
-                )
-                matches = set.union(matches, set(filtered_analyses))
+                    matches = set.union(matches, set(filtered_analyses))
+            
             for analysis in matches:
                 all_matches.append(analysis.name)
 

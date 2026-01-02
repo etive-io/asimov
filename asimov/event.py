@@ -258,6 +258,28 @@ class Event:
                     production.name: production for production in self.productions
                 }
                 self.graph.add_edge(analysis_dict[dependency], production)
+    
+    def update_graph(self):
+        """
+        Rebuild the dependency graph based on current production dependencies.
+        
+        This is necessary because dependency queries (e.g., property-based filters)
+        are evaluated dynamically and may change as productions are added or modified.
+        Call this method before using the graph to ensure edges reflect current state.
+        """
+        # Clear all edges but keep nodes
+        self.graph.clear_edges()
+        
+        # Rebuild edges based on current dependencies
+        analysis_dict = {production.name: production for production in self.productions}
+        
+        for production in self.productions:
+            if production.dependencies:
+                for dependency_name in production.dependencies:
+                    if dependency_name == production.name:
+                        continue
+                    if dependency_name in analysis_dict:
+                        self.graph.add_edge(analysis_dict[dependency_name], production)
 
     def __repr__(self):
         return f"<Event {self.name}>"
@@ -429,6 +451,9 @@ class Event:
         set
             A set of independent jobs which are not finished execution.
         """
+        # Update graph to reflect current dependencies
+        self.update_graph()
+        
         unfinished = self.graph.subgraph(
             [
                 production
@@ -495,6 +520,9 @@ class Event:
 
         # Generate graph-based workflow visualization
         if hasattr(self, 'graph') and self.graph and len(self.graph.nodes()) > 0:
+            # Update graph to reflect current dependencies (important for property-based queries)
+            self.update_graph()
+            
             card += """<div class="workflow-graph">"""
             card += """<h4>Workflow Graph</h4>"""
             
@@ -558,6 +586,10 @@ class Event:
                             rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                             approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                             
+                            # Get current dependencies
+                            dependencies = node.dependencies if hasattr(node, 'dependencies') else []
+                            dependencies_str = ', '.join(dependencies) if dependencies else ''
+                            
                             card += f"""
                             <div id="analysis-data-{node.name}" style="display:none;"
                                  data-name="{node.name}"
@@ -566,7 +598,8 @@ class Event:
                                  data-pipeline="{pipeline_name}"
                                  data-rundir="{rundir}"
                                  data-approximant="{approximant}"
-                                 data-comment="{comment}">
+                                 data-comment="{comment}"
+                                 data-dependencies="{dependencies_str}">
                             </div>
                             """
                         
@@ -622,6 +655,10 @@ class Event:
                         rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                         approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                         
+                        # Get current dependencies
+                        dependencies = node.dependencies if hasattr(node, 'dependencies') else []
+                        dependencies_str = ', '.join(dependencies) if dependencies else ''
+                        
                         card += f"""
                         <div id="analysis-data-{node.name}" style="display:none;"
                              data-name="{node.name}"
@@ -630,7 +667,8 @@ class Event:
                              data-pipeline="{pipeline_name}"
                              data-rundir="{rundir}"
                              data-approximant="{approximant}"
-                             data-comment="{comment}">
+                             data-comment="{comment}"
+                             data-dependencies="{dependencies_str}">
                         </div>
                         """
                     card += """</div>"""

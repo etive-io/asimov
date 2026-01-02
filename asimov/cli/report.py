@@ -262,6 +262,45 @@ def html(event, webdir):
             }
         }
 
+        /* Stale analysis indicators */
+        .stale-indicator {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+            text-transform: uppercase;
+        }
+
+        .stale-indicator.stale {
+            background-color: #ffeaa7;
+            color: #d63031;
+            border: 1px solid #fdcb6e;
+        }
+
+        .stale-indicator.stale-refreshable {
+            background-color: #74b9ff;
+            color: #0984e3;
+            border: 1px solid #0984e3;
+        }
+
+        /* Dependency information styles */
+        .asimov-dependencies,
+        .asimov-resolved-dependencies {
+            font-size: 0.9rem;
+            color: #586069;
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+            background: #f6f8fa;
+            border-radius: 0.25rem;
+        }
+
+        .asimov-resolved-dependencies {
+            background: #fff3cd;
+            border-left: 3px solid #ffc107;
+        }
+
         .workflow-flow {
             margin: 1rem 0;
             padding: 1rem;
@@ -791,6 +830,14 @@ def html(event, webdir):
                 document.getElementById('modal-comment-section').style.display = 'none';
             }
             
+            if (analysisData.dataset.dependencies) {
+                document.getElementById('modal-analysis-dependencies').textContent = analysisData.dataset.dependencies;
+                document.getElementById('modal-dependencies-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-analysis-dependencies').textContent = 'None';
+                document.getElementById('modal-dependencies-section').style.display = 'block';
+            }
+            
             modal.classList.add('show');
             backdrop.classList.add('show');
         }
@@ -1132,6 +1179,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-approximant-section">
             <h5>Waveform Approximant</h5>
             <p id="modal-analysis-approximant">-</p>
+        </div>
+        <div class="modal-section" id="modal-dependencies-section">
+            <h5>Dependencies</h5>
+            <p id="modal-analysis-dependencies">-</p>
         </div>
     </div>
 </div>
