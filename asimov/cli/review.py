@@ -127,11 +127,6 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
                 f"production {production} and subjects {set(subjects)}",
                 fg="red",
             )
-            else:
-                click.echo(
-                    click.style("●", fg="green")
-                    + f" {event.name}/{production.name} Note added"
-                )
 
 
 @click.argument("production", default=None, required=False)

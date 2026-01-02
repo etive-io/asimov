@@ -112,6 +112,55 @@ class ReviewTests(unittest.TestCase):
         """Check that dictionary output works"""
         self.assertEqual(self.event.productions[0].review.to_dicts()[0]['status'], 'REJECTED')
 
+    def test_html_includes_review_modal(self):
+        """Check that HTML output includes review modal for productions with reviews."""
+        html = self.event.productions[0].html()
+        # Should include modal
+        self.assertIn('modal', html)
+        self.assertIn('View Review', html)
+        # Should include review status class
+        self.assertIn('review-approved', html)
+        # Should include approved badge
+        self.assertIn('review-approved-badge', html)
+        self.assertIn('✓', html)
+
+    def test_html_rejected_includes_overlay(self):
+        """Check that rejected analyses include rejection overlay."""
+        # Temporarily change status to rejected
+        original_status = self.event.productions[0].review.status
+        # Create a production with rejected status
+        test_yaml_rejected = """
+name: TestEvent
+working directory: {0}/tests/tmp/
+repository: {0}/tests/test_data/s000000xx/
+data: 
+  channels:
+    L1: /this/is/fake
+  calibration: 
+    L1: Fake
+interferometers: 
+- L1
+quality: {{}}
+productions:
+  - name: RejectedProd
+    pipeline: lalinference
+    comment: Rejected production
+    status: wait
+    review:
+    - message: This analysis is rejected.
+      status: REJECTED
+      timestamp: 2021-03-17 20:58:05
+"""
+        rejected_event = asimov.event.Event.from_yaml(
+            test_yaml_rejected.format(self.cwd),
+            ledger=self.ledger
+        )
+        html = rejected_event.productions[0].html()
+        # Should include rejection overlay
+        self.assertIn('review-rejected-overlay', html)
+        self.assertIn('review-rejected', html)
+
+
 
 class ReviewCliTests(unittest.TestCase):
     """Test the CLI interfaces for review."""
