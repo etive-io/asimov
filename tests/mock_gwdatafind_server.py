@@ -37,7 +37,10 @@ class MockGWDataFindHandler(BaseHTTPRequestHandler):
         print(f"MockGWDataFindServer: Path parts: {path_parts}", flush=True)
         
         # gwdatafind API format: /api/v1/gwf/{site}/{frametype}/{gpsstart},{gpsend}/{urltype}.json
-        if len(path_parts) >= 6 and path_parts[0] == 'api' and path_parts[2] == 'gwf':
+        if (len(path_parts) >= 6 
+                and path_parts[0] == 'api' 
+                and path_parts[1] == 'v1'
+                and path_parts[2] == 'gwf'):
             site = path_parts[3]
             frametype = path_parts[4]
             

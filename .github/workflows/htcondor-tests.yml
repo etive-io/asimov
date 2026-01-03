@@ -73,6 +73,11 @@ jobs:
               server.stop()
           EOF
           
+          # Capture the PID of the background process
+          MOCK_SERVER_PID=$!
+          echo $MOCK_SERVER_PID > /tmp/mock_server.pid
+          echo "Mock server started with PID: $MOCK_SERVER_PID"
+          
           # Give the server time to start
           sleep 3
           
@@ -125,8 +130,8 @@ jobs:
       - name: Build and submit gwdata job
         uses: ./.github/actions/run-asimov-command
         env:
-          GWDATAFIND_SERVER: http://localhost:8765        
-        with: 
+          GWDATAFIND_SERVER: http://localhost:8765
+        with:
           script: asimov manage build submit
 
       - name: Debug HTCondor job state
@@ -232,5 +237,11 @@ jobs:
       - name: Stop background server
         if: always()
         run: |
-          # Kill the background Python process running the server
-          pkill -f "MockGWDataFindServer" || true                        
+          # Kill the background Python process using the saved PID
+          if [ -f /tmp/mock_server.pid ]; then
+            MOCK_SERVER_PID=$(cat /tmp/mock_server.pid)
+            kill $MOCK_SERVER_PID 2>/dev/null || true
+            echo "Stopped mock server with PID: $MOCK_SERVER_PID"
+          else
+            echo "No PID file found for mock server"
+          fi                        
