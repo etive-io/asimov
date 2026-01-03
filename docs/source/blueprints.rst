@@ -161,7 +161,12 @@ Defining analysis requirements
 
 Asimov will determine the required computation order of analyses in a project automatically, but in order to do this it needs to be given details of which analyses require the results of a previous analysis. It will then compute a directed acyclic graph (DAG) of all the analyses.
 
-Requirements can be specified in the ``needs`` setting of an analysis. For example, in order to define a job which uses the ``bilby`` pipeline, but requires results from an analysis using the ``bayeswave`` pipeline you should specify the name of the ``bayeswave`` analysis in the ``needs`` section of the ``bilby`` analysis. For example::
+Requirements can be specified in the ``needs`` setting of an analysis using a flexible syntax that supports complex dependency conditions.
+
+Simple name-based dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The simplest form of dependency is to specify the name of a required analysis::
 
     kind: analysis
     name: generate-psds
@@ -173,7 +178,102 @@ Requirements can be specified in the ``needs`` setting of an analysis. For examp
     needs:
       - generate-psds
 
-In asimov 0.5 you need to explicitly specify the ``name`` of analyses which provide job dependencies, but in future versions this will be made more flexible so that results can be automatically gathered based, for example, on the pipeline which generated them.
+Property-based dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Dependencies can also be specified using properties of analyses. Any property can be used, including nested properties accessed with dot notation::
+
+    kind: analysis
+    name: parameter-estimation
+    pipeline: bilby
+    needs:
+      - pipeline: bayeswave
+      - waveform.approximant: IMRPhenomXPHM
+
+This will match all analyses that use the ``bayeswave`` pipeline OR have ``IMRPhenomXPHM`` as their waveform approximant.
+
+Review status dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The review status is a commonly used dependency criterion::
+
+    kind: analysis
+    name: combiner
+    pipeline: bilby
+    needs:
+      - review.status: approved
+
+Negated dependencies
+^^^^^^^^^^^^^^^^^^^^
+
+You can specify that an analysis should depend on analyses that do NOT match a criterion by prefixing the value with ``!``::
+
+    kind: analysis
+    name: non-bayeswave-analyses
+    pipeline: bilby
+    needs:
+      - pipeline: "!bayeswave"
+
+This will match all analyses except those using the bayeswave pipeline.
+
+OR logic (multiple dependencies)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default, multiple items in the ``needs`` list are combined with OR logic. An analysis will depend on any analysis matching ANY of the conditions::
+
+    kind: analysis
+    name: combiner
+    pipeline: bilby
+    needs:
+      - waveform.approximant: IMRPhenomXPHM
+      - waveform.approximant: SEOBNRv5PHM
+
+This will match analyses using either ``IMRPhenomXPHM`` OR ``SEOBNRv5PHM``.
+
+AND logic (all conditions must match)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To specify that ALL conditions must match (AND logic), use a nested list::
+
+    kind: analysis
+    name: specific-analysis
+    pipeline: bilby
+    needs:
+      - - review.status: approved
+        - waveform.approximant: IMRPhenomXPHM
+
+This will only match analyses that are both approved AND use IMRPhenomXPHM.
+
+Complex dependency specifications
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can combine AND and OR logic for complex dependency specifications::
+
+    kind: analysis
+    name: complex-combiner
+    pipeline: bilby
+    needs:
+      - - review.status: approved
+        - pipeline: bayeswave
+      - waveform.approximant: IMRPhenomXPHM
+
+This will match analyses that are (approved AND use bayeswave) OR use IMRPhenomXPHM.
+
+Dependency tracking and staleness
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When an analysis runs, asimov records which analyses were its dependencies at that time. If the set of matching analyses changes later (for example, if new analyses are added that match the dependency criteria), the original analysis is marked as **stale**.
+
+Stale analyses are indicated in the HTML report. You can mark an analysis as **refreshable** to indicate it should be automatically re-run when it becomes stale::
+
+    kind: analysis
+    name: auto-refresh-analysis
+    pipeline: bilby
+    refreshable: true
+    needs:
+      - review.status: approved
+
+The resolved dependencies (those that were actually used when the analysis ran) are stored in the ledger and displayed in the HTML report alongside the current matching dependencies.
 
 Waveform
 ========

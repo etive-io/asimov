@@ -28,12 +28,22 @@ class PESummary(Pipeline):
     )
     name = "PESummary"
 
-    def __init__(self, production, category=None):
-        self.production = production
+    def __init__(self, analysis=None, subject=None, category=None):
+        self.production = self.analysis = analysis
 
-        self.category = category if category else production.category
+        # Allow the subject to be specified otherwise get it from the analysis
+        self.event = self.subject = subject if subject else self.analysis.subject
+        
+
+        self.category = category if category else subject.category
         self.logger = logger
-        self.meta = self.production.meta["postprocessing"][self.name.lower()]
+
+        if self.analysis is not None:
+            self.meta = self.analysis.meta["postprocessing"][self.name.lower()]
+        elif self.subject is not None:
+            self.meta = self.subject.meta["postprocessing"][self.name.lower()]
+
+        self.name = self.analysis.name if self.analysis else self.subject.name
 
     def results(self):
         """
@@ -57,11 +67,10 @@ class PESummary(Pipeline):
         self.outputs = os.path.join(
             config.get("project", "root"),
             config.get("general", "webroot"),
-            self.subject.name,
+            self.name,
         )
 
-        self.outputs = os.path.join(self.outputs, self.production.name)
-        self.outputs = os.path.join(self.outputs, "pesummary")
+        self.outputs = os.path.join(self.outputs, self.name, "pesummary")
 
         metafile = os.path.join(self.outputs, "samples", "posterior_samples.h5")
 
@@ -72,18 +81,28 @@ class PESummary(Pipeline):
         Run PESummary on the results of this job.
         """
 
-        configfile = self.production.event.repository.find_prods(
-            self.production.name, self.category
-        )[0]
-        label = str(self.production.name)
+        if self.analysis is None and self.subject is not None:
+            configfile = self.subject.repository.find_prods(
+                self.name, self.category
+            )[0]
+        elif self.analysis is not None:
+            configfile = self.analysis.subject.repository.find_prods(
+                self.name, self.category
+            )[0]
+        else:  # pragma: no cover
+            raise PipelineException(
+                "PESummary pipeline requires either an analysis or subject."
+            )
+        
+        label = str(self.name)
 
         command = [
             "--webdir",
             os.path.join(
                 config.get("project", "root"),
                 config.get("general", "webroot"),
-                self.production.event.name,
-                self.production.name,
+                self.subject.name,
+                self.analysis.name if self.analysis is not None else "event",
                 "pesummary",
             ),
             "--labels",
@@ -168,13 +187,15 @@ class PESummary(Pipeline):
             for key, value in cals.items():
                 command += [f"{key}:{value}"]
 
-        with utils.set_directory(self.subject.work_dir):
+        with utils.set_directory(self.production.rundir):
             with open("pesummary.sh", "w") as bash_file:
                 bash_file.write(f"{self.executable} " + " ".join(command))
 
         self.logger.info(
             f"PE summary command: {self.executable} {' '.join(command)}",
         )
+
+        print(command)
 
         if dryrun:
             print("PESUMMARY COMMAND")
@@ -184,9 +205,9 @@ class PESummary(Pipeline):
         submit_description = {
             "executable": self.executable,
             "arguments": " ".join(command),
-            "output": f"{self.subject.work_dir}/pesummary.out",
-            "error": f"{self.subject.work_dir}/pesummary.err",
-            "log": f"{self.subject.work_dir}/pesummary.log",
+            "output": f"{self.production.rundir}/pesummary.out",
+            "error": f"{self.production.rundir}/pesummary.err",
+            "log": f"{self.production.rundir}/pesummary.log",
             "request_cpus": self.meta["multiprocess"],
             "getenv": "true",
             "batch_name": f"Summary Pages/{self.subject.name}/{self.production.name}",
