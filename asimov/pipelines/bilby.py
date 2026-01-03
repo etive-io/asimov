@@ -354,8 +354,7 @@ class Bilby(Pipeline):
         pass
 
     def get_sampler_kwargs(self):
-        defaults = {}
-        defaults.update(self.production.meta.get("sampler", {}).get("sampler kwargs"))
+        defaults = self.production.meta.get("sampler", {}).get("sampler kwargs", {})
         if self.production.dependencies:
             productions = {}
             for production in self.production.event.productions:
