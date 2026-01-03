@@ -23,23 +23,33 @@ class MockGWDataFindHandler(BaseHTTPRequestHandler):
     frame_configs = {}
     
     def log_message(self, format, *args):
-        """Suppress HTTP server logging."""
-        pass
+        """Log HTTP server requests to stdout for debugging."""
+        import sys
+        message = format % args
+        print(f"MockGWDataFindServer: {message}", file=sys.stdout, flush=True)
     
     def do_GET(self):
         """Handle GET requests for gwdatafind API."""
         parsed_path = urlparse(self.path)
         path_parts = parsed_path.path.strip('/').split('/')
         
+        print(f"MockGWDataFindServer: Received request for path: {self.path}", flush=True)
+        print(f"MockGWDataFindServer: Path parts: {path_parts}", flush=True)
+        
         # gwdatafind API format: /api/v1/gwf/{site}/{frametype}/{gpsstart},{gpsend}/{urltype}.json
         if len(path_parts) >= 6 and path_parts[0] == 'api' and path_parts[2] == 'gwf':
             site = path_parts[3]
             frametype = path_parts[4]
             
+            print(f"MockGWDataFindServer: Looking for site={site}, frametype={frametype}", flush=True)
+            print(f"MockGWDataFindServer: Available configs: {list(self.frame_configs.keys())}", flush=True)
+            
             # Get frame URLs for this site/frametype combination
             key = (site, frametype)
             if key in self.frame_configs:
                 urls = self.frame_configs[key]
+                
+                print(f"MockGWDataFindServer: Returning {len(urls)} URLs: {urls}", flush=True)
                 
                 # Return JSON response
                 self.send_response(200)
@@ -48,11 +58,13 @@ class MockGWDataFindHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(urls).encode('utf-8'))
             else:
                 # No frames configured
+                print(f"MockGWDataFindServer: No frames configured for {key}", flush=True)
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps([]).encode('utf-8'))
         else:
+            print(f"MockGWDataFindServer: Invalid API path format", flush=True)
             self.send_response(404)
             self.end_headers()
 

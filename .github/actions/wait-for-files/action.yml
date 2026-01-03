@@ -44,9 +44,16 @@ runs:
         PATTERNS_INPUT='${{ inputs.patterns }}'
 
         cd "$WORKDIR" || { echo "No such directory: $WORKDIR" >&2; exit 1; }
-        cat *.err || true
-        cat *.out || true
-        cat *.log || true
+        
+        # Try to find and display HTCondor log files in the job directory
+        echo "=== Searching for HTCondor log files in $DIRECTORY ==="
+        if [ -d "$DIRECTORY" ]; then
+          find "$DIRECTORY" -type f \( -name "*.err" -o -name "*.out" -o -name "*.log" \) -exec echo "File: {}" \; -exec cat {} \; 2>/dev/null || true
+        fi
+        
+        # Also check WORKDIR root for any HTCondor files
+        echo "=== Searching for HTCondor log files in $WORKDIR ==="
+        find "$WORKDIR" -maxdepth 1 -type f \( -name "*.err" -o -name "*.out" -o -name "*.log" \) -exec echo "File: {}" \; -exec cat {} \; 2>/dev/null || true
 
         # Normalize patterns into one-per-line (split on spaces and newlines)
         PATTERN_LINES=$(printf '%s\n' "$PATTERNS_INPUT" | tr ' \t' '\n')
@@ -63,9 +70,20 @@ runs:
         echo "Waiting for files in $DIRECTORY; patterns: $PATTERN_COUNT; timeout: $TIMEOUT; interval: $INTERVAL"
 
         while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-          # Show condor queue as submituser if requested
+          # Show condor queue and history as submituser if requested
           if [ "$SHOW_Q" = "true" ]; then
-            su - submituser -s /bin/bash -c 'condor_q' || true
+            echo "=== HTCondor Queue (condor_q) ==="
+            su - submituser -s /bin/bash -c 'condor_q -nobatch' || true
+            echo ""
+            echo "=== Recent HTCondor History (last 5 jobs) ==="
+            su - submituser -s /bin/bash -c 'condor_history -limit 5' || true
+            echo ""
+            echo "=== Detailed info for held/removed jobs ==="
+            su - submituser -s /bin/bash -c 'condor_q -hold -af:h ClusterId ProcId HoldReason' || true
+            echo ""
+            echo "=== Mock server log (last 20 lines) ==="
+            tail -20 /tmp/mock_server.log 2>/dev/null || true
+            echo ""
           fi
 
           FOUND_COUNT=0
