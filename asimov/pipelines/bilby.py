@@ -162,6 +162,7 @@ class BilbyPriorInterface(PriorInterface):
             'bilby.gw.prior.UniformInComponentsMassRatio',
             'bilby.gw.prior.AlignedSpin',
             'bilby.gw.prior.UniformComovingVolume',
+            'bilby.gw.prior.UniformSourceFrame',
             'bilby.core.prior.Uniform',
             'bilby.core.prior.LogUniform',
             'bilby.core.prior.PowerLaw',
