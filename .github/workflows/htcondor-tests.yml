@@ -199,7 +199,7 @@ jobs:
         with:
           patterns: "final_result/*.hdf5"
           directory: "working/GW150914_095045/bilby-IMRPhenomXPHM"
-          timeout: "2400"
+          timeout: "300"
           interval: "30"
           working-directory: .
 
@@ -213,10 +213,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           path: |
-            checkouts/*/*/*.ini
-            working/GW150914_095045/bilby-IMRPhenomXPHM/final_result/*.hdf5
-            working/GW150914_095045/generate-psd/trigtime_*/post/clean/glitch_median_PSD_forLI_*.dat
-            working/GW150914_095045/*/*.{out,err,log}
+            checkouts/
+            working/
           retention-days: 5
 
       - name: Stop background server
