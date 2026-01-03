@@ -190,7 +190,7 @@ class YAMLLedger(Ledger):
     def project_analyses(self):
         return [
             ProjectAnalysis.from_dict(analysis, ledger=self)
-            for analysis in self.data["project analyses"]
+            for analysis in self.data.get("project analyses", [])
         ]
 
     def get_event(self, event=None):
