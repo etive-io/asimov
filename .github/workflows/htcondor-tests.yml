@@ -120,9 +120,9 @@ jobs:
         with: 
           script: asimov manage build submit
 
-      # - name: Debugging run for gwdata
-      #   run: |
-      #     gwdata --settings /__w/asimov/asimov/checkouts/GW150914_095045/C01_offline/get-data.ini
+      - name: Debugging run for gwdata
+        run: |
+          gwdata --settings /__w/asimov/asimov/checkouts/GW150914_095045/C01_offline/get-data.ini
 
       - name: Wait for frame files
         uses: ./.github/actions/wait-for-files
