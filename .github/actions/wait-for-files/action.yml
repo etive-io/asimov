@@ -44,6 +44,9 @@ runs:
         PATTERNS_INPUT='${{ inputs.patterns }}'
 
         cd "$WORKDIR" || { echo "No such directory: $WORKDIR" >&2; exit 1; }
+        cat *.err || true
+        cat *.out || true
+        cat *.log || true
 
         # Normalize patterns into one-per-line (split on spaces and newlines)
         PATTERN_LINES=$(printf '%s\n' "$PATTERNS_INPUT" | tr ' \t' '\n')
