@@ -208,6 +208,17 @@ jobs:
         with:
           script: asimov monitor
 
+      - name: Archive testing artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            checkouts/*/*/*.ini
+            working/GW150914_095045/bilby-IMRPhenomXPHM/final_result/*.hdf5
+            working/GW150914_095045/generate-psd/trigtime_*/post/clean/glitch_median_PSD_forLI_*.dat
+            working/GW150914_095045/*/*.{out,err,log}
+          retention-days: 5
+
       - name: Stop background server
         if: always()
         run: |
