@@ -35,7 +35,7 @@ jobs:
         uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
-          extra-packages: "-U bilby bilby_pipe git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor pesummary"
+          extra-packages: "-U bilby bilby_pipe==1.7.0 git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor pesummary"
 
       - name: Set up git
         run: |
@@ -120,9 +120,13 @@ jobs:
         with: 
           script: asimov manage build submit
 
-      - name: Debugging run for gwdata
+      - name: Show Pip Environment
         run: |
-          gwdata --settings /__w/asimov/asimov/checkouts/GW150914_095045/C01_offline/get-data.ini
+          pip freeze
+
+      # - name: Debugging run for gwdata
+      #   run: |
+      #     gwdata --settings /__w/asimov/asimov/checkouts/GW150914_095045/C01_offline/get-data.ini
 
       - name: Wait for frame files
         uses: ./.github/actions/wait-for-files
