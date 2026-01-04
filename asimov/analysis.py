@@ -644,10 +644,15 @@ class Analysis:
         
         card += """</div>"""
 
-        if len(self.review) > 0:
-            for review in self.review:
-                card += review.html()
+        try:
+            if len(self.review) > 0:
+                for review in self.review:
+                    card += review.html()
 
+        except TypeError:
+            # The mocked review object doesn't support len()
+            pass
+        
         return card
 
     def to_dict(self, event=True):
