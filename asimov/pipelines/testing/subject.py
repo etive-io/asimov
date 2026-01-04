@@ -180,7 +180,7 @@ class SubjectTestPipeline(Pipeline):
         command = [
             "condor_submit_dag",
             "-batch-name",
-            f"test-subject/{self.production.subject.name}/{self.production.name}",
+            f"test-subject/{self.production.event.name}/{self.production.name}",
             dag_file
         ]
         
