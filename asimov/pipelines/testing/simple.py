@@ -85,13 +85,13 @@ class SimpleTestPipeline(Pipeline):
         """
         Build the DAG for this pipeline.
         
-        For the test pipeline, this simply ensures the run directory exists
-        and creates a minimal DAG file.
+        Creates a HTCondor submit file and DAG file that will run a simple
+        test job on the scheduler.
         
         Parameters
         ----------
         user : str, optional
-            The user account for job submission (not used in test pipeline).
+            The user account for job submission.
         dryrun : bool, optional
             If True, only simulate the build without creating files.
             
@@ -101,6 +101,39 @@ class SimpleTestPipeline(Pipeline):
         """
         if not dryrun:
             if self._ensure_rundir():
+                # Create a simple job script that will create results
+                job_script = os.path.join(self.production.rundir, "test_job.sh")
+                with open(job_script, "w") as f:
+                    f.write("#!/bin/bash\n")
+                    f.write("# Simple test pipeline job\n")
+                    f.write("set -e\n")
+                    f.write("echo 'Test job running'\n")
+                    f.write("sleep 2\n")
+                    f.write("# Create the results file\n")
+                    f.write("cat > results.dat << 'EOF'\n")
+                    f.write("# Test pipeline results\n")
+                    f.write("test_parameter: 1.0\n")
+                    f.write("test_error: 0.1\n")
+                    f.write("EOF\n")
+                    f.write("echo 'Test job complete - results.dat created'\n")
+                    f.write("ls -la\n")
+                
+                # Make script executable
+                os.chmod(job_script, 0o755)
+                
+                # Create HTCondor submit file
+                submit_file = os.path.join(self.production.rundir, "test_job.sub")
+                with open(submit_file, "w") as f:
+                    f.write("# HTCondor submit file for SimpleTestPipeline\n")
+                    f.write("universe = vanilla\n")
+                    f.write(f"executable = {job_script}\n")
+                    f.write(f"initialdir = {self.production.rundir}\n")
+                    f.write("output = test_job.out\n")
+                    f.write("error = test_job.err\n")
+                    f.write("log = test_job.log\n")
+                    f.write("getenv = True\n")
+                    f.write("queue 1\n")
+                
                 # Create a minimal DAG file
                 dag_file = os.path.join(self.production.rundir, "test.dag")
                 with open(dag_file, "w") as f:
@@ -115,53 +148,77 @@ class SimpleTestPipeline(Pipeline):
         
     def submit_dag(self, dryrun=False):
         """
-        Submit the pipeline job.
+        Submit the pipeline job to HTCondor.
         
-        For this test pipeline, we create dummy files and immediately
-        mark the job as complete since it's just for testing.
+        This submits the DAG file to HTCondor so the job actually runs
+        on the scheduler and creates the results file.
         
         Parameters
         ----------
         dryrun : bool, optional
-            If True, only simulate the submission without creating files.
+            If True, only simulate the submission without actually submitting.
             Default is False.
             
         Returns
         -------
         int
-            A dummy job ID (always returns 12345 for testing).
+            The HTCondor cluster ID.
         """
-        if not dryrun:
-            # Ensure run directory exists
-            if self._ensure_rundir():
-                # Create a simple job script
-                job_script = os.path.join(self.production.rundir, "test_job.sh")
-                with open(job_script, "w") as f:
-                    f.write("#!/bin/bash\n")
-                    f.write("# Simple test pipeline job\n")
-                    f.write("echo 'Test job running'\n")
-                    f.write("sleep 1\n")
-                    f.write("echo 'Test job complete'\n")
-                    
-                # Create a marker file to indicate job was submitted
-                marker_file = os.path.join(self.production.rundir, ".submitted")
-                with open(marker_file, "w") as f:
-                    f.write(f"{time.time()}\n")
+        import subprocess
+        import re
+        
+        if not self.production.rundir:
+            self.logger.warning("No run directory specified, cannot submit job")
+            return None
+            
+        self.before_submit(dryrun=dryrun)
+        
+        dag_file = os.path.join(self.production.rundir, "test.dag")
+        
+        command = [
+            "condor_submit_dag",
+            "-batch-name",
+            f"test/{self.production.event.name}/{self.production.name}",
+            dag_file
+        ]
+        
+        self.logger.info(f"Submitting DAG: {' '.join(command)}")
+        
+        if dryrun:
+            print(f"Would run: {' '.join(command)}")
+            return 12345
+        else:
+            # Change to run directory before submitting
+            original_dir = os.getcwd()
+            os.chdir(self.production.rundir)
+            
+            try:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
                 
-                # For testing purposes, immediately create the results file
-                # This simulates an instantly-completing job
-                results_file = os.path.join(self.production.rundir, "results.dat")
-                with open(results_file, "w") as f:
-                    f.write("# Test pipeline results\n")
-                    f.write("test_parameter: 1.0\n")
-                    f.write("test_error: 0.1\n")
-                    
-                self.logger.info(f"Test job submitted and completed in {self.production.rundir}")
-            else:
-                self.logger.warning("No run directory specified, cannot submit job")
+                self.logger.info(f"DAG submitted successfully")
+                self.logger.debug(f"Output: {result.stdout}")
                 
-        # Return a fake job ID
-        return 12345
+                # Extract cluster ID from output
+                match = re.search(r'submitted to cluster (\d+)', result.stdout)
+                if match:
+                    cluster_id = int(match.group(1))
+                    self.logger.info(f"Cluster ID: {cluster_id}")
+                    return cluster_id
+                else:
+                    self.logger.warning("Could not extract cluster ID from condor_submit_dag output")
+                    return None
+                    
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Failed to submit DAG: {e}")
+                self.logger.error(f"stderr: {e.stderr}")
+                raise
+            finally:
+                os.chdir(original_dir)
         
     def detect_completion(self):
         """
