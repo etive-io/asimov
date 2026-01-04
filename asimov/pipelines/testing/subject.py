@@ -119,8 +119,8 @@ class SubjectTestPipeline(Pipeline):
         """
         Submit the pipeline job.
         
-        For this test pipeline, we create a job that would combine results
-        from multiple analyses.
+        For this test pipeline, we create dummy files and immediately
+        mark the job as complete since it's just for testing.
         
         Parameters
         ----------
@@ -155,8 +155,23 @@ class SubjectTestPipeline(Pipeline):
                 marker_file = os.path.join(self.production.rundir, ".submitted")
                 with open(marker_file, "w") as f:
                     f.write(f"{time.time()}\n")
+                
+                # For testing purposes, immediately create the results file
+                # This simulates an instantly-completing job
+                results_file = os.path.join(self.production.rundir, "combined_results.dat")
+                with open(results_file, "w") as f:
+                    f.write("# Subject analysis test pipeline results\n")
+                    f.write("# Combined analysis for subject\n")
                     
-                self.logger.info(f"Subject test job submitted to {self.production.rundir}")
+                    if hasattr(self.production, 'analyses'):
+                        f.write(f"# Number of analyses combined: {len(self.production.analyses)}\n")
+                        for i, analysis in enumerate(self.production.analyses):
+                            f.write(f"# Analysis {i+1}: {analysis.name}\n")
+                    
+                    f.write("combined_metric: 1.5\n")
+                    f.write("uncertainty: 0.2\n")
+                    
+                self.logger.info(f"Subject test job submitted and completed in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified")
                 

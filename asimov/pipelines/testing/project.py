@@ -123,8 +123,8 @@ class ProjectTestPipeline(Pipeline):
         """
         Submit the pipeline job.
         
-        For this test pipeline, we create a job that would analyze results
-        across multiple subjects/events.
+        For this test pipeline, we create dummy files and immediately
+        mark the job as complete since it's just for testing.
         
         Parameters
         ----------
@@ -163,8 +163,27 @@ class ProjectTestPipeline(Pipeline):
                 marker_file = os.path.join(self.production.rundir, ".submitted")
                 with open(marker_file, "w") as f:
                     f.write(f"{time.time()}\n")
+                
+                # For testing purposes, immediately create the results file
+                # This simulates an instantly-completing job
+                results_file = os.path.join(self.production.rundir, "population_results.dat")
+                with open(results_file, "w") as f:
+                    f.write("# Project analysis test pipeline results\n")
+                    f.write("# Population/catalog analysis\n")
                     
-                self.logger.info(f"Project test job submitted to {self.production.rundir}")
+                    if hasattr(self.production, '_subjects'):
+                        f.write(f"# Number of subjects: {len(self.production._subjects)}\n")
+                        for i, subject in enumerate(self.production._subjects):
+                            f.write(f"# Subject {i+1}: {subject}\n")
+                    
+                    if hasattr(self.production, 'analyses'):
+                        f.write(f"# Total analyses: {len(self.production.analyses)}\n")
+                    
+                    f.write("population_rate: 10.5\n")
+                    f.write("rate_uncertainty: 2.3\n")
+                    f.write("selection_effects: 0.85\n")
+                    
+                self.logger.info(f"Project test job submitted and completed in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified")
                 

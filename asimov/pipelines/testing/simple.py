@@ -117,8 +117,8 @@ class SimpleTestPipeline(Pipeline):
         """
         Submit the pipeline job.
         
-        For this test pipeline, we simply create a dummy job script
-        and mark it as submitted.
+        For this test pipeline, we create dummy files and immediately
+        mark the job as complete since it's just for testing.
         
         Parameters
         ----------
@@ -147,8 +147,16 @@ class SimpleTestPipeline(Pipeline):
                 marker_file = os.path.join(self.production.rundir, ".submitted")
                 with open(marker_file, "w") as f:
                     f.write(f"{time.time()}\n")
+                
+                # For testing purposes, immediately create the results file
+                # This simulates an instantly-completing job
+                results_file = os.path.join(self.production.rundir, "results.dat")
+                with open(results_file, "w") as f:
+                    f.write("# Test pipeline results\n")
+                    f.write("test_parameter: 1.0\n")
+                    f.write("test_error: 0.1\n")
                     
-                self.logger.info(f"Test job submitted to {self.production.rundir}")
+                self.logger.info(f"Test job submitted and completed in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified, cannot submit job")
                 
