@@ -607,16 +607,17 @@ class Analysis:
             
             # Show dependencies
             if self.dependencies:
-                card += """<p class="asimov-dependencies"><strong>Current Dependencies:</strong><br>"""
                 if hasattr(self.dependencies, "__iter__"):
+                    card += """<p class="asimov-dependencies"><strong>Current Dependencies:</strong><br>"""
                     card += ", ".join(self.dependencies)
-                card += """</p>"""
+                    card += """</p>"""
             
             # Show resolved dependencies if different from current
             if self.resolved_dependencies and self.resolved_dependencies != self.dependencies:
-                card += """<p class="asimov-resolved-dependencies"><strong>Resolved Dependencies (when run):</strong><br>"""
-                card += ", ".join(self.resolved_dependencies)
-                card += """</p>"""
+                if hasattr(self.dependencies, "__iter__"):  
+                    card += """<p class="asimov-resolved-dependencies"><strong>Resolved Dependencies (when run):</strong><br>"""
+                    card += ", ".join(self.resolved_dependencies)
+                    card += """</p>"""
             
             if self.pipeline:
                 # self.pipeline.collect_pages()
