@@ -35,7 +35,7 @@ jobs:
         uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
-          extra-packages: "-U bilby bilby_pipe git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor scipy==1.10.0"
+          extra-packages: "-U bilby bilby_pipe==1.4.0 git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor pesummary"
 
       - name: Set up git
         run: |
@@ -120,6 +120,10 @@ jobs:
         with: 
           script: asimov manage build submit
 
+      - name: Show Pip Environment
+        run: |
+          pip freeze
+
       # - name: Debugging run for gwdata
       #   run: |
       #     gwdata --settings /__w/asimov/asimov/checkouts/GW150914_095045/C01_offline/get-data.ini
@@ -195,7 +199,7 @@ jobs:
         with:
           patterns: "final_result/*.hdf5"
           directory: "working/GW150914_095045/bilby-IMRPhenomXPHM"
-          timeout: "2400"
+          timeout: "600"
           interval: "30"
           working-directory: .
 
@@ -203,6 +207,15 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           script: asimov monitor
+
+      - name: Archive testing artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            checkouts/
+            working/
+          retention-days: 5
 
       - name: Stop background server
         if: always()
