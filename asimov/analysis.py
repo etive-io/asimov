@@ -608,7 +608,8 @@ class Analysis:
             # Show dependencies
             if self.dependencies:
                 card += """<p class="asimov-dependencies"><strong>Current Dependencies:</strong><br>"""
-                card += ", ".join(self.dependencies)
+                if hasattr(self.dependencies, "__iter__"):
+                    card += ", ".join(self.dependencies)
                 card += """</p>"""
             
             # Show resolved dependencies if different from current
