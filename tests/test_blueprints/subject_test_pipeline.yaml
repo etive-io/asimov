@@ -1,6 +1,6 @@
 # Test blueprint for the SubjectTestPipeline
 # This creates a subject analysis that depends on other analyses
-kind: subject_analysis
+kind: analysis
 name: test-subject-pipeline
 pipeline: subjecttestpipeline
 comment: Testing pipeline for SubjectAnalysis infrastructure

@@ -1,6 +1,6 @@
 # Test blueprint for the ProjectTestPipeline
 # This creates a project analysis that operates across multiple events
-kind: project_analysis
+kind: ProjectAnalysis
 name: test-project-pipeline
 pipeline: projecttestpipeline
 comment: Testing pipeline for ProjectAnalysis infrastructure
