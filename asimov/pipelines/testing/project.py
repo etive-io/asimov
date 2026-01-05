@@ -109,22 +109,25 @@ class ProjectTestPipeline(Pipeline):
             if self._ensure_rundir():
                 # Create a simple job script that will create results
                 job_script = os.path.join(self.production.rundir, "test_project_job.sh")
+                results_path = os.path.join(self.production.rundir, "population_results.dat")
                 with open(job_script, "w") as f:
                     f.write("#!/bin/bash\n")
                     f.write("# Project analysis test pipeline job\n")
                     f.write("set -e\n")
                     f.write("echo 'Processing analyses across multiple subjects'\n")
+                    f.write(f"echo 'Working directory: '$(pwd)\n")
+                    f.write(f"echo 'Target file: {results_path}'\n")
                     f.write("sleep 2\n")
-                    f.write("# Create the results file\n")
-                    f.write("cat > population_results.dat << 'EOF'\n")
+                    f.write("# Create the results file with absolute path\n")
+                    f.write(f"cat > {results_path} << 'EOF'\n")
                     f.write("# Project analysis test pipeline results\n")
                     f.write("# Population/catalog analysis\n")
                     f.write("population_rate: 10.5\n")
                     f.write("rate_uncertainty: 2.3\n")
                     f.write("selection_effects: 0.85\n")
                     f.write("EOF\n")
-                    f.write("echo 'Project analysis complete - population_results.dat created'\n")
-                    f.write("ls -la\n")
+                    f.write(f"echo 'Project analysis complete - {results_path} created'\n")
+                    f.write(f"ls -la {results_path}\n")
                 
                 # Make script executable
                 os.chmod(job_script, 0o755)
