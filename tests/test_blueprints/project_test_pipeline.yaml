@@ -8,4 +8,4 @@ status: ready
 subjects:
   - GW150914_095045
 analyses:
-  - name: test-simple-pipeline
+  - name:test-simple-pipeline
