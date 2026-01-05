@@ -180,7 +180,7 @@ class ProjectTestPipeline(Pipeline):
             
         self.before_submit(dryrun=dryrun)
         
-        dag_file = os.path.join(self.production.rundir, "test_project.dag")
+        dag_file = "test_project.dag"
         
         command = [
             "condor_submit_dag",
