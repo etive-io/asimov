@@ -115,7 +115,7 @@ class ProjectTestPipeline(Pipeline):
                     f.write("# Project analysis test pipeline job\n")
                     f.write("set -e\n")
                     f.write("echo 'Processing analyses across multiple subjects'\n")
-                    f.write(f"echo 'Working directory: '$(pwd)\n")
+                    f.write("echo \"Working directory: $(pwd)\"\n")
                     f.write(f"echo 'Target file: {results_path}'\n")
                     f.write("sleep 2\n")
                     f.write("# Create the results file with absolute path\n")
