@@ -110,6 +110,24 @@ class PESummary(Pipeline):
 
         return dict(metafile=metafile)
 
+    def build_dag(self, user=None, dryrun=False):
+        """
+        Prepare the PESummary job for submission.
+        
+        For PESummary, there's no DAG file to build since it runs as a single job.
+        This method exists to satisfy the Pipeline interface.
+        
+        Parameters
+        ----------
+        user : str, optional
+            The user accounting tag (not used by PESummary)
+        dryrun : bool, optional
+            If True, don't actually build anything
+        """
+        # PESummary doesn't need a DAG file - it runs as a single condor job
+        # The actual job configuration is done in submit_dag
+        pass
+
     def submit_dag(self, dryrun=False):
         """
         Run PESummary on the results of this job.
