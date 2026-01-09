@@ -517,6 +517,59 @@ def html(event, webdir):
             stroke-width: 2;
             opacity: 0.6;
         }
+        
+        /* Subject analysis styling */
+        .graph-node-subject {
+            border-width: 3px;
+            border-style: double;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%);
+        }
+        
+        .graph-node-subject .graph-node-title::before {
+            content: '◆ ';
+            color: #6f42c1;
+            font-weight: bold;
+        }
+        
+        /* Stale analysis styling */
+        .graph-node-stale {
+            border-color: #fd7e14 !important;
+            box-shadow: 0 0 0 2px rgba(253, 126, 20, 0.2);
+        }
+        
+        .stale-badge {
+            position: absolute;
+            top: 0.25rem;
+            left: 0.25rem;
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #fd7e14;
+            color: white;
+            text-align: center;
+            line-height: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            z-index: 10;
+            animation: rotate 2s linear infinite;
+        }
+        
+        @keyframes rotate {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        /* Subject analysis connection styling - use purple for dependencies */
+        .connection-line-subject {
+            stroke: #6f42c1;
+            stroke-width: 3;
+            opacity: 0.7;
+        }
 
         /* Modal styles */
         .modal-backdrop {
@@ -942,6 +995,31 @@ def html(event, webdir):
                 document.getElementById('modal-dependencies-section').style.display = 'block';
             }
             
+            // Handle results pages
+            if (analysisData.dataset.resultPages) {
+                var resultPagesStr = analysisData.dataset.resultPages;
+                var resultPages = resultPagesStr.split(';;').filter(function(p) { return p.trim(); });
+                
+                if (resultPages.length > 0) {
+                    var linksHtml = '<ul>';
+                    resultPages.forEach(function(page) {
+                        var parts = page.split('|');
+                        if (parts.length === 2) {
+                            var url = parts[0];
+                            var label = parts[1];
+                            linksHtml += '<li><a href="' + url + '" target="_blank">' + label + '</a></li>';
+                        }
+                    });
+                    linksHtml += '</ul>';
+                    document.getElementById('modal-results-links').innerHTML = linksHtml;
+                    document.getElementById('modal-results-section').style.display = 'block';
+                } else {
+                    document.getElementById('modal-results-section').style.display = 'none';
+                }
+            } else {
+                document.getElementById('modal-results-section').style.display = 'none';
+            }
+            
             modal.classList.add('show');
             backdrop.classList.add('show');
         }
@@ -1113,7 +1191,15 @@ def html(event, webdir):
                                    x2 + ' ' + y2;
                     
                     path.setAttribute('d', d);
-                    path.classList.add('connection-line');
+                    
+                    // Use different styling for connections to/from subject analyses
+                    var isTargetSubject = targetNode.dataset.isSubject === 'true';
+                    if (isTargetSubject) {
+                        path.classList.add('connection-line-subject');
+                    } else {
+                        path.classList.add('connection-line');
+                    }
+                    
                     svg.appendChild(path);
                 });
             });
@@ -1297,6 +1383,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-dependencies-section">
             <h5>Dependencies</h5>
             <p id="modal-analysis-dependencies">-</p>
+        </div>
+        <div class="modal-section" id="modal-results-section" style="display:none;">
+            <h5>Results</h5>
+            <div id="modal-results-links"></div>
         </div>
     </div>
 </div>

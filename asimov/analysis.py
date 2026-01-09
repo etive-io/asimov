@@ -877,6 +877,12 @@ class Analysis:
 
         defaults = update(defaults, deepcopy(self.event.meta))
         dictionary = diff_dict(defaults, dictionary)
+        
+        # Ensure critical fields are always saved, even if they match defaults
+        # This is necessary to support old ledgers and ensure status updates persist
+        dictionary["status"] = self.status
+        if self.job_id is not None:
+            dictionary["job id"] = self.job_id
 
         if "repository" in self.meta:
             dictionary["repository"] = self.repository.url
