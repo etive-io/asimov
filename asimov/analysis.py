@@ -995,7 +995,7 @@ class SubjectAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(self.subject.meta))
         self.meta = update(self.meta, deepcopy(kwargs))
 
-        self._analysis_spec = self.meta.get("needs")
+        self._analysis_spec = self.meta.get("needs") or self.meta.get("analyses")
 
         if self._analysis_spec:
             requirements = self._process_dependencies(self._analysis_spec)
@@ -1040,6 +1040,11 @@ class SubjectAnalysis(Analysis):
                         if analysis not in self.analyses:
                             self.analyses.append(analysis)
             self.productions = self.analyses
+        else:
+            # Initialize empty lists if no analysis spec
+            self.analyses = []
+            self.productions = []
+            
         if "needs" in self.meta:
             self.meta.pop("needs")
 

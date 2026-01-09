@@ -21,6 +21,10 @@ from ..pipeline import Pipeline, PipelineException, PipelineLogger  # NoQA
 class PESummary(Pipeline):
     """
     A postprocessing pipeline add-in using PESummary.
+    
+    This pipeline can work in two modes:
+    1. Post-processing hook: Called after a single analysis completes (legacy mode)
+    2. SubjectAnalysis: Processes results from multiple analyses as dependencies
     """
 
     executable = os.path.join(
@@ -28,22 +32,43 @@ class PESummary(Pipeline):
     )
     name = "PESummary"
 
-    def __init__(self, analysis=None, subject=None, category=None):
-        self.production = self.analysis = analysis
-
-        # Allow the subject to be specified otherwise get it from the analysis
-        self.event = self.subject = subject if subject else self.analysis.subject
+    def __init__(self, production, category=None):
+        """
+        Initialize PESummary pipeline.
         
+        Parameters
+        ----------
+        production : Analysis
+            The analysis this pipeline is attached to. Can be a SimpleAnalysis 
+            (for post-processing hook mode) or SubjectAnalysis (for multi-analysis mode)
+        category : str, optional
+            The category for file locations
+        """
+        # Call parent constructor
+        super().__init__(production, category)
+        
+        self.analysis = production
+        self.event = self.subject = production.subject if hasattr(production, 'subject') else production.event
 
-        self.category = category if category else subject.category
-        self.logger = logger
+        # Set category appropriately
+        if category:
+            self.category = category
+        elif hasattr(production, 'category'):
+            self.category = production.category
+        else:
+            self.category = config.get("general", "calibration_directory")
 
-        if self.analysis is not None:
-            self.meta = self.analysis.meta["postprocessing"][self.name.lower()]
-        elif self.subject is not None:
-            self.meta = self.subject.meta["postprocessing"][self.name.lower()]
-
-        self.name = self.analysis.name if self.analysis else self.subject.name
+        # Get metadata - check different locations based on analysis type
+        if "postprocessing" in production.meta and self.name.lower() in production.meta["postprocessing"]:
+            self.meta = production.meta["postprocessing"][self.name.lower()]
+        elif hasattr(production, 'subject') and "postprocessing" in production.subject.meta:
+            # For SimpleAnalysis, check subject metadata
+            if self.name.lower() in production.subject.meta["postprocessing"]:
+                self.meta = production.subject.meta["postprocessing"][self.name.lower()]
+            else:
+                self.meta = {}
+        else:
+            self.meta = {}
 
     def results(self):
         """
@@ -79,22 +104,70 @@ class PESummary(Pipeline):
     def submit_dag(self, dryrun=False):
         """
         Run PESummary on the results of this job.
+        
+        Supports two modes:
+        1. Post-processing a single analysis (SimpleAnalysis)
+        2. Combining multiple analyses (SubjectAnalysis)
         """
-
-        if self.analysis is None and self.subject is not None:
-            configfile = self.subject.repository.find_prods(
-                self.name, self.category
+        # Determine if this is a SubjectAnalysis or SimpleAnalysis
+        from asimov.analysis import SubjectAnalysis
+        is_subject_analysis = isinstance(self.production, SubjectAnalysis)
+        
+        # Get config file
+        try:
+            configfile = self.event.repository.find_prods(
+                self.production.name, self.category
             )[0]
-        elif self.analysis is not None:
-            configfile = self.analysis.subject.repository.find_prods(
-                self.name, self.category
-            )[0]
-        else:  # pragma: no cover
+        except (AttributeError, IndexError):  # pragma: no cover
             raise PipelineException(
-                "PESummary pipeline requires either an analysis or subject."
+                "Could not find PESummary configuration file."
             )
         
-        label = str(self.name)
+        # Determine labels and samples for PESummary
+        if is_subject_analysis:
+            # Multiple analyses - get labels and samples from dependencies
+            labels = []
+            samples_list = []
+            
+            # Get the analyses that are dependencies
+            if hasattr(self.production, 'productions') and self.production.productions:
+                source_analyses = self.production.productions
+            elif hasattr(self.production, 'analyses') and self.production.analyses:
+                source_analyses = self.production.analyses
+            else:
+                raise PipelineException(
+                    "SubjectAnalysis PESummary has no source analyses to process."
+                )
+            
+            for dep_analysis in source_analyses:
+                labels.append(dep_analysis.name)
+                # Get samples from the dependency
+                dep_samples = dep_analysis._previous_assets().get("samples", None)
+                if dep_samples:
+                    samples_list.append(dep_samples)
+                else:
+                    self.logger.warning(f"No samples found for {dep_analysis.name}")
+            
+            if not samples_list:
+                raise PipelineException(
+                    "No samples found from any dependency analyses."
+                )
+            
+            # For SubjectAnalysis, use first analysis for waveform/quality settings
+            # or fall back to SubjectAnalysis metadata
+            reference_analysis = source_analyses[0]
+            if "waveform" in reference_analysis.meta:
+                waveform_meta = reference_analysis.meta["waveform"]
+                quality_meta = reference_analysis.meta.get("quality", {})
+            else:
+                waveform_meta = self.production.meta.get("waveform", {})
+                quality_meta = self.production.meta.get("quality", {})
+        else:
+            # Single analysis mode (post-processing)
+            labels = [self.production.name]
+            samples_list = [self.production._previous_assets().get("samples", {})]
+            waveform_meta = self.production.meta.get("waveform", {})
+            quality_meta = self.production.meta.get("quality", {})
 
         command = [
             "--webdir",
@@ -102,25 +175,33 @@ class PESummary(Pipeline):
                 config.get("project", "root"),
                 config.get("general", "webroot"),
                 self.subject.name,
-                self.analysis.name if self.analysis is not None else "event",
+                self.production.name,
                 "pesummary",
             ),
             "--labels",
-            label,
         ]
+        command.extend(labels)
 
         command += ["--gw"]
-        command += [
-            "--approximant",
-            self.production.meta["waveform"]["approximant"],
-        ]
-
-        command += [
-            "--f_low",
-            str(min(self.production.meta["quality"]["minimum frequency"].values())),
-            "--f_ref",
-            str(self.production.meta["waveform"]["reference frequency"]),
-        ]
+        
+        # Add waveform settings if available
+        if "approximant" in waveform_meta:
+            command += [
+                "--approximant",
+                waveform_meta["approximant"],
+            ]
+        
+        if "minimum frequency" in quality_meta:
+            command += [
+                "--f_low",
+                str(min(quality_meta["minimum frequency"].values())),
+            ]
+        
+        if "reference frequency" in waveform_meta:
+            command += [
+                "--f_ref",
+                str(waveform_meta["reference frequency"]),
+            ]
 
         if "cosmology" in self.meta:
             command += [
@@ -141,7 +222,7 @@ class PESummary(Pipeline):
             if "backwards" in self.meta["evolve spins"]:
                 command += ["--evolve_spins_backwards", "precession_averaged"]
 
-        if "nrsur" in self.production.meta["waveform"]["approximant"].lower():
+        if "nrsur" in waveform_meta.get("approximant", "").lower():
             command += ["--NRSur_fits"]
 
         if "multiprocess" in self.meta:
@@ -158,29 +239,57 @@ class PESummary(Pipeline):
         command += [
             "--config",
             os.path.join(
-                self.production.event.repository.directory, self.category, configfile
+                self.event.repository.directory, self.category, configfile
             ),
         ]
-        # Samples
+        
+        # Samples - handle both single and multiple analyses
         command += ["--samples"]
-        command += [self.production._previous_assets().get("samples", {})]
+        if is_subject_analysis:
+            # Multiple samples files
+            for samples in samples_list:
+                if isinstance(samples, dict):
+                    # If samples is a dict (shouldn't be for pesummary), just skip
+                    continue
+                elif isinstance(samples, list):
+                    command.extend(samples)
+                else:
+                    command.append(samples)
+        else:
+            # Single samples file
+            samples = samples_list[0]
+            if isinstance(samples, list):
+                command.extend(samples)
+            elif isinstance(samples, str):
+                command.append(samples)
+            else:
+                # Dict or other - get the value
+                command.append(str(samples))
 
-        # PSDs
+        # PSDs - get from first dependency in SubjectAnalysis mode
+        if is_subject_analysis and source_analyses:
+            psds = source_analyses[0]._previous_assets().get("psds", {})
+        else:
+            psds = self.production._previous_assets().get("psds", {})
+        
         psds = {
             ifo: os.path.abspath(psd)
-            for ifo, psd in self.production._previous_assets().get("psds", {}).items()
+            for ifo, psd in psds.items()
         }
         if len(psds) > 0:
             command += ["--psds"]
             for key, value in psds.items():
                 command += [f"{key}:{value}"]
 
-        # Calibration envelopes
+        # Calibration envelopes - get from first dependency in SubjectAnalysis mode
+        if is_subject_analysis and source_analyses:
+            cals = source_analyses[0]._previous_assets().get("calibration", {})
+        else:
+            cals = self.production._previous_assets().get("calibration", {})
+        
         cals = {
-            ifo: os.path.abspath(psd)
-            for ifo, psd in self.production._previous_assets()
-            .get("calibration", {})
-            .items()
+            ifo: os.path.abspath(cal)
+            for ifo, cal in cals.items()
         }
         if len(cals) > 0:
             command += ["--calibration"]
