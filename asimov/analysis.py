@@ -836,7 +836,7 @@ class Analysis:
         dictionary["job id"] = self.job_id
 
         # Remove duplicates of pipeline defaults
-        if self.pipeline.name.lower() in self.event.ledger.data["pipelines"]:
+        if "pipelines" in self.event.ledger.data and self.pipeline.name.lower() in self.event.ledger.data["pipelines"]:
             defaults = deepcopy(
                 self.event.ledger.data["pipelines"][self.pipeline.name.lower()]
             )
