@@ -1,0 +1,41 @@
+# PESummary SubjectAnalysis Example
+#
+# This blueprint demonstrates how to create a PESummary SubjectAnalysis
+# that combines results from multiple parameter estimation analyses.
+#
+# The PESummary analysis will:
+# 1. Wait for bilby analyses to complete
+# 2. Automatically combine their results into a single summary page
+# 3. Be marked as refreshable so it updates when new analyses finish
+---
+kind: analysis
+name: CombinedPESummary
+pipeline: pesummary
+# Use 'analyses' to specify which analyses to combine
+analyses:
+  - pipeline: bilby  # All bilby analyses
+# Mark as refreshable to auto-update when dependencies change
+refreshable: true
+status: ready
+---
+# Example with optional dependencies
+# This will combine bilby results, and also include RIFT if available
+kind: analysis
+name: CombinedPESummaryWithOptional
+pipeline: pesummary
+analyses:
+  - pipeline: bilby       # Required
+  - optional: true        # Optional dependency
+    pipeline: rift
+refreshable: true
+status: ready
+---
+# Example combining specific analyses by status
+kind: analysis  
+name: ApprovedPESummary
+pipeline: pesummary
+analyses:
+  - - review: approved      # Only approved analyses
+    - pipeline: bilby       # That use bilby (AND logic)
+refreshable: true
+status: ready
