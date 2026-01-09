@@ -147,10 +147,26 @@ def init(
     from asimov import setup_file_logging
     make_project(name, root, working=working, checkouts=checkouts, results=results)
     click.echo(click.style("●", fg="green") + " New project created successfully!")
+    
+    # Log the project creation message
+    message = f"A new project was created in {os.getcwd()}"
+    logger.info(message)
+    
     # Set up logging after project is created, passing the log directory directly
     # to avoid config reload issues in test environments
-    setup_file_logging(logfile=os.path.join("logs", "asimov.log"))
-    logger.info(f"A new project was created in {os.getcwd()}")
+    try:
+        setup_file_logging(logfile=os.path.join("logs", "asimov.log"))
+        # Log again so that, if file logging is now configured, the message is written to the log file
+        logger.info(message)
+    except Exception as exc:
+        # Ensure failures to configure file logging are visible to the user
+        logger.error("Failed to set up file logging for new project: %s", exc)
+        click.echo(
+            click.style(
+                "⚠ Failed to set up file logging. See console output for details.",
+                fg="yellow",
+            )
+        )
 
 
 @click.command()

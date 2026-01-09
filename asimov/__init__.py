@@ -102,51 +102,76 @@ def setup_file_logging(logfile=None):
     """
     global _file_handler
     
-    # Only set up file handler once
-    if _file_handler is not None:
-        return
+    # Only set up file handler once (thread-safe check)
+    import threading
+    _lock = threading.Lock()
     
-    # Determine log file location
-    if logfile is None:
+    with _lock:
+        if _file_handler is not None:
+            return
+    
+        # Determine log file location
+        if logfile is None:
+            try:
+                log_directory = config.get("logging", "location")
+                try:
+                    if not os.path.exists(log_directory):
+                        # Create directory with appropriate permissions
+                        os.makedirs(log_directory, mode=0o755)
+                    logfile = os.path.join(log_directory, "asimov.log")
+                except OSError as e:
+                    # If we cannot create or use the configured log directory, fall back to current directory
+                    logger.error(
+                        "Failed to create or access log directory '%s': %s. "
+                        "Falling back to current directory for logging.",
+                        log_directory,
+                        e,
+                    )
+                    logfile = "asimov.log"
+            except (configparser.NoOptionError, configparser.NoSectionError):
+                # Fall back to current directory if no config
+                logfile = "asimov.log"
+        
+        # Use RotatingFileHandler to prevent log files from growing too large
+        # Default: 10 MB per file, keep 5 backup files
+        max_bytes = 10 * 1024 * 1024  # 10 MB
+        backup_count = 5
+        
         try:
-            log_directory = config.get("logging", "location")
-            if not os.path.exists(log_directory):
-                # Create directory with appropriate permissions
-                os.makedirs(log_directory, mode=0o755)
-            logfile = os.path.join(log_directory, "asimov.log")
+            # Try to get custom values from config
+            max_bytes = int(config.get("logging", "max_bytes"))
         except (configparser.NoOptionError, configparser.NoSectionError):
-            # Fall back to current directory if no config
-            logfile = "asimov.log"
-    
-    # Use RotatingFileHandler to prevent log files from growing too large
-    # Default: 10 MB per file, keep 5 backup files
-    max_bytes = 10 * 1024 * 1024  # 10 MB
-    backup_count = 5
-    
-    try:
-        # Try to get custom values from config
-        max_bytes = int(config.get("logging", "max_bytes"))
-    except (configparser.NoOptionError, configparser.NoSectionError):
-        pass
-    except ValueError as e:
-        logger.warning(f"Invalid value for logging.max_bytes in config, using default: {e}")
-    
-    try:
-        backup_count = int(config.get("logging", "backup_count"))
-    except (configparser.NoOptionError, configparser.NoSectionError):
-        pass
-    except ValueError as e:
-        logger.warning(f"Invalid value for logging.backup_count in config, using default: {e}")
-    
-    _file_handler = RotatingFileHandler(
-        logfile, maxBytes=max_bytes, backupCount=backup_count
-    )
-    formatter = logging.Formatter(
-        "%(asctime)s [%(name)s][%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
-    )
-    _file_handler.setFormatter(formatter)
-    _file_handler.setLevel(LOGGER_LEVEL)
-    logger.addHandler(_file_handler)
+            # No config value provided, use default
+            pass
+        except ValueError as e:
+            logger.warning(f"Invalid value for logging.max_bytes in config, using default: {e}")
+        
+        try:
+            backup_count = int(config.get("logging", "backup_count"))
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            # No config value provided, use default
+            pass
+        except ValueError as e:
+            logger.warning(f"Invalid value for logging.backup_count in config, using default: {e}")
+        
+        try:
+            _file_handler = RotatingFileHandler(
+                logfile, maxBytes=max_bytes, backupCount=backup_count
+            )
+            formatter = logging.Formatter(
+                "%(asctime)s [%(name)s][%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
+            )
+            _file_handler.setFormatter(formatter)
+            _file_handler.setLevel(LOGGER_LEVEL)
+            logger.addHandler(_file_handler)
+        except (OSError, IOError) as e:
+            # Log to stderr if file logging cannot be set up
+            import sys
+            sys.stderr.write(
+                f"Warning: Failed to set up file logging to '{logfile}': {e}\n"
+                "Continuing without file logging.\n"
+            )
+            _file_handler = None  # Mark as attempted but failed
 
 
 try:
