@@ -787,9 +787,11 @@ def html(event, webdir):
         if (!node.dataset || !node.dataset.successors) return;
         
         var successorNames = node.dataset.successors.split(',').filter(function(name) { return name.trim(); });
+        var eventName = node.dataset.eventName || '';
         
         successorNames.forEach(function(successorName) {
-            var successorNode = document.getElementById('node-' + successorName.trim());
+            var successorNodeId = 'node-' + eventName + '-' + successorName.trim();
+            var successorNode = document.getElementById(successorNodeId);
             if (successorNode && successorNode.style.display !== 'none') {
                 successorNode.style.display = 'none';
                 successorNode.classList.add('filtered-hidden');
@@ -866,10 +868,10 @@ def html(event, webdir):
     }
 
     // Modal functionality
-    function openAnalysisModal(analysisId) {
+    function openAnalysisModal(dataId) {
         var modal = document.getElementById('analysis-modal');
         var backdrop = document.getElementById('modal-backdrop');
-        var analysisData = document.getElementById('analysis-data-' + analysisId);
+        var analysisData = document.getElementById(dataId);
         
         if (modal && backdrop && analysisData) {
             // Populate modal with analysis data
@@ -1072,8 +1074,13 @@ def html(event, webdir):
                 
                 var successorNames = successors.split(',').map(function(name) { return name.trim(); }).filter(function(name) { return name; });
                 
+                // Get event name for scoped lookups
+                var eventName = sourceNode.dataset.eventName || '';
+                
                 successorNames.forEach(function(successorName) {
-                    var targetNode = document.getElementById('node-' + successorName);
+                    // Create scoped node ID using event name
+                    var targetNodeId = 'node-' + eventName + '-' + successorName;
+                    var targetNode = document.getElementById(targetNodeId);
                     
                     // Skip if target node doesn't exist or is hidden
                     if (!targetNode || targetNode.style.display === 'none' || targetNode.classList.contains('hidden') || targetNode.classList.contains('filtered-hidden')) {

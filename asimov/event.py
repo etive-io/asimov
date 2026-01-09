@@ -157,6 +157,9 @@ class Event:
                             prod_meta, subject=self, ledger=self.ledger
                         )
                     )
+        # After all productions are added, update the graph to build dependency edges
+        # This ensures dependencies can be resolved regardless of order in the ledger
+        self.update_graph()
         self._check_required()
 
         if (
@@ -250,14 +253,11 @@ class Event:
         self.productions.append(production)
         self.graph.add_node(production)
 
-        if production.dependencies:
-            for dependency in production.dependencies:
-                if dependency == production:
-                    continue
-                analysis_dict = {
-                    production.name: production for production in self.productions
-                }
-                self.graph.add_edge(analysis_dict[dependency], production)
+        # Note: Dependencies are resolved dynamically when accessed, so we don't
+        # build edges here. Instead, call update_graph() after all productions
+        # are added to ensure the graph reflects current dependencies.
+        # This fixes the issue where dependencies appearing later in the ledger
+        # couldn't be found during initial loading.
     
     def update_graph(self):
         """
@@ -591,15 +591,20 @@ class Event:
                             # Add review status indicator
                             review_indicator = get_review_indicator(review_status)
                             
+                            # Create unique node IDs by including event name
+                            node_id = f"node-{self.name}-{node.name}"
+                            data_id = f"analysis-data-{self.name}-{node.name}"
+                            
                             card += f"""
                             <div class="graph-node status-{status} review-{review_status}" 
-                                 id="node-{node.name}"
+                                 id="{node_id}"
+                                 data-event-name="{self.name}"
                                  data-review="{review_status}" 
                                  data-status="{status}"
                                  data-node-name="{node.name}"
                                  data-predecessors="{predecessor_names}"
                                  data-successors="{successor_names}"
-                                 onclick="openAnalysisModal('{node.name}')">
+                                 onclick="openAnalysisModal('{data_id}')">
                                 {running_indicator}
                                 {review_indicator}
                                 <div class="graph-node-title">{node.name}</div>
@@ -620,7 +625,7 @@ class Event:
                             review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
                             
                             card += f"""
-                            <div id="analysis-data-{node.name}" style="display:none;"
+                            <div id="{data_id}" style="display:none;"
                                  data-name="{node.name}"
                                  data-status="{status}"
                                  data-status-badge="{status_badge}"
@@ -668,15 +673,20 @@ class Event:
                         # Add review status indicator
                         review_indicator = get_review_indicator(review_status)
                         
+                        # Create unique node IDs by including event name
+                        node_id = f"node-{self.name}-{node.name}"
+                        data_id = f"analysis-data-{self.name}-{node.name}"
+                        
                         card += f"""
                         <div class="graph-node status-{status} review-{review_status}" 
-                             id="node-{node.name}"
+                             id="{node_id}"
+                             data-event-name="{self.name}"
                              data-review="{review_status}"
                              data-status="{status}"
                              data-node-name="{node.name}"
                              data-predecessors="{predecessor_names}"
                              data-successors="{successor_names}"
-                             onclick="openAnalysisModal('{node.name}')">
+                             onclick="openAnalysisModal('{data_id}')">
                             {running_indicator}
                             {review_indicator}
                             <div class="graph-node-title">{node.name}</div>
@@ -696,7 +706,7 @@ class Event:
                         review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
                         
                         card += f"""
-                        <div id="analysis-data-{node.name}" style="display:none;"
+                        <div id="{data_id}" style="display:none;"
                              data-name="{node.name}"
                              data-status="{status}"
                              data-status-badge="{status_badge}"
