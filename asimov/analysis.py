@@ -30,6 +30,7 @@ import pathlib
 
 from functools import reduce
 import operator
+from typing import TYPE_CHECKING, Any, Optional, List, cast
 
 from liquid import Liquid
 
@@ -70,8 +71,24 @@ class Analysis:
     The base class for all other types of analysis.
     """
 
-    meta = {}
-    meta_defaults = {"scheduler": {}, "sampler": {}, "likelihood": {}}
+    meta: dict[str, Any] = {}
+    meta_defaults: dict[str, Any] = {"scheduler": {}, "sampler": {}, "likelihood": {}}
+
+    # These annotations help static analysis without affecting runtime state
+    if TYPE_CHECKING:
+        event: Any
+        subject: Any
+        name: str
+        pipeline: Any
+        comment: Optional[str]
+        _needs: List[Any]
+        _reviews: Review
+        status_str: str
+        repository: Any
+        ledger: Any
+        analyses: List[Any]
+        productions: List[Any]
+        _analysis_spec: Any
 
     @property
     def review(self):
@@ -836,9 +853,19 @@ class Analysis:
         dictionary["job id"] = self.job_id
 
         # Remove duplicates of pipeline defaults
-        if "pipelines" in self.event.ledger.data and self.pipeline.name.lower() in self.event.ledger.data["pipelines"]:
+        pipeline_obj = getattr(self, "pipeline", None)
+        if (
+            hasattr(self, "event")
+            and self.event
+            and hasattr(self.event, "ledger")
+            and self.event.ledger
+            and "pipelines" in self.event.ledger.data
+            and pipeline_obj is not None
+            and hasattr(pipeline_obj, "name")
+            and pipeline_obj.name.lower() in self.event.ledger.data["pipelines"]
+        ):
             defaults = deepcopy(
-                self.event.ledger.data["pipelines"][self.pipeline.name.lower()]
+                self.event.ledger.data["pipelines"][pipeline_obj.name.lower()]
             )
         else:
             defaults = {}
@@ -927,7 +954,7 @@ class SimpleAnalysis(Analysis):
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
         if "needs" in self.meta:
-            self._needs = self.meta.pop("needs")
+            self._needs = cast(List[Any], self.meta.pop("needs"))
         else:
             self._needs = []
 
@@ -993,6 +1020,10 @@ class SubjectAnalysis(Analysis):
         self._reviews = Review()
         
         self.meta = update(self.meta, deepcopy(self.subject.meta))
+        # Avoid inheriting full productions/analyses blobs from the subject; they bloat the ledger
+        for noisy_key in ["productions", "analyses"]:
+            if noisy_key in self.meta:
+                self.meta.pop(noisy_key)
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self._analysis_spec = self.meta.get("needs") or self.meta.get("analyses")
@@ -1052,7 +1083,7 @@ class SubjectAnalysis(Analysis):
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
         if "needs" in self.meta:
-            self._needs = self.meta.pop("needs")
+            self._needs = cast(List[Any], self.meta.pop("needs"))
         else:
             self._needs = []
 
@@ -1085,7 +1116,11 @@ class SubjectAnalysis(Analysis):
             dictionary["pipeline"] = self.pipeline.name.lower()
         dictionary["comment"] = self.comment
 
-        dictionary["analyses"] = self._analysis_spec
+        # Persist only the list of analysis names (no full metadata) to avoid duplication
+        if hasattr(self, "analyses") and self.analyses:
+            dictionary["analyses"] = [analysis.name for analysis in self.analyses]
+        else:
+            dictionary["analyses"] = self._analysis_spec
 
         if self.review:
             dictionary["review"] = self.review.to_dicts()
@@ -1096,9 +1131,34 @@ class SubjectAnalysis(Analysis):
             dictionary["quality"] = self.meta["quality"]
         if "priors" in self.meta:
             dictionary["priors"] = self.meta["priors"]
+
+        # Include remaining meta fields
         for key, value in self.meta.items():
             dictionary[key] = value
-        if "repository" in self.meta:
+
+        
+
+        # Remove duplicated defaults to keep the ledger minimal, mirroring Analysis.to_dict
+        defaults = {}
+        pipeline_obj = getattr(self, "pipeline", None)
+        if (
+            hasattr(self.event, "ledger")
+            and self.event.ledger
+            and "pipelines" in self.event.ledger.data
+            and pipeline_obj is not None
+            and hasattr(pipeline_obj, "name")
+            and pipeline_obj.name.lower() in self.event.ledger.data["pipelines"]
+        ):
+            defaults = deepcopy(
+                self.event.ledger.data["pipelines"][pipeline_obj.name.lower()]
+            )
+
+        # Subject-level defaults
+        defaults = update(defaults, deepcopy(self.subject.meta))
+
+        dictionary = diff_dict(defaults, dictionary)
+
+        if "repository" in dictionary:
             dictionary["repository"] = self.repository.url
         if "ledger" in dictionary:
             dictionary.pop("ledger")
@@ -1226,7 +1286,7 @@ class ProjectAnalysis(Analysis):
             self.logger.warning(f"The pipeline {pipeline} could not be found.")
         
         if "needs" in self.meta:
-            self._needs = self.meta.pop("needs")
+            self._needs = cast(List[Any], self.meta.pop("needs"))
         else:
             self._needs = []
         
@@ -1267,7 +1327,7 @@ class ProjectAnalysis(Analysis):
 
     @property
     def events(self):
-        return self.subjects()
+        return self.subjects
 
     @classmethod
     def from_dict(cls, parameters, ledger=None):
@@ -1360,7 +1420,7 @@ class ProjectAnalysis(Analysis):
 
             return all_matches
 
-    def to_dict(self):
+    def to_dict(self, event=True):
         """
         Return this project production as a dictionary.
 
@@ -1382,7 +1442,7 @@ class ProjectAnalysis(Analysis):
         dictionary["comment"] = self.comment
 
         if self.review:
-            dictionary["review"] = self.review.copy()  # .to_dicts()
+            dictionary["review"] = self.review.to_dicts()
 
         dictionary["needs"] = self.dependencies
 
@@ -1390,8 +1450,10 @@ class ProjectAnalysis(Analysis):
             dictionary["quality"] = self.meta["quality"]
         if "priors" in self.meta:
             dictionary["priors"] = self.meta["priors"]
+
         for key, value in self.meta.items():
             dictionary[key] = value
+
         if "repository" in self.meta:
             dictionary["repository"] = self.repository.url
         if "ledger" in dictionary:
@@ -1402,9 +1464,28 @@ class ProjectAnalysis(Analysis):
         dictionary["subjects"] = self._subjects
         dictionary["analyses"] = self._analysis_spec
 
-        output = dictionary
+        # Remove duplicated defaults: pipeline defaults + any project-level defaults
+        defaults = {}
+        pipeline_obj = getattr(self, "pipeline", None)
+        if (
+            hasattr(self, "ledger")
+            and self.ledger
+            and "pipelines" in self.ledger.data
+            and pipeline_obj is not None
+            and hasattr(pipeline_obj, "name")
+            and pipeline_obj.name.lower() in self.ledger.data["pipelines"]
+        ):
+            defaults = deepcopy(
+                self.ledger.data["pipelines"][pipeline_obj.name.lower()]
+            )
 
-        return output
+        # Project-level defaults if present
+        if hasattr(self, "ledger") and self.ledger and "project" in self.ledger.data:
+            defaults = update(defaults, deepcopy(self.ledger.data["project"]))
+
+        dictionary = diff_dict(defaults, dictionary)
+
+        return dictionary
 
     @property
     def rundir(self):
@@ -1621,6 +1702,13 @@ class GravitationalWaveTransient(SimpleAnalysis):
             raise ValueError("This isn't a valid ini file")
 
         return ini
+
+    def _check_compatible(self, previous_analysis):
+        """
+        Placeholder compatibility check between analyses.
+        Extend when additional metadata comparisons are needed.
+        """
+        return True
 
     def _collect_psds(self, format="ascii"):
         """
