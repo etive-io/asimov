@@ -281,7 +281,7 @@ class Rift(Pipeline):
                 if self.production.event.repository:
                     bootstrap_file = os.path.join(
                         self.production.event.repository.directory,
-                        "C01_offline",
+                        "analyses",
                         f"{self.production.name}_bootstrap.xml.gz",
                     )
                 else:

@@ -31,7 +31,7 @@ class LALInferenceTests(unittest.TestCase):
         cls.cwd = os.getcwd()
         repo = git.Repo.init(cls.cwd+"/tests/test_data/s000000xx/")
         os.chdir(cls.cwd+"/tests/test_data/s000000xx/")
-        os.system("git add C01_offline/Prod0_test.ini C01_offline/s000000xx_gpsTime.txt")
+        os.system("git add analyses/Prod0_test.ini analyses/s000000xx_gpsTime.txt")
         os.system("git commit -m 'test'")
         os.chdir(cls.cwd)
 
