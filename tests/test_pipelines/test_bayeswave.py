@@ -40,7 +40,7 @@ class BayeswaveTests(unittest.TestCase):
         cls.cwd = os.getcwd()
         repo = git.Repo.init(cls.cwd+"/tests/test_data/s000000xx/")
         os.chdir(cls.cwd+"/tests/test_data/s000000xx/")
-        os.system("git add analyses/Prod1_test.ini analyses/s000000xx_gpsTime.txt")
+        os.system("git add analyses/Prod0_test.ini analyses/s000000xx_gpsTime.txt")
         os.system("git commit -m 'test'")
 
     def setUp(self):

@@ -44,7 +44,7 @@ def start_dag(event, repo, prod, psd_prod="Prod0"):
     psds_dict = get_psds_rundir(event.data[f'{psd_prod}_rundir'])
 
     try:
-        out = repo.build_dag("analyses", prod, psds_dict)
+        repo.build_dag("analyses", prod, psds_dict)
         status = "DAG ready"
     except ValueError as e:
         status = "ini error"

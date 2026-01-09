@@ -57,12 +57,18 @@ class EventRepo:
             if self.repo.remotes:
                 remote = self.repo.remotes[0]
                 # Get the symbolic reference for HEAD from the remote
-                refs = remote.refs
-                if hasattr(remote, 'refs') and 'HEAD' in [ref.name.split('/')[-1] for ref in refs]:
-                    for ref in refs:
-                        if ref.name.endswith('HEAD'):
+                if hasattr(remote, 'refs'):
+                    for ref in remote.refs:
+                        ref_name = getattr(ref, "name", "")
+                        if ref_name.endswith("HEAD"):
                             # Get what HEAD points to
-                            return ref.ref.name.split('/')[-1]
+                            remote_head = getattr(ref, "remote_head", None)
+                            if remote_head:
+                                return remote_head
+                            target_ref = getattr(ref, "ref", None)
+                            target_name = getattr(target_ref, "name", None)
+                            if target_name:
+                                return target_name.split("/")[-1]
             
             # Fallback: check local HEAD or common branch names
             if self.repo.head.is_valid():
@@ -78,8 +84,9 @@ class EventRepo:
                     
             # If all else fails, return 'master' as last resort
             return 'master'
-        except Exception:
+        except (git.exc.GitCommandError, AttributeError) as e:
             # In case of any error, return 'master' as a safe default
+            self.logger.warning(f"Could not detect default branch for {self.event}: {e}")
             return 'master'
 
     def __repr__(self):
@@ -100,8 +107,15 @@ class EventRepo:
         try:
             # Try to create with 'main' as the initial branch (modern convention)
             repo = git.Repo.init(location, initial_branch="main")
-        except Exception:
+        except TypeError as exc:
             # Fallback for older git versions that don't support initial_branch
+            logger.warning(
+                "Git version does not support 'initial_branch' when initializing "
+                "repository at %s; falling back to default initial branch. "
+                "Original error: %s",
+                location,
+                exc,
+            )
             repo = git.Repo.init(location)
         os.makedirs(os.path.join(location, directory), exist_ok=True)
         with open(os.path.join(location, directory, ".gitkeep"), "w") as f:
