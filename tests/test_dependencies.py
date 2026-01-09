@@ -27,7 +27,7 @@ class DependencyTests(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/dep_project")
         make_project(name="Test project", root=f"{self.cwd}/tests/tmp/dep_project")
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
-        apply_page(file="https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
+        apply_page(file=f"{self.cwd}/tests/test_data/testing_pe.yaml", event=None, ledger=self.ledger)
         apply_page(file=f"{self.cwd}/tests/test_data/events_blueprint.yaml", ledger=self.ledger)
 
     def tearDown(self):

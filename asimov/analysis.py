@@ -100,18 +100,20 @@ class Analysis:
         - Nested lists for AND logic: [["review.status: approved", "waveform.approximant: IMRPhenomXPHM"]]
           matches analyses that satisfy ALL conditions in the nested list
         - Top-level items are OR'd together
+        - Optional dependencies: {"optional": true, "pipeline": "bilby"} marks dependency as optional
 
         Parameters
         ----------
         needs : list
            A list of all the requirements. Can contain strings (OR'd together),
-           or lists of strings (AND'd together internally, OR'd with other items)
+           or lists of strings (AND'd together internally, OR'd with other items),
+           or dicts with optional flag
 
         Returns
         -------
         list
            A list of all the requirements processed for evaluation.
-           Each item is either a tuple (attribute, match, negate) for simple filters,
+           Each item is either a tuple (attribute, match, negate, optional) for simple filters,
            or a list of tuples for AND groups.
         """
         all_requirements = []
@@ -129,11 +131,12 @@ class Analysis:
     
     def _parse_single_dependency(self, need):
         """
-        Parse a single dependency specification into (attribute, match, negate) tuple.
+        Parse a single dependency specification into (attribute, match, negate, optional) tuple.
         
-        Handles both formats:
+        Handles multiple formats:
         - String: "waveform.approximant: IMRPhenomXPHM" (with quotes in YAML)
-        - Dict: {waveform.approximant: IMRPhenomXPHM} (without quotes in YAML)
+        - Dict (simple): {waveform.approximant: IMRPhenomXPHM} (without quotes in YAML)
+        - Dict (optional): {optional: true, pipeline: bilby} (marks dependency as optional)
         
         Parameters
         ----------
@@ -143,14 +146,37 @@ class Analysis:
         Returns
         -------
         tuple
-            (attribute_list, match_value, is_negated)
+            (attribute_list, match_value, is_negated, is_optional)
         """
         negate = False
+        optional = False
         
         # Handle dict format (when YAML parses without quotes)
         if isinstance(need, dict):
-            # Should have exactly one key-value pair
-            if len(need) == 1:
+            # Check for optional flag
+            if "optional" in need:
+                optional = bool(need.get("optional", False))
+                # Remove optional key and process remaining as dependency
+                dep_dict = {k: v for k, v in need.items() if k != "optional"}
+                if len(dep_dict) == 1:
+                    key, value = list(dep_dict.items())[0]
+                    key_str = str(key).strip()
+                    attribute = key_str.split(".")
+                    match_value = str(value).strip()
+                    
+                    # Check for negation
+                    if match_value.startswith("!"):
+                        negate = True
+                        match_value = match_value[1:].strip()
+                        
+                    return (attribute, match_value, negate, optional)
+                else:
+                    raise ValueError(
+                        f"Invalid optional dependency format: expected one dependency key "
+                        f"plus 'optional', got {list(dep_dict.keys())}: {need}"
+                    )
+            # Handle simple dict format
+            elif len(need) == 1:
                 key, value = list(need.items())[0]
                 key_str = str(key).strip()
                 attribute = key_str.split(".")
@@ -161,7 +187,7 @@ class Analysis:
                     negate = True
                     match_value = match_value[1:].strip()
                     
-                return (attribute, match_value, negate)
+                return (attribute, match_value, negate, optional)
             else:
                 raise ValueError(
                     f"Invalid dependency dict format: expected a single key-value pair, "
@@ -180,10 +206,10 @@ class Analysis:
                 negate = True
                 match_value = match_value[1:].strip()
             
-            return (attribute, match_value, negate)
+            return (attribute, match_value, negate, optional)
         except (IndexError, AttributeError):
             # Plain name without colon
-            return (["name"], need, False)
+            return (["name"], need, False, optional)
 
     @property
     def job_id(self):
@@ -228,7 +254,13 @@ class Analysis:
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
                     and_matches = set(self.event.analyses)
-                    for attribute, match, negate in requirement:
+                    for parsed_dep in requirement:
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(parsed_dep) == 4:
+                            attribute, match, negate, optional = parsed_dep
+                        else:
+                            attribute, match, negate = parsed_dep
+                            optional = False
                         filtered_analyses = list(
                             filter(
                                 lambda x: x.matches_filter(attribute, match, negate),
@@ -239,7 +271,12 @@ class Analysis:
                     matches = set.union(matches, and_matches)
                 else:
                     # Single condition
-                    attribute, match, negate = requirement
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(requirement) == 4:
+                        attribute, match, negate, optional = requirement
+                    else:
+                        attribute, match, negate = requirement
+                        optional = False
                     filtered_analyses = list(
                         filter(
                             lambda x: x.matches_filter(attribute, match, negate),
@@ -254,6 +291,107 @@ class Analysis:
                     all_matches.append(analysis.name)
 
             return all_matches
+    
+    @property
+    def required_dependencies(self):
+        """
+        Return a list of required (non-optional) dependencies.
+        
+        This evaluates the needs specification and returns only dependencies
+        that are not marked as optional. If a required dependency is not found
+        in the ledger, the analysis should not run.
+        
+        Returns
+        -------
+        list
+            List of dependency specifications that are required
+        """
+        if len(self._needs) == 0:
+            return []
+        
+        required_specs = []
+        requirements = self._process_dependencies(deepcopy(self._needs))
+        
+        for requirement in requirements:
+            if isinstance(requirement, list):
+                # This is an AND group - check if all are optional
+                all_optional = all(
+                    parsed_dep[3] if len(parsed_dep) == 4 else False
+                    for parsed_dep in requirement
+                )
+                if not all_optional:
+                    required_specs.append(requirement)
+            else:
+                # Single condition - check if optional
+                is_optional = requirement[3] if len(requirement) == 4 else False
+                if not is_optional:
+                    required_specs.append(requirement)
+        
+        return required_specs
+    
+    @property
+    def has_required_dependencies_satisfied(self):
+        """
+        Check if all required dependencies are satisfied.
+        
+        A required dependency is satisfied if at least one analysis in the ledger
+        matches its specification. Optional dependencies don't affect this check.
+        
+        Returns
+        -------
+        bool
+            True if all required dependencies are satisfied (or there are no required deps),
+            False if any required dependency has no matches
+        """
+        required_specs = self.required_dependencies
+        
+        if len(required_specs) == 0:
+            # No required dependencies, so they're all satisfied
+            return True
+        
+        for requirement in required_specs:
+            if isinstance(requirement, list):
+                # This is an AND group - all conditions must match at least one analysis
+                and_matches = set(self.event.analyses)
+                for parsed_dep in requirement:
+                    if len(parsed_dep) == 4:
+                        attribute, match, negate, optional = parsed_dep
+                    else:
+                        attribute, match, negate = parsed_dep
+                        optional = False
+                    
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            and_matches,
+                        )
+                    )
+                    and_matches = set(filtered_analyses)
+                
+                # If no analyses match this AND group, requirement not satisfied
+                if len(and_matches) == 0:
+                    return False
+            else:
+                # Single condition
+                if len(requirement) == 4:
+                    attribute, match, negate, optional = requirement
+                else:
+                    attribute, match, negate = requirement
+                    optional = False
+                
+                filtered_analyses = list(
+                    filter(
+                        lambda x: x.matches_filter(attribute, match, negate),
+                        self.event.analyses,
+                    )
+                )
+                
+                # If no analyses match this requirement, it's not satisfied
+                if len(filtered_analyses) == 0:
+                    return False
+        
+        # All required dependencies have at least one match
+        return True
     
     @property
     def resolved_dependencies(self):
@@ -867,7 +1005,13 @@ class SubjectAnalysis(Analysis):
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
                     and_matches = set(self.subject.analyses)
-                    for attribute, match, negate in requirement:
+                    for parsed_dep in requirement:
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(parsed_dep) == 4:
+                            attribute, match, negate, optional = parsed_dep
+                        else:
+                            attribute, match, negate = parsed_dep
+                            optional = False
                         filtered_analyses = list(
                             filter(
                                 lambda x: x.matches_filter(attribute, match, negate), and_matches
@@ -880,7 +1024,12 @@ class SubjectAnalysis(Analysis):
                             self.analyses.append(analysis)
                 else:
                     # Single condition
-                    attribute, match, negate = requirement
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(requirement) == 4:
+                        attribute, match, negate, optional = requirement
+                    else:
+                        attribute, match, negate = requirement
+                        optional = False
                     filtered_analyses = list(
                         filter(
                             lambda x: x.matches_filter(attribute, match, negate), subject.analyses
@@ -1023,7 +1172,13 @@ class ProjectAnalysis(Analysis):
                     if isinstance(requirement, list):
                         # This is an AND group - all conditions must match
                         and_matches = set(subject.analyses)
-                        for attribute, match, negate in requirement:
+                        for parsed_dep in requirement:
+                            # Handle both 3-tuple and 4-tuple formats
+                            if len(parsed_dep) == 4:
+                                attribute, match, negate, optional = parsed_dep
+                            else:
+                                attribute, match, negate = parsed_dep
+                                optional = False
                             filtered_analyses = list(
                                 filter(
                                     lambda x: x.matches_filter(attribute, match, negate),
@@ -1037,7 +1192,12 @@ class ProjectAnalysis(Analysis):
                                 self.analyses.append(analysis)
                     else:
                         # Single condition
-                        attribute, match, negate = requirement
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(requirement) == 4:
+                            attribute, match, negate, optional = requirement
+                        else:
+                            attribute, match, negate = requirement
+                            optional = False
                         filtered_analyses = list(
                             filter(
                                 lambda x: x.matches_filter(attribute, match, negate),
@@ -1159,7 +1319,13 @@ class ProjectAnalysis(Analysis):
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
                     and_matches = set(analyses)
-                    for attribute, match, negate in requirement:
+                    for parsed_dep in requirement:
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(parsed_dep) == 4:
+                            attribute, match, negate, optional = parsed_dep
+                        else:
+                            attribute, match, negate = parsed_dep
+                            optional = False
                         filtered_analyses = list(
                             filter(
                                 lambda x: x.matches_filter(attribute, match, negate),
@@ -1170,7 +1336,12 @@ class ProjectAnalysis(Analysis):
                     matches = set.union(matches, and_matches)
                 else:
                     # Single condition
-                    attribute, match, negate = requirement
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(requirement) == 4:
+                        attribute, match, negate, optional = requirement
+                    else:
+                        attribute, match, negate = requirement
+                        optional = False
                     filtered_analyses = list(
                         filter(
                             lambda x: x.matches_filter(attribute, match, negate),
