@@ -199,7 +199,7 @@ jobs:
         with:
           patterns: "final_result/*.hdf5"
           directory: "working/GW150914_095045/bilby-IMRPhenomXPHM"
-          timeout: "1200"
+          timeout: "1800"
           interval: "60"
           working-directory: .
 
