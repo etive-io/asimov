@@ -25,7 +25,7 @@ class Rift(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "RIFT"
@@ -357,7 +357,7 @@ class Rift(Pipeline):
         ----------
         category : str, optional
            The category of the job.
-           Defaults to "C01_offline".
+           Defaults to "analyses".
         production : str
            The production name.
 
