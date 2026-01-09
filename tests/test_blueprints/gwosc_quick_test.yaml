@@ -18,7 +18,7 @@ pipelines:
         V1: V1:DQ_ANALYSIS_STATE_VECTOR
     sampler:
       sampler: dynesty
-      parallel jobs: 1
+      parallel jobs: 2
       sampler kwargs: "{nlive: 50, dlogz: 1, naccept: 5, check_point_delta_t: 1800, 'print_method': 'interval-10', 'sample': 'acceptance-walk'}"
     scheduler:
       accounting group: ligo.dev.o4.cbc.pe.bilby
