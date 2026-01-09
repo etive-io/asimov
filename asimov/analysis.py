@@ -1027,6 +1027,12 @@ class SubjectAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self._analysis_spec = self.meta.get("needs") or self.meta.get("analyses")
+        
+        # Remove needs and analyses from meta to prevent duplication later
+        if "needs" in self.meta:
+            self.meta.pop("needs")
+        if "analyses" in self.meta:
+            self.meta.pop("analyses")
 
         if self._analysis_spec:
             requirements = self._process_dependencies(self._analysis_spec)
@@ -1075,17 +1081,11 @@ class SubjectAnalysis(Analysis):
             # Initialize empty lists if no analysis spec
             self.analyses = []
             self.productions = []
-            
-        if "needs" in self.meta:
-            self.meta.pop("needs")
 
         self.pipeline = pipeline.lower()
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
-        if "needs" in self.meta:
-            self._needs = cast(List[Any], self.meta.pop("needs"))
-        else:
-            self._needs = []
+        self._needs = []
 
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
@@ -1134,9 +1134,11 @@ class SubjectAnalysis(Analysis):
 
         # Include remaining meta fields
         for key, value in self.meta.items():
+            # Do not allow a meta-level "analyses" entry to overwrite the
+            # explicitly constructed analyses list above.
+            if key == "analyses":
+                continue
             dictionary[key] = value
-
-        
 
         # Remove duplicated defaults to keep the ledger minimal, mirroring Analysis.to_dict
         defaults = {}

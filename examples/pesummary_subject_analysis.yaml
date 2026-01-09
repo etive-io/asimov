@@ -35,7 +35,7 @@ kind: analysis
 name: ApprovedPESummary
 pipeline: pesummary
 analyses:
-  - review: approved      # Only approved analyses
-  - pipeline: bilby       # That use bilby
+  - - review: approved      # Only approved analyses
+    - pipeline: bilby       # That use bilby (AND logic)
 refreshable: true
 status: ready

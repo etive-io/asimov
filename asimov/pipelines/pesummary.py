@@ -7,11 +7,9 @@ import warnings
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
     import htcondor2 as htcondor  # NoQA
-    import classad2 as classad  # NoQA
 except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
-    import classad  # NoQA
 from asimov import utils  # NoQA
 from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
 
@@ -176,9 +174,15 @@ class PESummary(Pipeline):
                     "SubjectAnalysis PESummary has no source analyses to process."
                 )
             
-            for dep_analysis in source_analyses:           
+            for dep_analysis in source_analyses:
                 # Get samples and config directly from this analysis
                 dep_assets = dep_analysis.pipeline.collect_assets()
+                if not isinstance(dep_assets, dict):
+                    self.logger.warning(
+                        f"collect_assets for {dep_analysis.name} returned "
+                        f"{type(dep_assets).__name__}, expected dict; skipping this analysis."
+                    )
+                    continue
                 dep_samples = dep_assets.get("samples", None)
                 dep_config = dep_assets.get("config", None)
                 if dep_samples:
@@ -227,9 +231,8 @@ class PESummary(Pipeline):
                     "No samples found from any dependency analyses."
                 )
             
-            # Ensure that the run directory exists
-            if not os.path.exists(self.production.rundir):
-                os.makedirs(self.production.rundir)
+            # Ensure that the run directory exists (race-free)
+            os.makedirs(self.production.rundir, exist_ok=True)
 
             # For SubjectAnalysis, use metadata from the production itself
             # Individual analysis waveform settings are collected above
@@ -239,11 +242,6 @@ class PESummary(Pipeline):
             # Single analysis mode (post-processing)
             labels = [self.production.name]
             samples_list = [self.production._previous_assets().get("samples", {})]
-            config_list = []  # Not used in single analysis mode
-            source_analyses = []  # Not used in single analysis mode
-            approximants = []
-            f_lows = []
-            f_refs = []
             waveform_meta = self.production.meta.get("waveform", {})
             quality_meta = self.production.meta.get("quality", {})
 
@@ -374,7 +372,6 @@ class PESummary(Pipeline):
                             command += [f"--{key}"]
                             if value is not None and value != "":
                                 command += [str(value)]
-            
 
         # Samples - handle both single and multiple analyses
         command += ["--samples"]
@@ -498,7 +495,7 @@ class PESummary(Pipeline):
                 schedulers = htcondor.Collector().locate(
                     htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
                 )
-            except configparser.NoOptionError:
+            except (configparser.NoOptionError, configparser.NoSectionError):
                 schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
 
             schedd = htcondor.Schedd(schedulers)
