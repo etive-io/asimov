@@ -290,7 +290,7 @@ class Bilby(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "bilby"

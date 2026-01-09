@@ -25,7 +25,7 @@ class Rift(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "RIFT"
@@ -281,7 +281,7 @@ class Rift(Pipeline):
                 if self.production.event.repository:
                     bootstrap_file = os.path.join(
                         self.production.event.repository.directory,
-                        "C01_offline",
+                        "analyses",
                         f"{self.production.name}_bootstrap.xml.gz",
                     )
                 else:
@@ -357,7 +357,7 @@ class Rift(Pipeline):
         ----------
         category : str, optional
            The category of the job.
-           Defaults to "C01_offline".
+           Defaults to "analyses".
         production : str
            The production name.
 

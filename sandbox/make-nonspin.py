@@ -44,7 +44,8 @@ for event in events:
         print(f"{event.title} missing from the uberrepo")
         continue
 
-    repo.repo.git.checkout("master")
+    default_branch = repo.get_default_branch()
+    repo.repo.git.checkout(default_branch)
     repo.repo.git.pull()
 
     try:
