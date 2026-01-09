@@ -48,7 +48,16 @@ class PESummary(Pipeline):
         super().__init__(production, category)
         
         self.analysis = production
-        self.event = self.subject = production.subject if hasattr(production, 'subject') else production.event
+        
+        # Get subject/event - handle different analysis types
+        if hasattr(production, 'subject'):
+            self.event = self.subject = production.subject
+        elif hasattr(production, 'event'):
+            self.event = self.subject = production.event
+        else:
+            raise PipelineException(
+                "Production must have either 'subject' or 'event' attribute"
+            )
 
         # Set category appropriately
         if category:
@@ -249,7 +258,10 @@ class PESummary(Pipeline):
             # Multiple samples files
             for samples in samples_list:
                 if isinstance(samples, dict):
-                    # If samples is a dict (shouldn't be for pesummary), just skip
+                    # If samples is a dict, log a warning and skip
+                    self.logger.warning(
+                        f"Unexpected dict format for samples in SubjectAnalysis: {samples}"
+                    )
                     continue
                 elif isinstance(samples, list):
                     command.extend(samples)
@@ -263,7 +275,10 @@ class PESummary(Pipeline):
             elif isinstance(samples, str):
                 command.append(samples)
             else:
-                # Dict or other - get the value
+                # Dict or other - try to convert to string
+                self.logger.warning(
+                    f"Unexpected format for samples: {type(samples)}, converting to string"
+                )
                 command.append(str(samples))
 
         # PSDs - get from first dependency in SubjectAnalysis mode

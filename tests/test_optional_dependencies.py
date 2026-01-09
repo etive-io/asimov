@@ -31,7 +31,6 @@ class OptionalDependencyTests(unittest.TestCase):
         apply_page(file=f"{self.cwd}/tests/test_data/events_blueprint.yaml", ledger=self.ledger)
 
     def tearDown(self):
-        del(self.ledger)
         shutil.rmtree(f"{self.cwd}/tests/tmp/optional_dep_project")
 
     def test_optional_dependency_parsing(self):

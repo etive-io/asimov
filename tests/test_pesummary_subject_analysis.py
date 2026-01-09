@@ -31,7 +31,6 @@ class PESummarySubjectAnalysisTests(unittest.TestCase):
         apply_page(file=f"{self.cwd}/tests/test_data/events_blueprint.yaml", ledger=self.ledger)
 
     def tearDown(self):
-        del(self.ledger)
         shutil.rmtree(f"{self.cwd}/tests/tmp/pesummary_subject_project")
 
     def test_pesummary_subject_analysis_creation(self):
