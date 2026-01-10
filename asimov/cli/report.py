@@ -571,6 +571,43 @@ def html(event, webdir):
             opacity: 0.7;
         }
 
+        /* Subject analysis source dependency styling - different styles based on source status */
+        .connection-edge {
+            transition: opacity 0.3s ease;
+        }
+        
+        .connection-edge:hover {
+            opacity: 1 !important;
+        }
+        
+        .connection-edge.connection-included .connection-line {
+            stroke: #28a745;
+            stroke-dasharray: none;
+            stroke-width: 2.5;
+            opacity: 0.8;
+        }
+        
+        .connection-edge.connection-pending .connection-line {
+            stroke: #ffc107;
+            stroke-dasharray: 5,5;
+            stroke-width: 2.5;
+            opacity: 0.7;
+            animation: flow 0.6s linear infinite;
+        }
+        
+        .connection-edge.connection-waiting .connection-line {
+            stroke: #586069;
+            stroke-dasharray: 2,3;
+            stroke-width: 2;
+            opacity: 0.4;
+        }
+        
+        @keyframes flow {
+            to {
+                stroke-dashoffset: 10;
+            }
+        }
+
         /* Modal styles */
         .modal-backdrop {
             display: none;
@@ -1139,7 +1176,7 @@ def html(event, webdir):
             svg.setAttribute('width', containerRect.width);
             svg.setAttribute('height', containerRect.height);
             
-            // Draw connections based on actual dependencies
+            // Draw regular connections based on actual dependencies
             allNodes.forEach(function(sourceNode) {
                 // Skip if source node is hidden
                 if (sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
@@ -1199,6 +1236,76 @@ def html(event, webdir):
                     } else {
                         path.classList.add('connection-line');
                     }
+                    
+                    svg.appendChild(path);
+                });
+            });
+            
+            // Draw subject analysis source dependencies with status-based styling
+            allNodes.forEach(function(subjectNode) {
+                // Only process subject analyses
+                if (subjectNode.dataset.isSubject !== 'true') return;
+                
+                var sourceAnalyses = subjectNode.dataset.sourceAnalyses;
+                if (!sourceAnalyses || !sourceAnalyses.trim()) return;
+                
+                // Parse source analyses: "name1:status1|name2:status2|..."
+                var sourceSpecs = sourceAnalyses.split('|').filter(function(spec) { return spec.trim(); });
+                var eventName = subjectNode.dataset.eventName || '';
+                
+                sourceSpecs.forEach(function(spec) {
+                    var parts = spec.split(':');
+                    var sourceName = parts[0];
+                    var sourceStatus = parts[1] || 'unknown';
+                    
+                    // Find the source analysis node
+                    var sourceNodeId = 'node-' + eventName + '-' + sourceName;
+                    var sourceNode = document.getElementById(sourceNodeId);
+                    
+                    if (!sourceNode || sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
+                        return;
+                    }
+                    
+                    var sourceRect = sourceNode.getBoundingClientRect();
+                    var targetRect = subjectNode.getBoundingClientRect();
+                    
+                    // Calculate connection points
+                    var x1 = sourceRect.right - containerRect.left;
+                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
+                    var x2 = targetRect.left - containerRect.left;
+                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
+                    
+                    // Create path for source analysis dependency
+                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    
+                    // Calculate control points for bezier curve
+                    var controlPointOffset = Math.abs(x2 - x1) / 2;
+                    var cx1 = x1 + controlPointOffset;
+                    var cy1 = y1;
+                    var cx2 = x2 - controlPointOffset;
+                    var cy2 = y2;
+                    
+                    // Create smooth cubic bezier curve
+                    var d = 'M ' + x1 + ' ' + y1 + 
+                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
+                                   cx2 + ' ' + cy2 + ', ' + 
+                                   x2 + ' ' + y2;
+                    
+                    path.setAttribute('d', d);
+                    
+                    // Determine path styling based on source analysis status
+                    if (sourceStatus === 'finished' || sourceStatus === 'uploaded') {
+                        path.classList.add('connection-included');
+                    } else if (sourceStatus === 'processing' || sourceStatus === 'running') {
+                        path.classList.add('connection-pending');
+                    } else {
+                        path.classList.add('connection-waiting');
+                    }
+                    
+                    // Add title for hover tooltip
+                    var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                    title.textContent = subjectNode.dataset.nodeName + ' uses ' + sourceName + ' (' + sourceStatus + ')';
+                    path.appendChild(title);
                     
                     svg.appendChild(path);
                 });

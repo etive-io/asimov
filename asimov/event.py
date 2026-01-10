@@ -609,6 +609,21 @@ class Event:
                             node_id = f"node-{self.name}-{node.name}"
                             data_id = f"analysis-data-{self.name}-{node.name}"
                             
+                            # For subject analyses, include source analysis names
+                            source_analyses_str = ''
+                            if is_subject and hasattr(node, '_analysis_spec_names'):
+                                # Build list of source analyses with their statuses for styling
+                                source_specs = []
+                                for source_name in node._analysis_spec_names:
+                                    # Find the source analysis status
+                                    source_status = 'unknown'
+                                    for n in self.graph.nodes():
+                                        if n.name == source_name:
+                                            source_status = n.status if hasattr(n, 'status') else 'unknown'
+                                            break
+                                    source_specs.append(f"{source_name}:{source_status}")
+                                source_analyses_str = '|'.join(source_specs)
+                            
                             card += f"""
                             <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
                                  id="{node_id}"
@@ -618,6 +633,7 @@ class Event:
                                  data-node-name="{node.name}"
                                  data-predecessors="{predecessor_names}"
                                  data-successors="{successor_names}"
+                                 data-source-analyses="{source_analyses_str}"
                                  data-is-subject="{str(is_subject).lower()}"
                                  data-is-stale="{str(is_stale).lower()}"
                                  onclick="openAnalysisModal('{data_id}')">
@@ -733,6 +749,21 @@ class Event:
                         node_id = f"node-{self.name}-{node.name}"
                         data_id = f"analysis-data-{self.name}-{node.name}"
                         
+                        # For subject analyses, include source analysis names
+                        source_analyses_str = ''
+                        if is_subject and hasattr(node, '_analysis_spec_names'):
+                            # Build list of source analyses with their statuses for styling
+                            source_specs = []
+                            for source_name in node._analysis_spec_names:
+                                # Find the source analysis status
+                                source_status = 'unknown'
+                                for n in self.graph.nodes():
+                                    if n.name == source_name:
+                                        source_status = n.status if hasattr(n, 'status') else 'unknown'
+                                        break
+                                source_specs.append(f"{source_name}:{source_status}")
+                            source_analyses_str = '|'.join(source_specs)
+                        
                         card += f"""
                         <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
                              id="{node_id}"
@@ -742,6 +773,7 @@ class Event:
                              data-node-name="{node.name}"
                              data-predecessors="{predecessor_names}"
                              data-successors="{successor_names}"
+                             data-source-analyses="{source_analyses_str}"
                              data-is-subject="{str(is_subject).lower()}"
                              data-is-stale="{str(is_stale).lower()}"
                              onclick="openAnalysisModal('{data_id}')">

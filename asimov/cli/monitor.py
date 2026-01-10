@@ -194,6 +194,7 @@ def monitor(ctx, event, update, dry_run, chain):
 
                     elif job.status.lower() == "completed":
                         pipe.after_completion()
+                        ledger.update_analysis_in_project_analysis(analysis)
                         click.echo(
                             "  \t  "
                             + click.style("●", "green")
@@ -229,6 +230,7 @@ def monitor(ctx, event, update, dry_run, chain):
 
                     elif analysis.status.lower() == "finished":
                         pipe.after_completion()
+                        ledger.update_analysis_in_project_analysis(analysis)
                         click.echo(
                             "  \t  "
                             + click.style("●", "green")
@@ -441,6 +443,7 @@ def monitor(ctx, event, update, dry_run, chain):
 
                     elif job.status.lower() == "completed":
                         pipe.after_completion()
+                        ledger.update_event(event)
                         click.echo(
                             "  \t  "
                             + click.style("●", "green")
@@ -585,7 +588,23 @@ def monitor(ctx, event, update, dry_run, chain):
                 "The event also has these analyses which are waiting on other analyses to complete:"
             )
             for production in others:
-                needs = ", ".join(production._needs)
+                # Make dependency specs readable even when _needs contains nested lists/dicts
+                try:
+                    formatted_needs = list(production.dependencies)
+                except Exception:
+                    formatted_needs = []
+
+                if not formatted_needs:
+                    def _fmt_need(need):
+                        if isinstance(need, list):
+                            return " & ".join(_fmt_need(n) for n in need)
+                        if isinstance(need, dict):
+                            return ", ".join(f"{k}: {v}" for k, v in need.items())
+                        return str(need)
+
+                    formatted_needs = [_fmt_need(need) for need in getattr(production, "_needs", [])]
+
+                needs = ", ".join(formatted_needs) if formatted_needs else "(no unmet dependencies recorded)"
                 click.echo(f"\t{production.name} which needs {needs}")
         # Post-monitor hooks
         if "hooks" in ledger.data:
