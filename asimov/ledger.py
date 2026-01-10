@@ -14,6 +14,7 @@ from asimov import config
 from asimov.analysis import ProjectAnalysis
 from asimov.event import Event, Production
 from asimov.utils import update, set_directory
+from filelock import FileLock
 
 
 class Ledger:
@@ -38,6 +39,7 @@ class YAMLLedger(Ledger):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
         self.location = location
+        self.lock = FileLock(f"{self.location}.lock", timeout=10)
         with open(location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 
@@ -112,15 +114,16 @@ class YAMLLedger(Ledger):
 
 
         """
-        self.data["events"] = list(self.events.values())
-        with set_directory(config.get("project", "root")):
-            # First produce a backup of the ledger
-            shutil.copy(self.location, self.location + ".bak")
-            with open(self.location + "_tmp", "w") as ledger_file:
-                ledger_file.write(yaml.dump(self.data, default_flow_style=False))
-                ledger_file.flush()
-                # os.fsync(ledger_file.fileno())
-            os.replace(self.location + "_tmp", self.location)
+        with self.lock:  # Acquire exclusive lock for thread-safe saving
+            self.data["events"] = list(self.events.values())
+            with set_directory(config.get("project", "root")):
+                # First produce a backup of the ledger
+                shutil.copy(self.location, self.location + ".bak")
+                with open(self.location + "_tmp", "w") as ledger_file:
+                    ledger_file.write(yaml.dump(self.data, default_flow_style=False))
+                    ledger_file.flush()
+                    # os.fsync(ledger_file.fileno())
+                os.replace(self.location + "_tmp", self.location)
 
     def add_subject(self, subject):
         """Add a new subject to the ledger."""

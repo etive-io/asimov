@@ -48,6 +48,8 @@ dependencies = [
 	     "lscsoft-glue>=2.0.0",
 	     "igwn-auth-utils>=0.2.1",
 	     "flask",
+	     "flask-cors>=4.0.0",
+	     "filelock>=3.13.0",
 	     "tinydb",
 	     "pillow>=10.2.0",
 	     "pydantic>=2.0.0"
@@ -83,5 +85,7 @@ packages = [
 	"asimov",
 	"asimov.pipelines",
 	"asimov.cli",
-	"asimov.configs"
+	"asimov.configs",
+	"asimov.api",
+	"asimov.api.blueprints"
 ]

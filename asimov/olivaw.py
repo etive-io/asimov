@@ -64,3 +64,20 @@ olivaw.add_command(production.production)
 # Review commands
 olivaw.add_command(review.review)
 olivaw.add_command(application.apply)
+
+
+@click.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=5000, type=int, help="Port to bind to")
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+def serve(host, port, debug):
+    """Start the REST API server."""
+    from asimov.api.app import create_app
+
+    app = create_app()
+    click.echo(f"Starting API server on {host}:{port}")
+    click.echo(f"Health check: http://{host}:{port}/api/v1/health")
+    app.run(host=host, port=port, debug=debug)
+
+
+olivaw.add_command(serve)
