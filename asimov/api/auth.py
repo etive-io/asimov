@@ -14,25 +14,86 @@ import os
 
 def load_api_keys():
     """
-    Load API keys from config file.
+    Load API keys from config file or environment variable.
+
+    Priority order:
+    1. _api_keys_cache (for testing only)
+    2. ASIMOV_API_KEYS_FILE environment variable
+    3. api_keys_file from config file
+    4. ASIMOV_API_KEY environment variable (single key:user pair)
+
+    Returns
+    -------
+    dict
+        Dictionary mapping API keys to usernames.
+
+    Raises
+    ------
+    RuntimeError
+        If no API keys are configured in production (when TESTING env var is not set).
+    """
+    # Check for test cache first (for unit tests)
+    global _api_keys_cache
+    if _api_keys_cache is not None:
+        return _api_keys_cache
+
+    # Try environment variable for API keys file path
+    keys_file = os.environ.get('ASIMOV_API_KEYS_FILE')
+
+    # Fall back to config file
+    if not keys_file:
+        try:
+            keys_file = config.get("api", "api_keys_file")
+        except Exception:
+            keys_file = None
+
+    # Load from file if it exists
+    if keys_file and os.path.exists(keys_file):
+        try:
+            with open(keys_file, 'r') as f:
+                data = yaml.safe_load(f)
+                keys = data.get('api_keys', {})
+                if keys:
+                    return keys
+        except Exception:
+            pass
+
+    # Try single API key from environment variable
+    single_key = os.environ.get('ASIMOV_API_KEY')
+    if single_key:
+        # Format: "token:username"
+        if ':' in single_key:
+            token, username = single_key.split(':', 1)
+            return {token: username}
+        else:
+            # If no username specified, use 'api-user'
+            return {single_key: 'api-user'}
+
+    # If we're not in testing mode and no keys were found, fail securely
+    if not os.environ.get('ASIMOV_TESTING'):
+        raise RuntimeError(
+            "No API keys configured. Set ASIMOV_API_KEYS_FILE or ASIMOV_API_KEY "
+            "environment variable, or configure api_keys_file in asimov.conf"
+        )
+
+    # In testing mode, return empty dict (tests will inject keys via _api_keys_cache)
+    return {}
+
+
+# Module-level cache that can be overridden for testing
+_api_keys_cache = None
+
+
+def get_api_keys():
+    """
+    Get API keys, loading them if not cached.
 
     Returns
     -------
     dict
         Dictionary mapping API keys to usernames.
     """
-    try:
-        keys_file = config.get("api", "api_keys_file")
-        if os.path.exists(keys_file):
-            with open(keys_file, 'r') as f:
-                data = yaml.safe_load(f)
-                return data.get('api_keys', {})
-    except Exception:
-        pass
-    return {}
-
-
-API_KEYS = load_api_keys()
+    return load_api_keys()
 
 
 def verify_token(token):
@@ -49,8 +110,9 @@ def verify_token(token):
     str or None
         Username if token is valid, None otherwise.
     """
-    if token in API_KEYS:
-        return API_KEYS[token]  # Returns username/identifier
+    keys = get_api_keys()
+    if token in keys:
+        return keys[token]  # Returns username/identifier
     return None
 
 
