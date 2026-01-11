@@ -8,11 +8,276 @@ import shutil
 import subprocess
 import time
 
+from typing import Dict, Any
+
 from .. import config
 
 from ..pipeline import Pipeline, PipelineException, PipelineLogger
 from .. import auth
 from .pesummary import PESummary
+from ..priors import PriorInterface
+
+
+class BilbyPriorInterface(PriorInterface):
+    """
+    Prior interface for the Bilby pipeline.
+    
+    Converts asimov prior specifications into bilby prior_dict format.
+    """
+    
+    def convert(self) -> Dict[str, Any]:
+        """
+        Convert asimov priors to bilby prior_dict format.
+        
+        Returns
+        -------
+        dict
+            Dictionary suitable for bilby's prior-dict config option
+        """
+        if self.prior_dict is None:
+            return {}
+        
+        # Return the dictionary representation
+        # The actual rendering to bilby format happens in the template
+        return self.prior_dict.to_dict()
+    
+    def get_default_prior(self) -> str:
+        """
+        Get the default prior set for bilby.
+        
+        Returns
+        -------
+        str
+            The default prior class name (e.g., "BBHPriorDict")
+        """
+        if self.prior_dict is None or self.prior_dict.default is None:
+            return "BBHPriorDict"
+        return self.prior_dict.default
+    
+    def to_prior_dict_string(self) -> str:
+        """
+        Generate a string representation of the prior_dict for bilby.
+        
+        This method creates a complete Python dictionary string that can be
+        directly inserted into the bilby configuration file, providing
+        maximum flexibility for prior specifications.
+        
+        Returns
+        -------
+        str
+            String representation of the prior dictionary for bilby
+        """
+        if self.prior_dict is None:
+            # Return default priors if none specified
+            return self._get_default_prior_dict_string()
+        
+        priors = self.prior_dict.to_dict()
+        prior_lines = []
+        
+        # Process each prior specification
+        for param_name, param_spec in priors.items():
+            if param_name == 'default':
+                # Skip the default key as it's handled separately
+                continue
+            
+            if not isinstance(param_spec, dict):
+                # Skip non-dict values
+                continue
+            
+            # Generate the prior string for this parameter
+            prior_str = self._format_prior(param_name, param_spec)
+            if prior_str:
+                prior_lines.append(prior_str)
+        
+        # Add default fixed priors for sky location and polarization,
+        # but only if they have not been specified by the user.
+        default_sky_priors = {
+            "dec": "dec = Cosine(name='dec')",
+            "ra": "ra = Uniform(name='ra', minimum=0, maximum=2 * np.pi, boundary='periodic')",
+            "theta_jn": "theta_jn = Sine(name='theta_jn')",
+            "psi": "psi = Uniform(name='psi', minimum=0, maximum=np.pi, boundary='periodic')",
+            "phase": "phase = Uniform(name='phase', minimum=0, maximum=2 * np.pi, boundary='periodic')",
+        }
+
+        # Determine which parameters have been explicitly specified in the prior dict
+        specified_params = {name for name in priors.keys() if name != "default"}
+
+        # Only append defaults for parameters that are not explicitly specified
+        for param_name, prior_str in default_sky_priors.items():
+            if param_name not in specified_params:
+                prior_lines.append(prior_str)
+        
+        # Join all lines with proper indentation
+        return "{\n   " + ",\n   ".join(prior_lines) + "}"
+    
+    def _format_prior(self, param_name: str, param_spec: Dict[str, Any]) -> str:
+        """
+        Format a single prior specification as a string.
+        
+        Parameters
+        ----------
+        param_name : str
+            The parameter name
+        param_spec : dict
+            The prior specification
+            
+        Returns
+        -------
+        str
+            Formatted prior string
+        """
+        # Map parameter names to bilby parameter names
+        name_map = {
+            'chirp mass': 'chirp_mass',
+            'mass ratio': 'mass_ratio',
+            'total mass': 'total_mass',
+            'mass 1': 'mass_1',
+            'mass 2': 'mass_2',
+            'spin 1': 'a_1',
+            'spin 2': 'a_2',
+            'tilt 1': 'tilt_1',
+            'tilt 2': 'tilt_2',
+            'phi 12': 'phi_12',
+            'phi jl': 'phi_jl',
+            'lambda 1': 'lambda_1',
+            'lambda 2': 'lambda_2',
+            'luminosity distance': 'luminosity_distance',
+            'geocentric time': 'geocent_time'
+        }
+        
+        bilby_name = name_map.get(param_name, param_name.replace(' ', '_'))
+        
+        # Get prior type and parameters
+        prior_type = param_spec.get('type')
+        minimum = param_spec.get('minimum')
+        maximum = param_spec.get('maximum')
+        boundary = param_spec.get('boundary')
+        
+        # Whitelist of allowed prior types to prevent code injection
+        allowed_prior_types = {
+            'Uniform', 'LogUniform', 'PowerLaw', 'Gaussian', 'TruncatedGaussian',
+            'Sine', 'Cosine', 'Interped', 'FromFile',
+            'DeltaFunction', 'Constraint',
+            'bilby.gw.prior.UniformInComponentsChirpMass',
+            'bilby.gw.prior.UniformInComponentsMassRatio',
+            'bilby.gw.prior.AlignedSpin',
+            'bilby.gw.prior.UniformComovingVolume',
+            'bilby.gw.prior.UniformSourceFrame',
+            'bilby.core.prior.Uniform',
+            'bilby.core.prior.LogUniform',
+            'bilby.core.prior.PowerLaw',
+            'bilby.core.prior.Gaussian',
+            'bilby.core.prior.TruncatedGaussian',
+            'bilby.core.prior.Sine',
+            'bilby.core.prior.Cosine',
+            'bilby.core.prior.Interped',
+            'bilby.core.prior.FromFile',
+            'bilby.core.prior.DeltaFunction',
+            'bilby.core.prior.Constraint'
+        }
+        
+        # Default prior types for common parameters
+        default_types = {
+            'chirp_mass': 'bilby.gw.prior.UniformInComponentsChirpMass',
+            'mass_ratio': 'bilby.gw.prior.UniformInComponentsMassRatio',
+            'mass_1': 'Constraint',
+            'mass_2': 'Constraint',
+            'total_mass': 'Constraint',
+            'a_1': 'Uniform',
+            'a_2': 'Uniform',
+            'tilt_1': 'Sine',
+            'tilt_2': 'Sine',
+            'phi_12': 'Uniform',
+            'phi_jl': 'Uniform',
+            'lambda_1': 'Uniform',
+            'lambda_2': 'Uniform',
+            'luminosity_distance': 'PowerLaw',
+            'geocent_time': 'Uniform'
+        }
+        
+        if prior_type is None:
+            prior_type = default_types.get(bilby_name, 'Uniform')
+        else:
+            # Validate that the prior type is in the whitelist
+            if prior_type not in allowed_prior_types:
+                raise ValueError(
+                    f"Prior type '{prior_type}' for parameter '{bilby_name}' is not in the "
+                    f"allowed list. This prevents potential code injection. "
+                    f"Allowed types: {sorted(allowed_prior_types)}"
+                )
+        
+        # Build the prior string
+        parts = [f"name='{bilby_name}'"]
+        
+        # Add minimum and maximum if present
+        if minimum is not None:
+            parts.append(f"minimum={minimum}")
+        elif bilby_name in ['a_1', 'a_2', 'phi_12', 'phi_jl', 'lambda_1', 'lambda_2']:
+            parts.append("minimum=0")
+        elif bilby_name in ['mass_1', 'mass_2']:
+            parts.append("minimum=1")
+        
+        if maximum is not None:
+            parts.append(f"maximum={maximum}")
+        elif bilby_name in ['a_1', 'a_2']:
+            parts.append("maximum=0.99")
+        elif bilby_name in ['phi_12', 'phi_jl']:
+            parts.append("maximum=2 * np.pi")
+        elif bilby_name in ['lambda_1', 'lambda_2']:
+            parts.append("maximum=5000")
+        elif bilby_name in ['mass_1', 'mass_2']:
+            parts.append("maximum=1000")
+        
+        # Add boundary condition if present
+        if boundary:
+            parts.append(f"boundary='{boundary}'")
+        elif bilby_name in ['phi_12', 'phi_jl']:
+            parts.append("boundary='periodic'")
+        
+        # Add unit for mass parameters
+        if bilby_name == 'chirp_mass':
+            parts.append("unit='$M_{\\odot}$'")
+        elif bilby_name == 'luminosity_distance':
+            parts.append("unit='Mpc'")
+        
+        # Add any other parameters from the spec
+        for key, value in param_spec.items():
+            if key not in ['type', 'minimum', 'maximum', 'boundary'] and value is not None:
+                key_name = key.replace(' ', '_')
+                if isinstance(value, str):
+                    parts.append(f"{key_name}='{value}'")
+                else:
+                    parts.append(f"{key_name}={value}")
+        
+        return f"{bilby_name} = {prior_type}({', '.join(parts)})"
+    
+    def _get_default_prior_dict_string(self) -> str:
+        """
+        Get the default prior dictionary string when no priors are specified.
+        
+        Returns
+        -------
+        str
+            Default prior dictionary string
+        """
+        return """{
+   chirp_mass = bilby.gw.prior.UniformInComponentsChirpMass(name='chirp_mass', minimum=1, maximum=100, unit='$M_{\\odot}$'),
+   mass_ratio = bilby.gw.prior.UniformInComponentsMassRatio(name='mass_ratio', minimum=0.05, maximum=1.0),
+   mass_1 = Constraint(name='mass_1', minimum=1, maximum=1000),
+   mass_2 = Constraint(name='mass_2', minimum=1, maximum=1000),
+   a_1 = Uniform(name='a_1', minimum=0, maximum=0.99),
+   a_2 = Uniform(name='a_2', minimum=0, maximum=0.99),
+   tilt_1 = Sine(name='tilt_1'),
+   tilt_2 = Sine(name='tilt_2'),
+   phi_12 = Uniform(name='phi_12', minimum=0, maximum=2 * np.pi, boundary='periodic'),
+   phi_jl = Uniform(name='phi_jl', minimum=0, maximum=2 * np.pi, boundary='periodic'),
+   luminosity_distance = PowerLaw(name='luminosity_distance', unit='Mpc'),
+   dec = Cosine(name='dec'),
+   ra = Uniform(name='ra', minimum=0, maximum=2 * np.pi, boundary='periodic'),
+   theta_jn = Sine(name='theta_jn'),
+   psi = Uniform(name='psi', minimum=0, maximum=np.pi, boundary='periodic'),
+   phase = Uniform(name='phase', minimum=0, maximum=2 * np.pi, boundary='periodic')
+}"""
 
 
 class Bilby(Pipeline):
@@ -25,7 +290,7 @@ class Bilby(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "bilby"
@@ -42,19 +307,33 @@ class Bilby(Pipeline):
 
         if not production.pipeline.lower() == "bilby":
             raise PipelineException("Pipeline mismatch")
+    
+    def get_prior_interface(self):
+        """
+        Get the bilby-specific prior interface.
+        
+        Returns
+        -------
+        BilbyPriorInterface
+            The prior interface for bilby
+        """
+        if self._prior_interface is None:
+            priors = self.production.priors
+            self._prior_interface = BilbyPriorInterface(priors)
+        return self._prior_interface
 
     def detect_completion(self):
         """
         Check for the production of the posterior file to signal that the job has completed.
         """
         self.logger.info("Checking if the bilby job has completed")
-        results_dir = glob.glob(f"{self.production.rundir}/result")
+        results_dir = glob.glob(f"{self.production.rundir}/final_result")
         if len(results_dir) > 0:  # dynesty_merge_result.json
             results_files = glob.glob(
-                os.path.join(results_dir[0], "*merge*_result.hdf5")
+                os.path.join(results_dir[0], "*.hdf5")
             )
             results_files += glob.glob(
-                os.path.join(results_dir[0], "*merge*_result.json")
+                os.path.join(results_dir[0], "*.json")
             )
             self.logger.debug(f"results files {results_files}")
             if len(results_files) > 0:
@@ -74,6 +353,31 @@ class Bilby(Pipeline):
         """
         pass
 
+    def get_sampler_kwargs(self):
+        defaults = self.production.meta.get("sampler", {}).get("sampler kwargs", {})
+        if self.production.dependencies:
+            productions = {}
+            for production in self.production.event.productions:
+                productions[production.name] = production
+            for previous_job in self.production.dependencies:
+                if "samples" in productions[previous_job].pipeline.collect_assets():
+                    posterior_file = productions[previous_job].pipeline.collect_assets()['samples']
+                    defaults['initial_result_file'] = posterior_file[0]
+        return defaults
+
+    def get_additional_files(self):
+        defaults = self.production.meta.get("scheduler", {}).get("additional files", [])
+        if self.production.dependencies:
+            productions = {}
+            for production in self.production.event.productions:
+                productions[production.name] = production
+            for previous_job in self.production.dependencies:
+                if "samples" in productions[previous_job].pipeline.collect_assets():
+                    posterior_file = productions[previous_job].pipeline.collect_assets()['samples']
+                    defaults.append(posterior_file[0])
+        return defaults
+
+    
     @auth.refresh_scitoken
     def build_dag(self, psds=None, user=None, clobber_psd=False, dryrun=False):
         """
@@ -126,19 +430,23 @@ class Bilby(Pipeline):
         else:
             job_label = self.production.name
 
-        default_executable = os.path.join(
-            config.get("pipelines", "environment"), "bin", "bilby_pipe"
-        )
-        executable = self.production.meta.get("executable", default_executable)
-        if (executable := shutil.which(executable)) is not None:
-            pass
-        elif (executable := shutil.which("bilby_pipe")) is not None:
-            pass
-        else:
-            raise PipelineException(
-                "Cannot find bilby_pipe executable",
-                production=self.production.name,
+        if not dryrun:
+            default_executable = os.path.join(
+                config.get("pipelines", "environment"), "bin", "bilby_pipe"
             )
+            executable = self.production.meta.get("executable", default_executable)
+            if (executable := shutil.which(executable)) is not None:
+                pass
+            elif (executable := shutil.which("bilby_pipe")) is not None:
+                pass
+            else:
+                raise PipelineException(
+                    "Cannot find bilby_pipe executable",
+                    production=self.production.name,
+                )
+        else:
+            executable = "bilby_pipe"
+            
         command = [
             executable,
             ini,
@@ -292,8 +600,8 @@ class Bilby(Pipeline):
             rundir = self.production.rundir
         self.logger.info(f"Rundir for samples: {rundir}")
         return glob.glob(
-            os.path.join(rundir, "result", "*_merge*_result.hdf5")
-        ) + glob.glob(os.path.join(rundir, "result", "*_merge*_result.json"))
+            os.path.join(rundir, "final_result", "*.hdf5")
+        ) + glob.glob(os.path.join(rundir, "final_result", "*.json"))
 
     def after_completion(self):
         post_pipeline = PESummary(production=self.production)

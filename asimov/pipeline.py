@@ -8,8 +8,12 @@ import warnings
 
 import asimov.analysis
 
-warnings.filterwarnings("ignore", module="htcondor")
-import htcondor  # NoQA
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
 
 from asimov import utils  # NoQA
 from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
@@ -100,6 +104,9 @@ class Pipeline:
         
         # Initialize scheduler instance (lazy-loaded via property)
         self._scheduler = None
+        
+        # Initialize prior interface
+        self._prior_interface = None
 
     @property
     def scheduler(self):
@@ -117,6 +124,7 @@ class Pipeline:
             from asimov.scheduler_utils import get_configured_scheduler
             self._scheduler = get_configured_scheduler()
         return self._scheduler
+
 
     def __repr__(self):
         return self.name.lower()
@@ -224,6 +232,25 @@ class Pipeline:
             self.production.status = "uploaded"
         except Exception as e:
             raise ValueError(e)
+    
+    def get_prior_interface(self):
+        """
+        Get the prior interface for this pipeline.
+        
+        This method should be overridden by pipeline-specific implementations
+        to return their custom prior interface.
+        
+        Returns
+        -------
+        PriorInterface
+            The prior interface for this pipeline
+        """
+        from asimov.priors import PriorInterface
+        
+        if self._prior_interface is None:
+            priors = self.production.priors
+            self._prior_interface = PriorInterface(priors)
+        return self._prior_interface
 
     def eject_job(self):
         """
