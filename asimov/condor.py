@@ -318,7 +318,7 @@ class CondorJobList:
             try:
                 schedd = htcondor.Schedd(schedd_ad)
                 jobs = schedd.query(
-                    opts=htcondor.htcondor.QueryOpts.DefaultMyJobsOnly,
+                    opts=htcondor.QueryOpts.DefaultMyJobsOnly,
                     projection=[
                         "ClusterId",
                         "Cmd",
