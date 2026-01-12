@@ -753,12 +753,25 @@ class Analysis:
             "quality" in production.meta or
             self.pipeline or
             self.dependencies or
-            self.resolved_dependencies
+            self.resolved_dependencies or
+            (hasattr(self, 'analyses') and self.analyses)
         )
         
         if has_details:
             card += """<a class="toggle-details">▶ Show details</a>"""
             card += """<div class="details-content">"""
+            
+            # Show source analyses for SubjectAnalysis
+            if hasattr(self, 'analyses') and self.analyses:
+                card += """<p class="asimov-source-analyses"><strong>Source Analyses:</strong><br>"""
+                source_analysis_html = []
+                for analysis in self.analyses:
+                    status_color = status_map.get(analysis.status, 'secondary')
+                    source_analysis_html.append(
+                        f"""<span class="badge badge-{status_color}">{analysis.name}</span>"""
+                    )
+                card += " ".join(source_analysis_html)
+                card += """</p>"""
             
             # Show dependencies
             if self.dependencies:
@@ -877,6 +890,12 @@ class Analysis:
 
         defaults = update(defaults, deepcopy(self.event.meta))
         dictionary = diff_dict(defaults, dictionary)
+        
+        # Ensure critical fields are always saved, even if they match defaults
+        # This is necessary to support old ledgers and ensure status updates persist
+        dictionary["status"] = self.status
+        if self.job_id is not None:
+            dictionary["job id"] = self.job_id
 
         if "repository" in self.meta:
             dictionary["repository"] = self.repository.url
@@ -1027,6 +1046,25 @@ class SubjectAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self._analysis_spec = self.meta.get("needs") or self.meta.get("analyses")
+        # Store the analysis spec names for refresh checking (if it's just a list of names).
+        # This lets us detect when dependencies have changed without blocking submission.
+        self._analysis_spec_names = []
+        if self._analysis_spec:
+            if isinstance(self._analysis_spec, list):
+                for spec_item in self._analysis_spec:
+                    if isinstance(spec_item, str):
+                        self._analysis_spec_names.append(spec_item)
+                    elif isinstance(spec_item, dict) and len(spec_item) == 1:
+                        # Single-key dict, add the value if it's a string
+                        key, val = list(spec_item.items())[0]
+                        if isinstance(val, str):
+                            self._analysis_spec_names.append(val)
+            elif isinstance(self._analysis_spec, str):
+                self._analysis_spec_names.append(self._analysis_spec)
+        
+        # SubjectAnalysis does not participate in the dependency graph.
+        # Its _needs remain empty so it doesn't block submission.
+        self._needs = []
         
         # Remove needs and analyses from meta to prevent duplication later
         if "needs" in self.meta:
@@ -1085,12 +1123,28 @@ class SubjectAnalysis(Analysis):
         self.pipeline = pipeline.lower()
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
-        self._needs = []
-
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
         else:
             self.comment = None
+
+    def source_analyses_ready(self):
+        """
+        Check if all source analyses are finished and ready for processing.
+        
+        Returns
+        -------
+        bool
+            True if all source analyses have finished status, False otherwise
+        """
+        if not hasattr(self, 'analyses') or not self.analyses:
+            return False
+        
+        finished_statuses = {"finished", "uploaded", "processing"}
+        for analysis in self.analyses:
+            if analysis.status not in finished_statuses:
+                return False
+        return True
 
     def to_dict(self, event=True):
         """

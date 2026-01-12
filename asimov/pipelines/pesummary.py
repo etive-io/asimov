@@ -458,9 +458,7 @@ class PESummary(Pipeline):
         self.logger.info(
             f"PE summary command: {self.executable} {' '.join(command)}",
         )
-
-        print(command)
-
+        
         if dryrun:
             print("PESUMMARY COMMAND")
             print("-----------------")
