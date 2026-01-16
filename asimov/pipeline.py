@@ -1,6 +1,7 @@
 """Defines the interface with generic analysis pipelines."""
 
 import configparser
+import glob
 import os
 import subprocess
 import time
@@ -166,6 +167,10 @@ class Pipeline:
         """
         Store the PE Summary results
         """
+        # Prefer absolute webroot; if relative, join to project root
+        webroot = config.get("general", "webroot")
+        if not os.path.isabs(webroot):
+            webroot = os.path.join(config.get("project", "root"), webroot)
 
         files = [
             f"{self.production.name}_pesummary.dat",
@@ -175,32 +180,43 @@ class Pipeline:
 
         for filename in files:
             results = os.path.join(
-                config.get("general", "webroot"),
+                webroot,
                 self.production.event.name,
                 self.production.name,
                 "pesummary",
                 "samples",
                 filename,
             )
-            store = Store(root=config.get("storage", "directory"))
-            store.add_file(
-                self.production.event.name, self.production.name, file=results
-            )
+            if os.path.exists(results):
+                try:
+                    store = Store(root=config.get("storage", "directory"))
+                    store.add_file(
+                        self.production.event.name, self.production.name, file=results
+                    )
+                except Exception as e:
+                    self.logger.warning("Failed to store result %s: %s", results, e)
+            else:
+                self.logger.debug("Result not found, skipping: %s", results)
 
     def detect_completion_processing(self):
-        files = f"{self.production.name}_pesummary.dat"
-        results = os.path.join(
-            config.get("general", "webroot"),
-            self.production.event.name,
-            self.production.name,
-            "pesummary",
-            "samples",
-            files,
-        )
-        if os.path.exists(results):
+        """Detect that PESummary post-processing outputs exist."""
+        webroot = config.get("general", "webroot")
+        if not os.path.isabs(webroot):
+            webroot = os.path.join(config.get("project", "root"), webroot)
+
+        base = os.path.join(webroot, self.production.event.name, self.production.name, "pesummary")
+
+        # Posterior file is the primary completion criterion
+        posterior = os.path.join(base, "samples", "posterior_samples.h5")
+        if os.path.exists(posterior):
             return True
-        else:
-            return False
+
+        # Legacy sentinel
+        legacy = os.path.join(base, "samples", f"{self.production.name}_pesummary.dat")
+        if os.path.exists(legacy):
+            return True
+
+        return False
 
     def after_processing(self):
         """
@@ -208,9 +224,10 @@ class Pipeline:
         """
         try:
             self.store_results()
-            self.production.status = "uploaded"
         except Exception as e:
-            raise ValueError(e)
+            # Do not block upload on storage failures; log and continue
+            self.logger.warning("Post-processing storage error: %s", e)
+        self.production.status = "uploaded"
     
     def get_prior_interface(self):
         """

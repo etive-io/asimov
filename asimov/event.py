@@ -262,17 +262,17 @@ class Event:
     def update_graph(self):
         """
         Rebuild the dependency graph based on current production dependencies.
-        
+
         This is necessary because dependency queries (e.g., property-based filters)
         are evaluated dynamically and may change as productions are added or modified.
         Call this method before using the graph to ensure edges reflect current state.
         """
         # Clear all edges but keep nodes
         self.graph.clear_edges()
-        
+
         # Rebuild edges based on current dependencies
         analysis_dict = {production.name: production for production in self.productions}
-        
+
         for production in self.productions:
             if production.dependencies:
                 for dependency_name in production.dependencies:
@@ -280,6 +280,13 @@ class Event:
                         continue
                     if dependency_name in analysis_dict:
                         self.graph.add_edge(analysis_dict[dependency_name], production)
+
+        # Re-resolve SubjectAnalysis dependencies now that all productions are loaded
+        # This ensures smart dependencies work correctly regardless of production order
+        from asimov.analysis import SubjectAnalysis
+        for production in self.productions:
+            if isinstance(production, SubjectAnalysis):
+                production.resolve_analyses()
 
     def __repr__(self):
         return f"<Event {self.name}>"
