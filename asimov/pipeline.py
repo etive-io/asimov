@@ -241,6 +241,19 @@ class Pipeline:
     def resurrect(self):
         pass
 
+    def while_running(self):
+        """
+        Define a hook to run while the job is running.
+        
+        This method is called during each monitor cycle while the analysis
+        is in the 'running' state. It can be used to collect intermediate
+        results, update progress information, etc.
+        
+        Note, this method should take no arguments, and should be over-written
+        in the specific pipeline implementation if required.
+        """
+        pass
+
     @classmethod
     def read_ini(cls, filepath):
         """

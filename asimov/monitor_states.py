@@ -1,0 +1,346 @@
+"""
+State machine implementation for asimov monitor loop.
+
+This module provides a clean state pattern implementation to replace the
+hard-coded if-elif chains in the monitor loop.
+"""
+
+from abc import ABC, abstractmethod
+import click
+from asimov import logger, LOGGER_LEVEL
+
+logger = logger.getChild("monitor_states")
+logger.setLevel(LOGGER_LEVEL)
+
+
+class MonitorState(ABC):
+    """
+    Abstract base class for monitor states.
+    
+    Each concrete state handles the monitoring logic for analyses in that state.
+    """
+    
+    @abstractmethod
+    def handle(self, context):
+        """
+        Handle the monitoring logic for an analysis in this state.
+        
+        Parameters
+        ----------
+        context : MonitorContext
+            The monitoring context containing the analysis, job, and other info.
+            
+        Returns
+        -------
+        bool
+            True if the state was handled successfully, False otherwise.
+        """
+        pass
+    
+    @property
+    @abstractmethod
+    def state_name(self):
+        """Return the name of this state."""
+        pass
+
+
+class ReadyState(MonitorState):
+    """Handle analyses in 'ready' state (not yet started)."""
+    
+    @property
+    def state_name(self):
+        return "ready"
+    
+    def handle(self, context):
+        """Ready analyses are not yet started, just report status."""
+        click.secho(f"  \t  ● {context.analysis.status.lower()}", fg="green")
+        logger.debug(f"Ready analysis: {context.analysis_path}")
+        return True
+
+
+class StopState(MonitorState):
+    """Handle analyses that need to be stopped."""
+    
+    @property
+    def state_name(self):
+        return "stop"
+    
+    def handle(self, context):
+        """Stop the analysis job on the scheduler."""
+        pipe = context.analysis.pipeline
+        logger.debug(f"Stop analysis: {context.analysis_path}")
+        
+        if not context.dry_run:
+            pipe.eject_job()
+            context.analysis.status = "stopped"
+            context.update_ledger()
+            click.secho("  \t  Stopped", fg="red")
+        else:
+            click.echo(f"\t\t{context.analysis.name} --> stopped")
+        
+        return True
+
+
+class RunningState(MonitorState):
+    """Handle analyses in 'running' state."""
+    
+    @property
+    def state_name(self):
+        return "running"
+    
+    def handle(self, context):
+        """Check if job is still running or has completed."""
+        analysis = context.analysis
+        job = context.job
+        
+        # Check if job has a condor ID
+        if context.has_condor_job():
+            return self._handle_condor_job(context)
+        else:
+            return self._handle_no_condor_job(context)
+    
+    def _handle_condor_job(self, context):
+        """Handle analysis with a condor job."""
+        job = context.job
+        analysis = context.analysis
+        
+        if job is None:
+            # Job not found, may have completed or been evicted
+            return self._handle_no_condor_job(context)
+        
+        if job.status.lower() == "idle":
+            click.echo(
+                "  \t  "
+                + click.style("●", "green")
+                + f" {analysis.name} is in the queue (condor id: {context.job_id})"
+            )
+            return True
+            
+        elif job.status.lower() == "running":
+            click.echo(
+                "  \t  "
+                + click.style("●", "green")
+                + f" {analysis.name} is running (condor id: {context.job_id})"
+            )
+            if "profiling" not in analysis.meta:
+                analysis.meta["profiling"] = {}
+            if hasattr(analysis.pipeline, "while_running"):
+                analysis.pipeline.while_running()
+            analysis.status = "running"
+            context.update_ledger()
+            return True
+            
+        elif job.status.lower() == "completed":
+            pipe = analysis.pipeline
+            pipe.after_completion()
+            click.echo(
+                "  \t  "
+                + click.style("●", "green")
+                + f" {analysis.name} has finished and post-processing has been started"
+            )
+            context.refresh_job_list()
+            return True
+            
+        elif job.status.lower() == "held":
+            click.echo(
+                "  \t  "
+                + click.style("●", "yellow")
+                + f" {analysis.name} is held on the scheduler"
+                + f" (condor id: {context.job_id})"
+            )
+            analysis.status = "stuck"
+            context.update_ledger()
+            return True
+            
+        return False
+    
+    def _handle_no_condor_job(self, context):
+        """Handle analysis without a condor job (may have completed)."""
+        analysis = context.analysis
+        pipe = analysis.pipeline
+        
+        if not pipe:
+            return False
+        
+        # Check if job has completed
+        if pipe.detect_completion():
+            import configparser
+            from asimov import config, condor
+            
+            if "profiling" not in analysis.meta:
+                analysis.meta["profiling"] = {}
+            
+            try:
+                config.get("condor", "scheduler")
+                analysis.meta["profiling"] = condor.collect_history(context.job_id)
+                context.clear_job_id()
+                context.update_ledger()
+            except (configparser.NoOptionError, configparser.NoSectionError):
+                logger.warning(
+                    "Could not collect condor profiling data as no "
+                    + "scheduler was specified in the config file."
+                )
+            except ValueError as e:
+                logger.error("Could not collect condor profiling data.")
+                logger.exception(e)
+            
+            analysis.status = "finished"
+            context.update_ledger()
+            pipe.after_completion()
+            click.secho(
+                f"  \t  ● {analysis.name} - Completion detected",
+                fg="green",
+            )
+            context.refresh_job_list()
+            return True
+        else:
+            # Job may have been evicted
+            click.echo(
+                "  \t  "
+                + click.style("●", "yellow")
+                + f" {analysis.name} is stuck; attempting a rescue"
+            )
+            try:
+                pipe.resurrect()
+                return True
+            except Exception:
+                analysis.status = "stuck"
+                click.echo(
+                    "  \t  "
+                    + click.style("●", "red")
+                    + f" {analysis.name} is stuck; automatic rescue was not possible"
+                )
+                context.update_ledger()
+                return False
+
+
+class FinishedState(MonitorState):
+    """Handle analyses in 'finished' state."""
+    
+    @property
+    def state_name(self):
+        return "finished"
+    
+    def handle(self, context):
+        """Trigger post-processing for finished analyses."""
+        pipe = context.analysis.pipeline
+        
+        if pipe:
+            pipe.after_completion()
+            click.echo(
+                "  \t  "
+                + click.style("●", "green")
+                + f" {context.analysis.name} has finished and post-processing has been started"
+            )
+            context.refresh_job_list()
+        
+        return True
+
+
+class ProcessingState(MonitorState):
+    """Handle analyses in 'processing' state."""
+    
+    @property
+    def state_name(self):
+        return "processing"
+    
+    def handle(self, context):
+        """Check if post-processing has completed."""
+        pipe = context.analysis.pipeline
+        
+        if not pipe:
+            return False
+        
+        # Check if processing has completed
+        if pipe.detect_completion_processing():
+            try:
+                pipe.after_processing()
+                click.echo(
+                    "  \t  "
+                    + click.style("●", "green")
+                    + f" {context.analysis.name} has been finalised and stored"
+                )
+                return True
+            except ValueError as e:
+                click.echo(e)
+                return False
+        else:
+            # Also check if the job has just completed
+            if pipe.detect_completion():
+                click.echo(
+                    "  \t  "
+                    + click.style("●", "green")
+                    + f" {context.analysis.name} has finished and post-processing is running"
+                )
+                return True
+            else:
+                click.echo(
+                    "  \t  "
+                    + click.style("●", "green")
+                    + f" {context.analysis.name} has finished and post-processing"
+                    + f" is stuck ({context.job_id})"
+                )
+                return False
+
+
+class StuckState(MonitorState):
+    """Handle analyses in 'stuck' state."""
+    
+    @property
+    def state_name(self):
+        return "stuck"
+    
+    def handle(self, context):
+        """Report that the analysis is stuck."""
+        click.echo(
+            "  \t  "
+            + click.style("●", "yellow")
+            + f" {context.analysis.name} is stuck"
+        )
+        return True
+
+
+class StoppedState(MonitorState):
+    """Handle analyses in 'stopped' state."""
+    
+    @property
+    def state_name(self):
+        return "stopped"
+    
+    def handle(self, context):
+        """Stopped analyses are not active, just report status."""
+        click.echo(
+            "  \t  "
+            + click.style("●", "red")
+            + f" {context.analysis.name} is stopped"
+        )
+        return True
+
+
+# State registry for mapping status strings to state handlers
+STATE_REGISTRY = {
+    "ready": ReadyState(),
+    "stop": StopState(),
+    "running": RunningState(),
+    "finished": FinishedState(),
+    "processing": ProcessingState(),
+    "stuck": StuckState(),
+    "stopped": StoppedState(),
+}
+
+
+def get_state_handler(status):
+    """
+    Get the appropriate state handler for a given status.
+    
+    Parameters
+    ----------
+    status : str
+        The status string (e.g., "running", "finished").
+        
+    Returns
+    -------
+    MonitorState
+        The state handler for this status, or None if not found.
+    """
+    return STATE_REGISTRY.get(status.lower())
