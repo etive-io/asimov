@@ -59,7 +59,7 @@ Run the complete monitoring cycle programmatically:
 
     from asimov.monitor_api import run_monitor
     
-    # Monitor all analyses
+    # Monitor all analyses (keyword-only arguments)
     results = run_monitor()
     
     # Monitor specific event
@@ -90,7 +90,7 @@ Query the current status of analyses:
     for name, status in statuses.items():
         print(f"{name}: {status}")
     
-    # Get status for specific event
+    # Get status for specific event (keyword-only arguments)
     statuses = get_analysis_status(event_name="GW150914")
     
     # Get status for specific analysis

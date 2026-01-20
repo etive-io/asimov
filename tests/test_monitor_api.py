@@ -73,8 +73,9 @@ class TestMonitorAPI(unittest.TestCase):
     @patch('asimov.monitor_api.condor')
     def test_run_monitor_no_condor(self, mock_condor):
         """Test run_monitor raises error when condor not available."""
-        # Mock condor error
-        mock_condor.CondorJobList.side_effect = mock_condor.htcondor.HTCondorLocateError()
+        # Mock condor error - use the class without instantiation
+        mock_condor.htcondor.HTCondorLocateError = Exception
+        mock_condor.CondorJobList.side_effect = Exception
         
         # Should raise RuntimeError
         with self.assertRaises(RuntimeError):

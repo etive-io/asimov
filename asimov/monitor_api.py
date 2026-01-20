@@ -18,6 +18,7 @@ logger.setLevel(LOGGER_LEVEL)
 
 
 def run_monitor(
+    *,
     event_filter: Optional[str] = None,
     dry_run: bool = False,
     verbose: bool = False
@@ -119,9 +120,10 @@ def run_monitor(
             )
             
             # Track status counts
-            if analysis.status.lower() in ACTIVE_STATES:
+            status_lower = analysis.status.lower()
+            if status_lower in ACTIVE_STATES:
                 results['active'] += 1
-            if analysis.status.lower() == 'stuck':
+            if status_lower == 'stuck':
                 results['stuck'] += 1
             if analysis.status in {"finished", "uploaded"}:
                 results['complete'] += 1
@@ -150,9 +152,10 @@ def run_monitor(
             )
             
             # Track status counts
-            if production.status.lower() in ACTIVE_STATES:
+            status_lower = production.status.lower()
+            if status_lower in ACTIVE_STATES:
                 results['active'] += 1
-            if production.status.lower() == 'stuck':
+            if status_lower == 'stuck':
                 results['stuck'] += 1
             if production.status in {"finished", "uploaded"}:
                 results['complete'] += 1
@@ -173,7 +176,7 @@ def run_monitor(
     return results
 
 
-def get_analysis_status(analysis_name: str = None, event_name: str = None) -> dict:
+def get_analysis_status(*, analysis_name: str = None, event_name: str = None) -> dict:
     """
     Get the current status of one or more analyses.
     
