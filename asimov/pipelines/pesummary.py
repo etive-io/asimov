@@ -129,7 +129,14 @@ class PESummary(Pipeline):
                 )[0]
                 assets["config"] = config_file
             except (AttributeError, IndexError):
-                pass
+                # If the event or repository is missing, or no production config
+                # is found, skip adding a config asset but continue without error.
+                logger.debug(
+                    "PESummary.collect_assets: no config found for production %s "
+                    "in category %s",
+                    getattr(self.production, "name", "<unknown>"),
+                    getattr(self, "category", "<none>"),
+                )
 
         return assets
 
@@ -213,7 +220,9 @@ class PESummary(Pipeline):
         if not is_subject_analysis:
             try:
                 current_assets = self.production.pipeline.collect_assets()
-            except Exception:
+            except (AttributeError, PipelineException):
+                # If the production has no pipeline or the pipeline fails in an
+                # expected way, fall back to using no current assets.
                 current_assets = {}
         
         # Determine labels and samples for PESummary
@@ -299,8 +308,8 @@ class PESummary(Pipeline):
                 self.production.resolved_dependencies = labels
                 self.logger.info(f"Stored resolved dependencies: {labels}")
             except Exception as e:
-                self.logger.error(f"Failed to store resolved_dependencies: {e}", exc_info=True)
-                raise PipelineException(f"Could not store resolved dependencies: {e}")
+                self.logger.error(f"Failed to store resolved_dependencies: {e}")
+                raise PipelineException(f"Could not store resolved dependencies: {e}") from e
 
             # Ensure that the run directory exists (race-free)
             os.makedirs(self.production.rundir, exist_ok=True)

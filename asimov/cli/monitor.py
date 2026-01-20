@@ -614,7 +614,7 @@ def monitor(ctx, event, update, dry_run, chain):
         # Auto-refresh combined summary pages (SubjectAnalysis) when stale and refreshable
         try:
             from asimov.analysis import SubjectAnalysis
-        except Exception:
+        except (ImportError, ModuleNotFoundError):
             SubjectAnalysis = None
 
         if SubjectAnalysis:

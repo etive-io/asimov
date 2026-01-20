@@ -51,7 +51,7 @@ def datetime_from_epoch(dt, tzinfo=UTC):
 
 def submit_job(submit_description):
     """
-    Submit a new job to the condor scheduller
+    Submit a new job to the condor scheduler
     """
 
     job = htcondor.Submit(submit_description)

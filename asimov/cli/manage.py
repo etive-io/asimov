@@ -490,7 +490,12 @@ def submit(event, update, dryrun):
                 try:
                     cluster_id = pipe.submit_dag(dryrun=dryrun)
                     if not dryrun:
-                        production.job_id = int(cluster_id[0])
+                        # cluster_id may be a scalar or a sequence; normalize it
+                        if isinstance(cluster_id, (list, tuple)):
+                            job_id_value = cluster_id[0]
+                        else:
+                            job_id_value = cluster_id
+                        production.job_id = int(job_id_value)
                         click.echo(
                             click.style("●", fg="green")
                             + f" Submitted {production.event.name}/{production.name}"

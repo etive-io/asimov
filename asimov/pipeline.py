@@ -1,7 +1,7 @@
 """Defines the interface with generic analysis pipelines."""
 
 import configparser
-import glob
+
 import os
 import subprocess
 import time
@@ -193,7 +193,7 @@ class Pipeline:
                     store.add_file(
                         self.production.event.name, self.production.name, file=results
                     )
-                except Exception as e:
+                except (OSError, IOError) as e:
                     self.logger.warning("Failed to store result %s: %s", results, e)
             else:
                 self.logger.debug("Result not found, skipping: %s", results)
