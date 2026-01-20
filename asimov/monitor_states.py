@@ -450,3 +450,10 @@ def get_state_handler(status):
 
 # Discover and register custom states on module import
 discover_custom_states()
+
+# Import custom states to ensure they're registered
+try:
+    from asimov import custom_states
+    logger.debug("Custom states module imported and registered")
+except ImportError:
+    logger.debug("Custom states module not available")

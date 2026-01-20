@@ -160,6 +160,7 @@ Advanced topics
    analyses
    build-process
    monitor-state-machine
+   monitor-api
    configuration
    test-interface
    clusters
