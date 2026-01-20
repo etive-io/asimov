@@ -237,7 +237,7 @@ class WaitState(MonitorState):
         
         click.echo(
             "  \t  "
-            + click.style("●", "gray")
+            + click.style("●", "cyan")
             + f" {analysis.name} is waiting"
         )
         
