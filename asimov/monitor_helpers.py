@@ -71,8 +71,9 @@ def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=No
         analysis_path=analysis_path
     )
     
-    # Get the appropriate state handler
-    state_handler = get_state_handler(analysis.status)
+    # Get the appropriate state handler (pipeline-specific if available)
+    pipeline = getattr(analysis, 'pipeline', None)
+    state_handler = get_state_handler(analysis.status, pipeline=pipeline)
     
     if state_handler:
         # Use the state handler to process this analysis

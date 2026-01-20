@@ -254,6 +254,48 @@ class Pipeline:
         """
         pass
 
+    def get_state_handlers(self):
+        """
+        Get pipeline-specific state handlers.
+        
+        This method allows pipelines to define their own custom state handlers
+        that override or extend the default state handlers. This enables
+        pipeline-specific behavior for different analysis states.
+        
+        Returns
+        -------
+        dict or None
+            A dictionary mapping state names (str) to MonitorState instances,
+            or None to use only default state handlers.
+            
+        Examples
+        --------
+        Override the running state handler:
+        
+        >>> from asimov.monitor_states import MonitorState
+        >>> 
+        >>> class CustomRunningState(MonitorState):
+        ...     @property
+        ...     def state_name(self):
+        ...         return "running"
+        ...     def handle(self, context):
+        ...         # Custom running logic for this pipeline
+        ...         return True
+        >>> 
+        >>> class MyPipeline(Pipeline):
+        ...     def get_state_handlers(self):
+        ...         return {
+        ...             "running": CustomRunningState(),
+        ...         }
+        
+        Note
+        ----
+        Pipeline-specific handlers take precedence over default handlers.
+        If a state is not defined in the pipeline's handlers, the default
+        handler will be used.
+        """
+        return None
+
     @classmethod
     def read_ini(cls, filepath):
         """

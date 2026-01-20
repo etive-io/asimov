@@ -281,6 +281,58 @@ Pipeline classes can now define custom hooks that are called during monitoring:
 
 All pipeline hook methods now have default implementations in the base ``Pipeline`` class, so pipelines only need to override the ones they use.
 
+Pipeline-Specific States
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Pipelines can define their own state handlers that override or extend the default state handlers. This enables pipeline-specific behavior for different analysis states:
+
+.. code-block:: python
+
+    from asimov.pipeline import Pipeline
+    from asimov.monitor_states import MonitorState
+    import click
+    
+    class BilbyRunningState(MonitorState):
+        """Custom running state for Bilby pipeline."""
+        
+        @property
+        def state_name(self):
+            return "running"
+        
+        def handle(self, context):
+            analysis = context.analysis
+            # Bilby-specific running logic
+            if self.check_bilby_progress(analysis):
+                click.echo(f"  \t  ● Bilby progress: 75%")
+            # Call default behavior
+            from asimov.monitor_states import RunningState
+            return RunningState().handle(context)
+        
+        def check_bilby_progress(self, analysis):
+            # Check bilby-specific progress indicators
+            return True
+    
+    class Bilby(Pipeline):
+        def get_state_handlers(self):
+            """Define Bilby-specific state handlers."""
+            return {
+                "running": BilbyRunningState(),
+            }
+
+**How it works:**
+
+1. When monitoring an analysis, the monitor checks if the pipeline defines custom state handlers via ``get_state_handlers()``
+2. If a custom handler exists for the current state, it's used
+3. If no custom handler exists, the default handler is used
+4. This allows pipelines to customize behavior without modifying core code
+
+**Use cases:**
+
+* Pipeline-specific progress monitoring
+* Custom completion detection
+* Special handling for pipeline-specific error states
+* Integration with pipeline-specific tools or services
+
 Migration Guide
 --------------
 

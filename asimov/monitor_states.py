@@ -431,21 +431,56 @@ def discover_custom_states():
         logger.debug(f"No custom states discovered: {e}")
 
 
-def get_state_handler(status):
+def get_state_handler(status, pipeline=None):
     """
     Get the appropriate state handler for a given status.
+    
+    This function first checks for pipeline-specific state handlers if a
+    pipeline is provided, then falls back to the global state registry.
+    This allows pipelines to define custom behavior for specific states.
     
     Parameters
     ----------
     status : str
         The status string (e.g., "running", "finished").
+    pipeline : Pipeline, optional
+        The pipeline instance. If provided, pipeline-specific state handlers
+        will be checked first before falling back to default handlers.
         
     Returns
     -------
     MonitorState
         The state handler for this status, or None if not found.
+        
+    Examples
+    --------
+    Get default state handler:
+    
+    >>> handler = get_state_handler("running")
+    
+    Get pipeline-specific handler with fallback:
+    
+    >>> handler = get_state_handler("running", pipeline=bilby_pipeline)
     """
-    return STATE_REGISTRY.get(status.lower())
+    status_lower = status.lower()
+    
+    # First, check for pipeline-specific state handlers
+    if pipeline is not None:
+        try:
+            pipeline_handlers = pipeline.get_state_handlers()
+            if pipeline_handlers and status_lower in pipeline_handlers:
+                logger.debug(
+                    f"Using pipeline-specific handler for state '{status_lower}' "
+                    f"from {pipeline.name}"
+                )
+                return pipeline_handlers[status_lower]
+        except Exception as e:
+            logger.warning(
+                f"Error getting pipeline state handlers from {pipeline.name}: {e}"
+            )
+    
+    # Fall back to global state registry
+    return STATE_REGISTRY.get(status_lower)
 
 
 # Discover and register custom states on module import

@@ -55,6 +55,56 @@ class TestStateRegistry(unittest.TestCase):
         ]
         for state in expected_states:
             self.assertIn(state, STATE_REGISTRY)
+    
+    def test_get_state_handler_with_pipeline(self):
+        """Test getting pipeline-specific state handler."""
+        # Create a custom state
+        class CustomRunningState(MonitorState):
+            @property
+            def state_name(self):
+                return "running"
+            
+            def handle(self, context):
+                return True
+        
+        # Create a mock pipeline with custom handlers
+        mock_pipeline = Mock()
+        mock_pipeline.name = "test_pipeline"
+        mock_pipeline.get_state_handlers = Mock(return_value={
+            "running": CustomRunningState()
+        })
+        
+        # Get handler with pipeline
+        handler = get_state_handler("running", pipeline=mock_pipeline)
+        
+        # Should be the custom handler
+        self.assertIsInstance(handler, CustomRunningState)
+    
+    def test_get_state_handler_pipeline_fallback(self):
+        """Test that handler falls back to default when pipeline has no custom handler."""
+        # Create a mock pipeline with no custom handler for 'ready'
+        mock_pipeline = Mock()
+        mock_pipeline.name = "test_pipeline"
+        mock_pipeline.get_state_handlers = Mock(return_value={
+            "running": Mock()  # Has custom running, but not ready
+        })
+        
+        # Get handler for 'ready' with pipeline
+        handler = get_state_handler("ready", pipeline=mock_pipeline)
+        
+        # Should fall back to default ReadyState
+        self.assertIsInstance(handler, ReadyState)
+    
+    def test_get_state_handler_pipeline_error(self):
+        """Test that errors in pipeline.get_state_handlers() are handled gracefully."""
+        # Create a mock pipeline that raises an error
+        mock_pipeline = Mock()
+        mock_pipeline.name = "test_pipeline"
+        mock_pipeline.get_state_handlers = Mock(side_effect=Exception("Test error"))
+        
+        # Should fall back to default without raising
+        handler = get_state_handler("running", pipeline=mock_pipeline)
+        self.assertIsInstance(handler, RunningState)
 
 
 class TestPluginSystem(unittest.TestCase):
