@@ -5,11 +5,12 @@ import traceback
 import os
 import click
 from copy import deepcopy
+from pathlib import Path
 
 from asimov import condor, config, logger, LOGGER_LEVEL
 from asimov import current_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
-from pathlib import Path
+from asimov.monitor_helpers import monitor_analysis
 
 logger = logger.getChild("cli").getChild("monitor")
 logger.setLevel(LOGGER_LEVEL)
@@ -143,224 +144,15 @@ def monitor(ctx, event, update, dry_run, chain):
     # also check the analyses in the project analyses
     for analysis in ledger.project_analyses:
         click.secho(f"Subjects: {analysis.subjects}", bold=True)
-
+        
         if analysis.status.lower() in ACTIVE_STATES:
-            logger.debug(f"Available analyses:  project_analyses/{analysis.name}")
-
-            click.echo(
-                "\t- "
-                + click.style(f"{analysis.name}", bold=True)
-                + click.style(f"[{analysis.pipeline}]", fg="green")
+            monitor_analysis(
+                analysis=analysis,
+                job_list=job_list,
+                ledger=ledger,
+                dry_run=dry_run,
+                analysis_path=f"project_analyses/{analysis.name}"
             )
-
-            # ignore the analysis if it is set to ready as it has not been started yet
-            if analysis.status.lower() == "ready":
-                click.secho(f"  \t  ● {analysis.status.lower()}", fg="green")
-                logger.debug(f"Ready production: project_analyses/{analysis.name}")
-                continue
-
-            # check if there are jobs that need to be stopped
-            if analysis.status.lower() == "stop":
-                pipe = analysis.pipeline
-                logger.debug(f"Stop production project_analyses/{analysis.name}")
-                if not dry_run:
-                    pipe.eject_job()
-                    analysis.status = "stopped"
-                    ledger.update_analysis_in_project_analysis(analysis)
-                    click.secho("   \t Stopped", fg="red")
-                else:
-                    click.echo("\t\t{analysis.name} --> stopped")
-                continue
-
-            # deal with the condor jobs
-            analysis_scheduler = analysis.meta["scheduler"].copy()
-            try:
-                if "job id" in analysis_scheduler:
-                    if not dry_run:
-                        if analysis_scheduler["job id"] in job_list.jobs:
-                            job = job_list.jobs[analysis_scheduler["job id"]]
-                        else:
-                            job = None
-                    else:
-                        logger.debug(
-                            f"Running analysis: {event}/{analysis.name}, cluster {analysis.job_id}"
-                        )
-                        click.echo("\t\tRunning under condor")
-                else:
-                    raise ValueError
-
-                if not dry_run:
-                    if job.status.lower() == "idle":
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {analysis.name} is in the queue (condor id: {analysis_scheduler['job id']})"
-                        )
-
-                    elif job.status.lower() == "running":
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {analysis.name} is running (condor id: {analysis_scheduler['job id']})"
-                        )
-                        if "profiling" not in analysis.meta:
-                            analysis.meta["profiling"] = {}
-                        if hasattr(analysis.pipeline, "while_running"):
-                            analysis.pipeline.while_running()
-                        analysis.status = "running"
-                        ledger.update_analysis_in_project_analysis(analysis)
-
-                    elif job.status.lower() == "completed":
-                        pipe.after_completion()
-                        ledger.update_analysis_in_project_analysis(analysis)
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {analysis.name} has finished and post-processing has been started"
-                        )
-                        job_list.refresh()
-
-                    elif job.status.lower() == "held":
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "yellow")
-                            + f" {analysis.name} is held on the scheduler"
-                            + f" (condor id: {analysis_scheduler['job id']})"
-                        )
-                        analysis.status = "stuck"
-                        ledger.update_analysis_in_project_analysis(analysis)
-                    else:
-                        continue
-
-            except (ValueError, AttributeError):
-                if analysis.pipeline:
-                    pipe = analysis.pipeline
-                    if analysis.status.lower() == "stop":
-                        pipe.eject_job()
-                        analysis.status = "stopped"
-                        ledger.update_analysis_in_project_analysis(analysis)
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "red")
-                            + f" {analysis.name} has been stopped"
-                        )
-                        job_list.refresh()
-
-                    elif analysis.status.lower() == "finished":
-                        pipe.after_completion()
-                        ledger.update_analysis_in_project_analysis(analysis)
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {analysis.name} has finished and post-processing has been started"
-                        )
-                        job_list.refresh()
-
-                    elif analysis.status.lower() == "processing":
-                        # Helper: detect PESummary outputs even if detect_completion_processing misses
-                        webdir = _webdir_for(analysis.event.name, analysis.name)
-
-                        pesummary_present = pipe.detect_completion_processing() or _has_pesummary_outputs(webdir)
-
-                        if pesummary_present:
-                            try:
-                                pipe.after_processing()
-                                ledger.update_analysis_in_project_analysis(analysis)
-                                click.echo(
-                                    "  \t  "
-                                    + click.style("●", "green")
-                                    + f" {analysis.name} has been finalised and stored"
-                                )
-                            except ValueError as e:
-                                click.echo(e)
-                        else:
-                            # If processing but no PESummary outputs yet, (re)submit post-processing.
-                            pipe.after_completion()
-                            analysis.status = "processing"
-                            ledger.update_analysis_in_project_analysis(analysis)
-                            click.echo(
-                                "  \t  "
-                                + click.style("●", "yellow")
-                                + f" {analysis.name} post-processing resubmitted"
-                            )
-
-                    elif (
-                        pipe.detect_completion()
-                        and analysis.status.lower() == "processing"
-                    ):
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {analysis.name} has finished and post-processing is running"
-                        )
-
-                    elif (
-                        pipe.detect_completion()
-                        and analysis.status.lower() == "running"
-                    ):
-                        if "profiling" not in analysis.meta:
-                            analysis.meta["profiling"] = {}
-
-                        try:
-                            config.get("condor", "scheduler")
-                            analysis.meta["profiling"] = condor.collect_history(
-                                analysis_scheduler["job id"]
-                            )
-                            analysis_scheduler["job id"] = None
-                            ledger.update_analysis_in_project_analysis(analysis)
-                        except (
-                            configparser.NoOptionError,
-                            configparser.NoSectionError,
-                        ):
-                            logger.warning(
-                                "Could not collect condor profiling data as no "
-                                + "scheduler was specified in the config file."
-                            )
-                        except ValueError as e:
-                            logger.error("Could not collect condor profiling data.")
-                            logger.exception(e)
-                            pass
-
-                        analysis.status = "finished"
-                        ledger.update_analysis_in_project_analysis(analysis)
-                        pipe.after_completion()
-                        click.secho(
-                            f"  \t  ● {analysis.name} - Completion detected",
-                            fg="green",
-                        )
-                        job_list.refresh()
-
-                    else:
-                        # job may have been evicted from the clusters
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "yellow")
-                            + f" {analysis.name} is stuck; attempting a rescue"
-                        )
-                        try:
-                            pipe.resurrect()
-                        except (
-                            Exception
-                        ):  # Sorry, but there are many ways the above command can fail
-                            analysis.status = "stuck"
-                            click.echo(
-                                "  \t  "
-                                + click.style("●", "red")
-                                + f" {analysis.name} is stuck; automatic rescue was not possible"
-                            )
-                            ledger.update_analysis_in_project_analysis(analysis)
-
-                if analysis.status == "stuck":
-                    click.echo(
-                        "  \t  "
-                        + click.style("●", "yellow")
-                        + f" {analysis.name} is stuck"
-                    )
-
-            ledger.update_analysis_in_project_analysis(analysis)
-            ledger.save()
-        if chain:
-            ctx.invoke(report.html)
 
     all_analyses = set(ledger.project_analyses)
     complete = {
@@ -398,9 +190,6 @@ def monitor(ctx, event, update, dry_run, chain):
             ctx.invoke(report.html)
 
     for event in sorted(ledger.get_event(event), key=lambda e: e.name):
-        stuck = 0
-        running = 0
-        finish = 0
         click.secho(f"{event.name}", bold=True)
         on_deck = [
             production
@@ -409,207 +198,15 @@ def monitor(ctx, event, update, dry_run, chain):
         ]
 
         for production in on_deck:
-            logger.debug(f"Available analyses: {event}/{production.name}")
-            click.echo(
-                "\t- "
-                + click.style(f"{production.name}", bold=True)
-                + click.style(f"[{production.pipeline}]", fg="green")
+            monitor_analysis(
+                analysis=production,
+                job_list=job_list,
+                ledger=ledger,
+                dry_run=dry_run,
+                analysis_path=f"{event.name}/{production.name}"
             )
 
-            # Jobs marked as ready can just be ignored as they've not been stood-up
-            if production.status.lower() == "ready":
-                click.secho(f"  \t  ● {production.status.lower()}", fg="green")
-                logger.debug(f"Ready production: {event}/{production.name}")
-                continue
-
-            # Deal with jobs which need to be stopped first
-            if production.status.lower() == "stop":
-                pipe = production.pipeline
-                logger.debug(f"Stop production: {event}/{production.name}")
-                if not dry_run:
-                    pipe.eject_job()
-                    production.status = "stopped"
-                    click.secho("  \tStopped", fg="red")
-                else:
-                    click.echo("\t\t{production.name} --> stopped")
-                continue
-
-            # Get the condor jobs
-            try:
-                if "job id" in production.meta["scheduler"]:
-                    if not dry_run:
-                        if production.job_id in job_list.jobs:
-                            job = job_list.jobs[production.job_id]
-                        else:
-                            job = None
-                    else:
-                        logger.debug(
-                            f"Running analysis: {event}/{production.name}, cluster {production.job_id}"
-                        )
-                        click.echo("\t\tRunning under condor")
-                else:
-                    raise ValueError  # Pass to the exception handler
-
-                if not dry_run:
-                    if job.status.lower() == "idle":
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {production.name} is in the queue (condor id: {production.job_id})"
-                        )
-
-                    elif job.status.lower() == "running":
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {production.name} is running (condor id: {production.job_id})"
-                        )
-                        if "profiling" not in production.meta:
-                            production.meta["profiling"] = {}
-                        production.status = "running"
-
-                    elif job.status.lower() == "completed":
-                        pipe.after_completion()
-                        ledger.update_event(event)
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {production.name} has finished and post-processing has been started"
-                        )
-                        job_list.refresh()
-
-                    elif job.status.lower() == "held":
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "yellow")
-                            + f" {production.name} is held on the scheduler"
-                            + f" (condor id: {production.job_id})"
-                        )
-                        production.status = "stuck"
-                        stuck += 1
-                    else:
-                        running += 1
-
-            except (ValueError, AttributeError):
-                if production.pipeline:
-
-                    pipe = production.pipeline
-
-                    if production.status.lower() == "stop":
-                        pipe.eject_job()
-                        production.status = "stopped"
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "red")
-                            + f" {production.name} has been stopped"
-                        )
-                        job_list.refresh()
-                    elif production.status.lower() == "finished":
-                        pipe.after_completion()
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {production.name} has finished and post-processing has been started"
-                        )
-                        job_list.refresh()
-                    elif production.status.lower() == "processing":
-                        # Need to check the upload has completed
-                        webdir = _webdir_for(event.name, production.name)
-
-                        pesummary_present = pipe.detect_completion_processing() or _has_pesummary_outputs(webdir)
-
-                        if pesummary_present:
-                            try:
-                                pipe.after_processing()
-                                ledger.update_event(event)
-                                click.echo(
-                                    "  \t  "
-                                    + click.style("●", "green")
-                                    + f" {production.name} has been finalised and stored"
-                                )
-                            except ValueError as e:
-                                click.echo(e)
-                        else:
-                            # If processing but no PESummary outputs yet, (re)submit post-processing.
-                            pipe.after_completion()
-                            production.status = "processing"
-                            ledger.update_event(event)
-                            click.echo(
-                                "  \t  "
-                                + click.style("●", "yellow")
-                                + f" {production.name} post-processing resubmitted"
-                            )
-                    elif (
-                        pipe.detect_completion()
-                        and production.status.lower() == "processing"
-                    ):
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "green")
-                            + f" {production.name} has finished and post-processing is running"
-                        )
-                    elif (
-                        pipe.detect_completion()
-                        and production.status.lower() == "running"
-                    ):
-                        # The job has been completed, collect its assets
-                        if "profiling" not in production.meta:
-                            production.meta["profiling"] = {}
-                        try:
-                            config.get("condor", "scheduler")
-                            production.meta["profiling"] = condor.collect_history(
-                                production.job_id
-                            )
-                            production.job_id = None
-                        except (
-                            configparser.NoOptionError,
-                            configparser.NoSectionError,
-                        ):
-                            logger.warning(
-                                "Could not collect condor profiling data as"
-                                " no scheduler was specified in the"
-                                " config file."
-                            )
-                        except ValueError as e:
-                            logger.error("Could not collect condor profiling data.")
-                            logger.exception(e)
-                            pass
-
-                        finish += 1
-                        production.status = "finished"
-                        pipe.after_completion()
-                        click.secho(
-                            f"  \t  ● {production.name} - Completion detected",
-                            fg="green",
-                        )
-                        job_list.refresh()
-                    else:
-                        # It looks like the job has been evicted from the cluster
-                        click.echo(
-                            "  \t  "
-                            + click.style("●", "yellow")
-                            + f" {production.name} is stuck; attempting a rescue"
-                        )
-                        try:
-                            pipe.resurrect()
-                        except (
-                            Exception
-                        ):  # Sorry, but there are many ways the above command can fail
-                            production.status = "stuck"
-                            click.echo(
-                                "  \t  "
-                                + click.style("●", "red")
-                                + f" {production.name} is stuck; automatic rescue was not possible"
-                            )
-
-                if production.status == "stuck":
-                    click.echo(
-                        "  \t  "
-                        + click.style("●", "yellow")
-                        + f" {production.name} is stuck"
-                    )
-
-            ledger.update_event(event)
+        ledger.update_event(event)
 
         # Auto-refresh combined summary pages (SubjectAnalysis) when stale and refreshable
         try:
