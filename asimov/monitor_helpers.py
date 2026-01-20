@@ -76,11 +76,10 @@ def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=No
     
     if state_handler:
         # Use the state handler to process this analysis
+        # Note: State handlers are responsible for calling context.update_ledger()
+        # when they make changes that need to be persisted
         try:
             success = state_handler.handle(context)
-            if success:
-                # Update ledger after successful handling
-                context.update_ledger()
             return success
         except Exception as e:
             logger.exception(f"Error handling state {analysis.status} for {analysis_path}")

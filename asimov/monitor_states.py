@@ -6,8 +6,9 @@ hard-coded if-elif chains in the monitor loop.
 """
 
 from abc import ABC, abstractmethod
+import configparser
 import click
-from asimov import logger, LOGGER_LEVEL
+from asimov import logger, LOGGER_LEVEL, config, condor
 
 logger = logger.getChild("monitor_states")
 logger.setLevel(LOGGER_LEVEL)
@@ -164,25 +165,25 @@ class RunningState(MonitorState):
         
         # Check if job has completed
         if pipe.detect_completion():
-            import configparser
-            from asimov import config, condor
-            
             if "profiling" not in analysis.meta:
                 analysis.meta["profiling"] = {}
             
-            try:
-                config.get("condor", "scheduler")
-                analysis.meta["profiling"] = condor.collect_history(context.job_id)
-                context.clear_job_id()
-                context.update_ledger()
-            except (configparser.NoOptionError, configparser.NoSectionError):
-                logger.warning(
-                    "Could not collect condor profiling data as no "
-                    + "scheduler was specified in the config file."
-                )
-            except ValueError as e:
-                logger.error("Could not collect condor profiling data.")
-                logger.exception(e)
+            # Only collect profiling if we have a valid job ID
+            job_id = context.job_id
+            if job_id:
+                try:
+                    config.get("condor", "scheduler")
+                    analysis.meta["profiling"] = condor.collect_history(job_id)
+                    context.clear_job_id()
+                    context.update_ledger()
+                except (configparser.NoOptionError, configparser.NoSectionError):
+                    logger.warning(
+                        "Could not collect condor profiling data as no "
+                        + "scheduler was specified in the config file."
+                    )
+                except ValueError as e:
+                    logger.error("Could not collect condor profiling data.")
+                    logger.exception(e)
             
             analysis.status = "finished"
             context.update_ledger()

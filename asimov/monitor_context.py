@@ -47,8 +47,10 @@ class MonitorContext:
         """Get the condor job ID for this analysis."""
         try:
             scheduler = self.analysis.meta.get("scheduler", {})
-            return scheduler.get("job id")
-        except (AttributeError, KeyError):
+            if scheduler:
+                return scheduler.get("job id")
+            return None
+        except (AttributeError, TypeError):
             return None
     
     @property
@@ -72,8 +74,9 @@ class MonitorContext:
     
     def clear_job_id(self):
         """Clear the job ID from the analysis metadata."""
-        if "scheduler" in self.analysis.meta:
-            self.analysis.meta["scheduler"]["job id"] = None
+        if hasattr(self.analysis, 'meta') and self.analysis.meta:
+            if "scheduler" in self.analysis.meta:
+                self.analysis.meta["scheduler"]["job id"] = None
     
     def update_ledger(self):
         """Update the analysis in the ledger."""

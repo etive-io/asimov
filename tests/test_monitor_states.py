@@ -310,6 +310,9 @@ class TestFinishedState(unittest.TestCase):
     @patch('asimov.monitor_states.click.echo')
     def test_handle_finished_state(self, mock_echo):
         """Test handling finished state."""
+        # Ensure pipeline has after_completion method
+        self.analysis.pipeline.after_completion = Mock()
+        
         result = self.state.handle(self.context)
         self.assertTrue(result)
         self.analysis.pipeline.after_completion.assert_called_once()

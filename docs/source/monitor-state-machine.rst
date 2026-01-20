@@ -146,12 +146,13 @@ To add a new state to the system:
 
 1. Create a new state class inheriting from ``MonitorState``
 2. Implement the ``state_name`` property and ``handle`` method
-3. Register the state in ``STATE_REGISTRY``
+3. Register the state in ``STATE_REGISTRY`` at module initialization
 
 Example:
 
 .. code-block:: python
 
+    # In asimov/monitor_states.py or your custom module
     from asimov.monitor_states import MonitorState, STATE_REGISTRY
     
     class ValidationState(MonitorState):
@@ -168,8 +169,15 @@ Example:
                 return True
             return False
     
-    # Register the new state
-    STATE_REGISTRY["validation"] = ValidationState()
+    # Register the new state at module level (recommended)
+    def register_custom_states():
+        """Register custom states with the monitor system."""
+        STATE_REGISTRY["validation"] = ValidationState()
+    
+    # Call during initialization
+    register_custom_states()
+
+**Note:** For production use, consider implementing a formal registration mechanism or plugin system rather than directly modifying ``STATE_REGISTRY`` after module import.
 
 Custom Pipeline Hooks
 ^^^^^^^^^^^^^^^^^^^^^
