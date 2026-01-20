@@ -3,8 +3,8 @@ Unit tests for the monitor state machine implementation.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
-import click
+from unittest.mock import Mock, patch
+
 
 from asimov.monitor_states import (
     MonitorState,

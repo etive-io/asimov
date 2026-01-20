@@ -3,7 +3,7 @@ Unit tests for custom monitor states.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 from asimov.custom_states import (
     ReviewState,

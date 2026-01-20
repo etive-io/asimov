@@ -3,10 +3,10 @@ Unit tests for the monitor helper functions.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 from asimov.monitor_helpers import monitor_analysis, monitor_analyses_list
-from asimov.cli import ACTIVE_STATES
+
 
 
 class TestMonitorAnalysis(unittest.TestCase):
@@ -143,7 +143,7 @@ class TestMonitorAnalysis(unittest.TestCase):
         mock_pipeline = Mock()
         self.analysis.pipeline = mock_pipeline
         
-        result = monitor_analysis(
+        monitor_analysis(
             self.analysis,
             self.job_list,
             self.ledger

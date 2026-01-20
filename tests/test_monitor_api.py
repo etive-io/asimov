@@ -3,7 +3,7 @@ Unit tests for the programmatic monitor API.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 from asimov.monitor_api import (
     run_monitor,

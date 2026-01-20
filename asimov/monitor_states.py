@@ -97,8 +97,8 @@ class RunningState(MonitorState):
     
     def handle(self, context):
         """Check if job is still running or has completed."""
-        analysis = context.analysis
-        job = context.job
+
+
         
         # Check if job has a condor ID
         if context.has_condor_job():

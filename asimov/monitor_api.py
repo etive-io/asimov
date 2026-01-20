@@ -6,7 +6,7 @@ programmatically, suitable for use in scripts, Jupyter notebooks, or custom
 automation workflows.
 """
 
-import sys
+
 from typing import Optional, List
 from asimov import condor, logger, LOGGER_LEVEL
 from asimov import current_ledger as ledger
