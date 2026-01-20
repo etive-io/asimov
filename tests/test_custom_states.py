@@ -109,6 +109,20 @@ class TestCustomStates(unittest.TestCase):
         state = WaitState()
         self.assertEqual(state.state_name, "wait")
         
+        # Mock _needs attribute as an empty list
+        self.analysis._needs = []
+        
+        result = state.handle(self.context)
+        self.assertTrue(result)
+    
+    @patch('asimov.custom_states.click.echo')
+    def test_wait_state_with_dependencies(self, mock_echo):
+        """Test WaitState handler with dependencies."""
+        state = WaitState()
+        
+        # Mock _needs attribute with some dependencies
+        self.analysis._needs = ["dep1", "dep2"]
+        
         result = state.handle(self.context)
         self.assertTrue(result)
     
