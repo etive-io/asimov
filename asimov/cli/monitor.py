@@ -641,6 +641,7 @@ def monitor(ctx, event, update, dry_run, chain):
                                 try:
                                     cluster_id = prod.pipeline.submit_dag()
                                     prod.status = "processing"
+                                    prod.job_id = cluster_id
                                     ledger.update_event(event)
                                     click.echo(
                                         "  \t  "

@@ -657,27 +657,35 @@ class Event:
                             rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                             approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                             
-                            # Get webdir for results links
-                            webdir = ''
-                            if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
-                                webdir = node.event.webdir
-                            
                             # Construct potential result page URLs based on pipeline
+                            # Use relative URLs from the report location
                             result_pages = []
-                            if webdir and rundir:
+                            if rundir:
                                 # Extract just the directory name from the full rundir path
                                 import os
                                 rundir_name = os.path.basename(rundir.rstrip('/'))
-                                base_url = f"{webdir}/{rundir_name}"
-                                
-                                # Add common result page patterns for different pipelines
-                                if pipeline_name.lower() == 'bilby':
-                                    result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
-                                    result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
-                                elif pipeline_name.lower() == 'bayeswave':
-                                    result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
-                                elif pipeline_name.lower() == 'pesummary':
-                                    result_pages.append(f"{base_url}/home.html|PESummary Results")
+
+                                # PESummary has special directory structure
+                                if pipeline_name.lower() == 'pesummary':
+                                    # PESummary relative URL structure: {event_name}/{production_name}/pesummary/
+                                    event_name = node.event.name if hasattr(node, 'event') else ''
+                                    production_name = node.name if hasattr(node, 'name') else rundir_name
+                                    if event_name and production_name:
+                                        result_pages.append(f"{event_name}/{production_name}/pesummary/home.html|PESummary Results")
+                                else:
+                                    # Check if we have webdir set for absolute URLs
+                                    webdir = ''
+                                    if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
+                                        webdir = node.event.webdir
+
+                                    if webdir:
+                                        # Use absolute URLs for non-PESummary pipelines if webdir is available
+                                        base_url = f"{webdir}/{rundir_name}"
+                                        if pipeline_name.lower() == 'bilby':
+                                            result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
+                                            result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
+                                        elif pipeline_name.lower() == 'bayeswave':
+                                            result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
                             
                             result_pages_str = ';;'.join(result_pages) if result_pages else ''
                             
@@ -796,27 +804,35 @@ class Event:
                         rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                         approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                         
-                        # Get webdir for results links
-                        webdir = ''
-                        if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
-                            webdir = node.event.webdir
-                        
                         # Construct potential result page URLs based on pipeline
+                        # Use relative URLs from the report location
                         result_pages = []
-                        if webdir and rundir:
+                        if rundir:
                             # Extract just the directory name from the full rundir path
                             import os
                             rundir_name = os.path.basename(rundir.rstrip('/'))
-                            base_url = f"{webdir}/{rundir_name}"
-                            
-                            # Add common result page patterns for different pipelines
-                            if pipeline_name.lower() == 'bilby':
-                                result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
-                                result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
-                            elif pipeline_name.lower() == 'bayeswave':
-                                result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
-                            elif pipeline_name.lower() == 'pesummary':
-                                result_pages.append(f"{base_url}/home.html|PESummary Results")
+
+                            # PESummary has special directory structure
+                            if pipeline_name.lower() == 'pesummary':
+                                # PESummary relative URL structure: {event_name}/{production_name}/pesummary/
+                                event_name = node.event.name if hasattr(node, 'event') else ''
+                                production_name = node.name if hasattr(node, 'name') else rundir_name
+                                if event_name and production_name:
+                                    result_pages.append(f"{event_name}/{production_name}/pesummary/home.html|PESummary Results")
+                            else:
+                                # Check if we have webdir set for absolute URLs
+                                webdir = ''
+                                if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
+                                    webdir = node.event.webdir
+
+                                if webdir:
+                                    # Use absolute URLs for non-PESummary pipelines if webdir is available
+                                    base_url = f"{webdir}/{rundir_name}"
+                                    if pipeline_name.lower() == 'bilby':
+                                        result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
+                                        result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
+                                    elif pipeline_name.lower() == 'bayeswave':
+                                        result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
                         
                         result_pages_str = ';;'.join(result_pages) if result_pages else ''
                         

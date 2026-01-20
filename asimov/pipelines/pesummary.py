@@ -297,8 +297,10 @@ class PESummary(Pipeline):
             # Persist resolved dependencies so we can detect staleness later
             try:
                 self.production.resolved_dependencies = labels
-            except Exception:
-                pass
+                self.logger.info(f"Stored resolved dependencies: {labels}")
+            except Exception as e:
+                self.logger.error(f"Failed to store resolved_dependencies: {e}", exc_info=True)
+                raise PipelineException(f"Could not store resolved dependencies: {e}")
 
             # Ensure that the run directory exists (race-free)
             os.makedirs(self.production.rundir, exist_ok=True)

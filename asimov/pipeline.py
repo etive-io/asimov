@@ -199,7 +199,13 @@ class Pipeline:
                 self.logger.debug("Result not found, skipping: %s", results)
 
     def detect_completion_processing(self):
-        """Detect that PESummary post-processing outputs exist."""
+        """
+        Detect that PESummary post-processing outputs exist and are valid.
+
+        For SubjectAnalysis productions, validates that the HDF5 file contains
+        all expected analyses as datasets. For regular analyses, just checks
+        that the file exists and is readable.
+        """
         webroot = config.get("general", "webroot")
         if not os.path.isabs(webroot):
             webroot = os.path.join(config.get("project", "root"), webroot)
@@ -209,7 +215,52 @@ class Pipeline:
         # Posterior file is the primary completion criterion
         posterior = os.path.join(base, "samples", "posterior_samples.h5")
         if os.path.exists(posterior):
-            return True
+            # Validate HDF5 file is readable and contains expected content
+            try:
+                import h5py
+                with h5py.File(posterior, 'r') as f:
+                    # For SubjectAnalysis, verify all expected analyses are present as datasets
+                    from asimov.analysis import SubjectAnalysis
+                    if isinstance(self.production, SubjectAnalysis):
+                        # Get the list of analyses that should be in the file
+                        # Use resolved_dependencies if available (what was actually processed)
+                        # Otherwise fall back to current analyses list
+                        expected_analyses = getattr(self.production, 'resolved_dependencies', None)
+                        if not expected_analyses and hasattr(self.production, 'analyses'):
+                            expected_analyses = [a.name for a in self.production.analyses]
+
+                        if expected_analyses:
+                            # Check if all expected analyses have datasets in the HDF5 file
+                            # PESummary stores each analysis as a top-level group
+                            available_keys = list(f.keys())
+                            missing = [name for name in expected_analyses if name not in available_keys]
+
+                            if missing:
+                                self.logger.warning(
+                                    f"HDF5 file exists but is missing expected analyses: {missing}. "
+                                    f"Available: {available_keys}"
+                                )
+                                return False
+
+                            self.logger.debug(f"HDF5 file validated with all expected analyses: {expected_analyses}")
+                    else:
+                        # For regular analysis, just verify the file has some content
+                        if len(f.keys()) == 0:
+                            self.logger.warning("HDF5 file exists but is empty")
+                            return False
+
+                    return True
+
+            except (OSError, IOError) as e:
+                self.logger.warning(f"HDF5 file exists but is not readable: {e}")
+                return False
+            except ImportError:
+                # h5py not available, fall back to simple existence check
+                self.logger.warning("h5py not available, cannot validate HDF5 contents")
+                return True
+            except Exception as e:
+                self.logger.warning(f"Error validating HDF5 file: {e}")
+                return False
 
         # Legacy sentinel
         legacy = os.path.join(base, "samples", f"{self.production.name}_pesummary.dat")

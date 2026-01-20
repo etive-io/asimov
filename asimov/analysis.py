@@ -863,7 +863,7 @@ class Analysis:
             dictionary[key] = value
 
         dictionary["status"] = self.status
-        dictionary["job id"] = self.job_id
+        # dictionary["job id"] = self.job_id
 
         # Remove duplicates of pipeline defaults
         pipeline_obj = getattr(self, "pipeline", None)
@@ -1158,7 +1158,7 @@ class SubjectAnalysis(Analysis):
     def source_analyses_ready(self):
         """
         Check if all source analyses are finished and ready for processing.
-        
+
         Returns
         -------
         bool
@@ -1166,12 +1166,35 @@ class SubjectAnalysis(Analysis):
         """
         if not hasattr(self, 'analyses') or not self.analyses:
             return False
-        
+
         finished_statuses = {"finished", "uploaded", "processing"}
         for analysis in self.analyses:
             if analysis.status not in finished_statuses:
                 return False
         return True
+
+    @property
+    def is_stale(self):
+        """
+        Check if this SubjectAnalysis is stale (dependencies have changed since it was run).
+
+        For SubjectAnalysis, we compare the current analyses (from smart dependency resolution)
+        with the resolved_dependencies that were stored when the job was submitted.
+
+        Returns
+        -------
+        bool
+            True if the analysis is stale (current analyses differ from resolved), False otherwise
+        """
+        if self.resolved_dependencies is None:
+            # Never run, so not stale
+            return False
+
+        # Get current analysis names from the analyses list
+        current_names = set([a.name for a in self.analyses]) if hasattr(self, 'analyses') and self.analyses else set()
+        resolved_names = set(self.resolved_dependencies)
+
+        return current_names != resolved_names
 
     def to_dict(self, event=True):
         """
@@ -1186,10 +1209,10 @@ class SubjectAnalysis(Analysis):
         dictionary = {}
         dictionary = update(dictionary, self.meta)
 
-        # Remove resolved_dependencies from SubjectAnalysis serialization
-        # since smart dependencies are re-evaluated on each load
-        if "resolved_dependencies" in dictionary:
-            dictionary.pop("resolved_dependencies")
+        # Keep resolved_dependencies in serialization for staleness detection
+        # This tracks which analyses were actually used when the job was run,
+        # allowing the refresh logic to detect when new analyses match the criteria
+        # Note: resolved_dependencies is set by PESummary.submit_dag() during submission
 
         if not event:
             dictionary["event"] = self.event.name
@@ -1226,9 +1249,7 @@ class SubjectAnalysis(Analysis):
         for key, value in self.meta.items():
             # Do not allow a meta-level "analyses" entry to overwrite the
             # explicitly constructed analyses list above.
-            # Also skip resolved_dependencies for SubjectAnalysis since smart dependencies
-            # are re-evaluated on each load and we don't want to persist resolved state.
-            if key in ["analyses", "resolved_dependencies"]:
+            if key in ["analyses"]:
                 continue
             dictionary[key] = value
 
