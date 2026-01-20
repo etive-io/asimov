@@ -4,6 +4,7 @@ Trigger handling code.
 
 import os
 import subprocess
+from copy import deepcopy
 
 import networkx as nx
 import yaml
@@ -135,7 +136,9 @@ class Event:
             expanded_productions = []
             for production in kwargs["productions"]:
                 # Expand the production if it has a strategy
-                expanded = expand_strategy(production)
+                # Make a deep copy to avoid modifying the original
+                production_copy = deepcopy(production)
+                expanded = expand_strategy(production_copy)
                 expanded_productions.extend(expanded)
             
             # Now create the actual production objects

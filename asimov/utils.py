@@ -136,15 +136,23 @@ def expand_strategy(production_dict):
     strategy = production_dict.pop('strategy')
     
     if 'matrix' not in strategy:
-        logger.warning("Strategy defined but no matrix found. Ignoring strategy.")
+        logger.warning(
+            "Strategy defined but no matrix found. "
+            "Add a matrix section or remove the strategy field."
+        )
         return [production_dict]
     
     matrix = strategy['matrix']
     
     # Get all combinations of matrix values
     param_names = list(matrix.keys())
-    param_values = [matrix[name] if isinstance(matrix[name], list) else [matrix[name]]
-                    for name in param_names]
+    param_values = []
+    for name in param_names:
+        # Ensure each parameter value is a list
+        if isinstance(matrix[name], list):
+            param_values.append(matrix[name])
+        else:
+            param_values.append([matrix[name]])
     
     combinations = list(itertools.product(*param_values))
     
