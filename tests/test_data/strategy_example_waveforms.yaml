@@ -1,0 +1,32 @@
+# Example: Testing multiple waveform approximants
+# This demonstrates how to use matrix strategies to test different waveform models
+# without manually creating multiple productions.
+
+kind: event
+name: GW150914_095045
+interferometers:
+  - H1
+  - L1
+data:
+  channels:
+    H1: H1:DCS-CALIB_STRAIN_C02
+    L1: L1:DCS-CALIB_STRAIN_C02
+  segment length: 4
+event time: 1126259462.391
+
+productions:
+  # This single production definition will create 3 separate analyses,
+  # one for each waveform approximant in the matrix
+  - name: WaveformComparison
+    pipeline: bilby
+    status: ready
+    strategy:
+      matrix:
+        waveform.approximant:
+          - IMRPhenomXPHM
+          - SEOBNRv4PHM
+          - IMRPhenomD
+    # Common settings that apply to all expanded productions
+    sampler:
+      sampler: dynesty
+      nlive: 1000

@@ -1,0 +1,40 @@
+# Example: Sampler comparison with different settings
+# This demonstrates testing different sampler configurations.
+
+kind: event
+name: GW150914_095045
+interferometers:
+  - H1
+  - L1
+data:
+  channels:
+    H1: H1:DCS-CALIB_STRAIN_C02
+    L1: L1:DCS-CALIB_STRAIN_C02
+  segment length: 4
+event time: 1126259462.391
+
+productions:
+  # Test different numbers of live points
+  - name: NliveComparison
+    pipeline: bilby
+    status: ready
+    waveform:
+      approximant: IMRPhenomXPHM
+    strategy:
+      matrix:
+        sampler.nlive:
+          - 1000
+          - 2000
+          - 4000
+    sampler:
+      sampler: dynesty
+      
+  # You can also mix strategy and non-strategy productions
+  - name: ControlRun
+    pipeline: bilby
+    status: ready
+    waveform:
+      approximant: IMRPhenomXPHM
+    sampler:
+      sampler: dynesty
+      nlive: 1000

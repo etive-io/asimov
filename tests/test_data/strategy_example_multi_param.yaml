@@ -1,0 +1,37 @@
+# Example: Multi-dimensional parameter comparison
+# This demonstrates a multi-parameter matrix strategy that creates
+# all combinations of waveforms and samplers.
+
+kind: event
+name: GW150914_095045
+interferometers:
+  - H1
+  - L1
+data:
+  channels:
+    H1: H1:DCS-CALIB_STRAIN_C02
+    L1: L1:DCS-CALIB_STRAIN_C02
+  segment length: 4
+event time: 1126259462.391
+
+productions:
+  # This will create 2 × 2 = 4 separate analyses:
+  # - IMRPhenomXPHM with dynesty
+  # - IMRPhenomXPHM with nestle
+  # - SEOBNRv4PHM with dynesty
+  # - SEOBNRv4PHM with nestle
+  - name: WaveformSamplerComparison
+    pipeline: bilby
+    status: ready
+    strategy:
+      matrix:
+        waveform.approximant:
+          - IMRPhenomXPHM
+          - SEOBNRv4PHM
+        sampler.sampler:
+          - dynesty
+          - nestle
+    # Common settings
+    sampler:
+      nlive: 1000
+      walks: 50
