@@ -1154,11 +1154,6 @@ class SubjectAnalysis(Analysis):
 
         # Keep productions in sync
         self.productions = self.analyses
-        
-        if "comment" in kwargs:
-            self.comment = kwargs["comment"]
-        else:
-            self.comment = None
 
     def source_analyses_ready(self):
         """
