@@ -10,6 +10,7 @@ In order to improve performance the code caches results from the query to the sc
 import os
 import datetime
 from dateutil import tz
+import configparser
 
 import warnings
 try:
@@ -50,31 +51,23 @@ def datetime_from_epoch(dt, tzinfo=UTC):
 
 def submit_job(submit_description):
     """
-    Submit a new job to the condor scheduller
+    Submit a new job to the condor scheduler
     """
 
-    hostname_job = htcondor.Submit(submit_description)
+    job = htcondor.Submit(submit_description)
 
     try:
-        # There should really be a specified submit node, and if there is, use it.
         schedulers = htcondor.Collector().locate(
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
-        schedd = htcondor.Schedd(schedulers)
-        logger.info(f"Found scheduler: {schedd}")
-    except:  # NoQA
-        # If you can't find a specified scheduler, try until it works
-        collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
-        logger.info("Searching for a scheduler of any kind")
-        for collector in collectors:
-            logger.info(f"Found {collector}")
-            schedd = htcondor.Schedd(collector)
-            try:
-                with schedd.transaction() as txn:
-                    cluster_id = hostname_job.queue(txn)
-                    break
-            except htcondor.HTCondorIOError:
-                logger.info(f"{collector} cannot receive jobs")
+    except (configparser.NoOptionError, configparser.NoSectionError):
+        schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+
+    schedd = htcondor.Schedd(schedulers)
+    
+    result = schedd.submit(job)
+    cluster_id = result.cluster()
+    logger.info(f"Submitted {cluster_id} to htcondor job queue.")
 
     return cluster_id
 
@@ -318,7 +311,7 @@ class CondorJobList:
             try:
                 schedd = htcondor.Schedd(schedd_ad)
                 jobs = schedd.query(
-                    opts=htcondor.htcondor.QueryOpts.DefaultMyJobsOnly,
+                    opts=htcondor.QueryOpts.DefaultMyJobsOnly,
                     projection=[
                         "ClusterId",
                         "Cmd",

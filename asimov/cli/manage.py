@@ -323,8 +323,9 @@ def submit(event, update, dryrun):
                 )
                 click.echo("Try running `asimov manage build` first.")
             try:
-                pipe.submit_dag(dryrun=dryrun)
+                cluster_id = pipe.submit_dag(dryrun=dryrun)
                 if not dryrun:
+                    analysis.job_id = int(cluster_id)
                     click.echo(
                         click.style("●", fg="green") + f" Submitted {analysis.name}"
                     )
@@ -487,8 +488,14 @@ def submit(event, update, dryrun):
                     )
                     click.echo("Try running `asimov manage build` first.")
                 try:
-                    pipe.submit_dag(dryrun=dryrun)
+                    cluster_id = pipe.submit_dag(dryrun=dryrun)
                     if not dryrun:
+                        # cluster_id may be a scalar or a sequence; normalize it
+                        if isinstance(cluster_id, (list, tuple)):
+                            job_id_value = cluster_id[0]
+                        else:
+                            job_id_value = cluster_id
+                        production.job_id = int(job_id_value)
                         click.echo(
                             click.style("●", fg="green")
                             + f" Submitted {production.event.name}/{production.name}"

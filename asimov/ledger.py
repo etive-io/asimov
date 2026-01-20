@@ -37,8 +37,8 @@ class YAMLLedger(Ledger):
     def __init__(self, location=None):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
-        self.location = location
-        with open(location, "r") as ledger_file:
+        self.location = os.path.abspath(location)
+        with open(self.location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 
         self.data["events"] = [

@@ -9,6 +9,7 @@ from copy import deepcopy
 from asimov import condor, config, logger, LOGGER_LEVEL
 from asimov import current_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
+from pathlib import Path
 
 logger = logger.getChild("cli").getChild("monitor")
 logger.setLevel(LOGGER_LEVEL)
@@ -102,6 +103,23 @@ def monitor(ctx, event, update, dry_run, chain):
     """
     Monitor condor jobs' status, and collect logging information.
     """
+
+    def _webdir_for(subject_name, production_name):
+        webroot = Path(config.get("general", "webroot"))
+        if not webroot.is_absolute():
+            webroot = Path(config.get("project", "root")) / webroot
+        return webroot / subject_name / production_name / "pesummary"
+
+    def _has_pesummary_outputs(webdir: Path) -> bool:
+        """Detect PESummary outputs when the default sentinel is missing."""
+        posterior = webdir / "samples" / "posterior_samples.h5"
+        if posterior.exists():
+            return True
+        # Accept legacy pesummary.dat as fallback
+        legacy = webdir / "samples" / f"{webdir.parent.name}_pesummary.dat"
+        if legacy.exists():
+            return True
+        return False
 
     logger.info("Running asimov monitor")
 
@@ -239,9 +257,15 @@ def monitor(ctx, event, update, dry_run, chain):
                         job_list.refresh()
 
                     elif analysis.status.lower() == "processing":
-                        if pipe.detect_completion_processing():
+                        # Helper: detect PESummary outputs even if detect_completion_processing misses
+                        webdir = _webdir_for(analysis.event.name, analysis.name)
+
+                        pesummary_present = pipe.detect_completion_processing() or _has_pesummary_outputs(webdir)
+
+                        if pesummary_present:
                             try:
                                 pipe.after_processing()
+                                ledger.update_analysis_in_project_analysis(analysis)
                                 click.echo(
                                     "  \t  "
                                     + click.style("●", "green")
@@ -250,11 +274,14 @@ def monitor(ctx, event, update, dry_run, chain):
                             except ValueError as e:
                                 click.echo(e)
                         else:
+                            # If processing but no PESummary outputs yet, (re)submit post-processing.
+                            pipe.after_completion()
+                            analysis.status = "processing"
+                            ledger.update_analysis_in_project_analysis(analysis)
                             click.echo(
                                 "  \t  "
-                                + click.style("●", "green")
-                                + f" {analysis.name} has finished and post-processing"
-                                + f" is stuck ({analysis_scheduler['job id']})"
+                                + click.style("●", "yellow")
+                                + f" {analysis.name} post-processing resubmitted"
                             )
 
                     elif (
@@ -339,7 +366,7 @@ def monitor(ctx, event, update, dry_run, chain):
     complete = {
         analysis
         for analysis in ledger.project_analyses
-        if analysis.status in {"finished", "uploaded"}
+        if analysis.status in {"finished", "uploaded", "processing"}
     }
     others = all_analyses - complete
     if len(others) > 0:
@@ -487,9 +514,14 @@ def monitor(ctx, event, update, dry_run, chain):
                         job_list.refresh()
                     elif production.status.lower() == "processing":
                         # Need to check the upload has completed
-                        if pipe.detect_completion_processing():
+                        webdir = _webdir_for(event.name, production.name)
+
+                        pesummary_present = pipe.detect_completion_processing() or _has_pesummary_outputs(webdir)
+
+                        if pesummary_present:
                             try:
                                 pipe.after_processing()
+                                ledger.update_event(event)
                                 click.echo(
                                     "  \t  "
                                     + click.style("●", "green")
@@ -498,11 +530,14 @@ def monitor(ctx, event, update, dry_run, chain):
                             except ValueError as e:
                                 click.echo(e)
                         else:
+                            # If processing but no PESummary outputs yet, (re)submit post-processing.
+                            pipe.after_completion()
+                            production.status = "processing"
+                            ledger.update_event(event)
                             click.echo(
                                 "  \t  "
-                                + click.style("●", "green")
-                                + f" {production.name} has finished and post-processing"
-                                + f" is stuck ({production.job_id})"
+                                + click.style("●", "yellow")
+                                + f" {production.name} post-processing resubmitted"
                             )
                     elif (
                         pipe.detect_completion()
@@ -576,11 +611,58 @@ def monitor(ctx, event, update, dry_run, chain):
 
             ledger.update_event(event)
 
+        # Auto-refresh combined summary pages (SubjectAnalysis) when stale and refreshable
+        try:
+            from asimov.analysis import SubjectAnalysis
+        except (ImportError, ModuleNotFoundError):
+            SubjectAnalysis = None
+
+        if SubjectAnalysis:
+            for prod in event.productions:
+                try:
+                    if isinstance(prod, SubjectAnalysis):
+                        if getattr(prod, "is_refreshable", False) and prod.source_analyses_ready():
+                            current_names = [a.name for a in getattr(prod, "analyses", [])]
+                            resolved = getattr(prod, "resolved_dependencies", None) or []
+
+                            # For SubjectAnalysis with smart dependencies (_analysis_spec),
+                            # the analyses list is automatically populated by dependency matching.
+                            # We should NOT manually add candidates; just check if the set changed.
+                            # For legacy explicit name lists, we may need to sync, but smart
+                            # dependencies handle this automatically during initialization.
+
+                            # Check if dependency set changed
+                            if set(current_names) != set(resolved):
+                                click.echo(
+                                    "  \t  "
+                                    + click.style("●", "yellow")
+                                    + f" {prod.name} has new/changed analyses; refreshing combined summary pages"
+                                )
+                                try:
+                                    cluster_id = prod.pipeline.submit_dag()
+                                    prod.status = "processing"
+                                    prod.job_id = cluster_id
+                                    ledger.update_event(event)
+                                    click.echo(
+                                        "  \t  "
+                                        + click.style("●", "green")
+                                        + f" {prod.name} submitted (cluster {cluster_id})"
+                                    )
+                                except Exception as exc:
+                                    logger.warning("Failed to refresh %s: %s", prod.name, exc)
+                                    click.echo(
+                                        "  \t  "
+                                        + click.style("●", "red")
+                                        + f" {prod.name} refresh failed: {exc}"
+                                    )
+                except Exception:
+                    pass
+
         all_productions = set(event.productions)
         complete = {
             production
             for production in event.productions
-            if production.status in {"finished", "uploaded"}
+            if production.status in {"finished", "uploaded", "processing"}
         }
         others = all_productions - set(event.get_all_latest()) - complete
         if len(others) > 0:
