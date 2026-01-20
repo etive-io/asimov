@@ -44,17 +44,17 @@ def start_dag(event, repo, prod, psd_prod="Prod0"):
     psds_dict = get_psds_rundir(event.data[f'{psd_prod}_rundir'])
 
     try:
-        out = repo.build_dag("C01_offline", prod, psds_dict)
+        repo.build_dag("analyses", prod, psds_dict)
         status = "DAG ready"
     except ValueError as e:
         status = "ini error"
         print(e)
 
     try: 
-        cluster = repo.submit_dag("C01_offline", prod)
+        cluster = repo.submit_dag("analyses", prod)
         job = condor.CondorJob(cluster)
         event.data[prod] = cluster
-        event.data[f"{prod}_rundir"] = f"/home/daniel.williams/events/O3/o3a_catalog/{event.title}/C01_offline/"+job.run_directory
+        event.data[f"{prod}_rundir"] = f"/home/daniel.williams/events/O3/o3a_catalog/{event.title}/analyses/"+job.run_directory
         event.update_data()
         event.state = "Productions running"
     except ValueError as e:
@@ -114,7 +114,7 @@ for event in events:
     
 
     try:
-        event_prods = repo.find_prods("C01_offline")
+        event_prods = repo.find_prods("analyses")
     except:
         print(f"No C01 runs in this repository")
         continue

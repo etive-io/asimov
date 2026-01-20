@@ -5,6 +5,7 @@ import traceback
 import os
 import click
 from copy import deepcopy
+from pathlib import Path
 
 from asimov import condor, config, logger, LOGGER_LEVEL
 from asimov import current_ledger as ledger
@@ -104,6 +105,23 @@ def monitor(ctx, event, update, dry_run, chain):
     Monitor condor jobs' status, and collect logging information.
     """
 
+    def _webdir_for(subject_name, production_name):
+        webroot = Path(config.get("general", "webroot"))
+        if not webroot.is_absolute():
+            webroot = Path(config.get("project", "root")) / webroot
+        return webroot / subject_name / production_name / "pesummary"
+
+    def _has_pesummary_outputs(webdir: Path) -> bool:
+        """Detect PESummary outputs when the default sentinel is missing."""
+        posterior = webdir / "samples" / "posterior_samples.h5"
+        if posterior.exists():
+            return True
+        # Accept legacy pesummary.dat as fallback
+        legacy = webdir / "samples" / f"{webdir.parent.name}_pesummary.dat"
+        if legacy.exists():
+            return True
+        return False
+
     logger.info("Running asimov monitor")
 
     if chain:
@@ -140,7 +158,7 @@ def monitor(ctx, event, update, dry_run, chain):
     complete = {
         analysis
         for analysis in ledger.project_analyses
-        if analysis.status in {"finished", "uploaded"}
+        if analysis.status in {"finished", "uploaded", "processing"}
     }
     others = all_analyses - complete
     if len(others) > 0:
@@ -190,11 +208,58 @@ def monitor(ctx, event, update, dry_run, chain):
 
         ledger.update_event(event)
 
+        # Auto-refresh combined summary pages (SubjectAnalysis) when stale and refreshable
+        try:
+            from asimov.analysis import SubjectAnalysis
+        except (ImportError, ModuleNotFoundError):
+            SubjectAnalysis = None
+
+        if SubjectAnalysis:
+            for prod in event.productions:
+                try:
+                    if isinstance(prod, SubjectAnalysis):
+                        if getattr(prod, "is_refreshable", False) and prod.source_analyses_ready():
+                            current_names = [a.name for a in getattr(prod, "analyses", [])]
+                            resolved = getattr(prod, "resolved_dependencies", None) or []
+
+                            # For SubjectAnalysis with smart dependencies (_analysis_spec),
+                            # the analyses list is automatically populated by dependency matching.
+                            # We should NOT manually add candidates; just check if the set changed.
+                            # For legacy explicit name lists, we may need to sync, but smart
+                            # dependencies handle this automatically during initialization.
+
+                            # Check if dependency set changed
+                            if set(current_names) != set(resolved):
+                                click.echo(
+                                    "  \t  "
+                                    + click.style("●", "yellow")
+                                    + f" {prod.name} has new/changed analyses; refreshing combined summary pages"
+                                )
+                                try:
+                                    cluster_id = prod.pipeline.submit_dag()
+                                    prod.status = "processing"
+                                    prod.job_id = cluster_id
+                                    ledger.update_event(event)
+                                    click.echo(
+                                        "  \t  "
+                                        + click.style("●", "green")
+                                        + f" {prod.name} submitted (cluster {cluster_id})"
+                                    )
+                                except Exception as exc:
+                                    logger.warning("Failed to refresh %s: %s", prod.name, exc)
+                                    click.echo(
+                                        "  \t  "
+                                        + click.style("●", "red")
+                                        + f" {prod.name} refresh failed: {exc}"
+                                    )
+                except Exception:
+                    pass
+
         all_productions = set(event.productions)
         complete = {
             production
             for production in event.productions
-            if production.status in {"finished", "uploaded"}
+            if production.status in {"finished", "uploaded", "processing"}
         }
         others = all_productions - set(event.get_all_latest()) - complete
         if len(others) > 0:
@@ -202,7 +267,23 @@ def monitor(ctx, event, update, dry_run, chain):
                 "The event also has these analyses which are waiting on other analyses to complete:"
             )
             for production in others:
-                needs = ", ".join(production._needs)
+                # Make dependency specs readable even when _needs contains nested lists/dicts
+                try:
+                    formatted_needs = list(production.dependencies)
+                except Exception:
+                    formatted_needs = []
+
+                if not formatted_needs:
+                    def _fmt_need(need):
+                        if isinstance(need, list):
+                            return " & ".join(_fmt_need(n) for n in need)
+                        if isinstance(need, dict):
+                            return ", ".join(f"{k}: {v}" for k, v in need.items())
+                        return str(need)
+
+                    formatted_needs = [_fmt_need(need) for need in getattr(production, "_needs", [])]
+
+                needs = ", ".join(formatted_needs) if formatted_needs else "(no unmet dependencies recorded)"
                 click.echo(f"\t{production.name} which needs {needs}")
         # Post-monitor hooks
         if "hooks" in ledger.data:

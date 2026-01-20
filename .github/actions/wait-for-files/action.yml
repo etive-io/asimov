@@ -1,0 +1,104 @@
+name: 'Wait for Files'
+description: 'Wait for specific files to appear with timeout'
+inputs:
+  patterns:
+    description: 'File patterns to wait for (one per line or space-separated)'
+    required: true
+  directory:
+    description: 'Directory to search in (relative to working directory)'
+    required: true
+  timeout:
+    description: 'Timeout in seconds'
+    default: '600'
+    required: false
+  interval:
+    description: 'Check interval in seconds'
+    default: '30'
+    required: false
+  working-directory:
+    description: 'Working directory relative to GITHUB_WORKSPACE'
+    default: '.'
+    required: false
+  require-all:
+    description: 'Require all patterns to match (true) or just one (false)'
+    default: 'true'
+    required: false
+  show-condor-q:
+    description: 'Show condor_q output during wait'
+    default: 'true'
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Wait for files
+      shell: bash -el {0}
+      run: |
+        set -euo pipefail
+        # Resolve inputs to concrete values in the outer shell
+        WORKDIR="$GITHUB_WORKSPACE/${{ inputs.working-directory }}"
+        DIRECTORY="${{ inputs.directory }}"
+        TIMEOUT="${{ inputs.timeout }}"
+        INTERVAL="${{ inputs.interval }}"
+        REQUIRE_ALL="${{ inputs.require-all }}"
+        SHOW_Q="${{ inputs.show-condor-q }}"
+        PATTERNS_INPUT='${{ inputs.patterns }}'
+
+        cd "$WORKDIR" || { echo "No such directory: $WORKDIR" >&2; exit 1; }
+        cat *.err || true
+        cat *.out || true
+        cat *.log || true
+
+        # Normalize patterns into one-per-line (split on spaces and newlines)
+        PATTERN_LINES=$(printf '%s\n' "$PATTERNS_INPUT" | tr ' \t' '\n')
+
+        # Pre-count patterns (ignore empty/comment lines)
+        PATTERN_COUNT=0
+        while IFS= read -r pattern; do
+          [[ -z "${pattern//[[:space:]]/}" ]] && continue
+          [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
+          PATTERN_COUNT=$((PATTERN_COUNT + 1))
+        done <<< "$PATTERN_LINES"
+
+        ELAPSED=0
+        echo "Waiting for files in $DIRECTORY; patterns: $PATTERN_COUNT; timeout: $TIMEOUT; interval: $INTERVAL"
+
+        while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+          # Show condor queue as submituser if requested
+          if [ "$SHOW_Q" = "true" ]; then
+            su - submituser -s /bin/bash -c 'condor_q' || true
+            su - submituser -s /bin/bash -c 'condor_q -hold' || true
+          fi
+
+          FOUND_COUNT=0
+          while IFS= read -r pattern; do
+            [[ -z "${pattern//[[:space:]]/}" ]] && continue
+            [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
+            COUNT=0
+            for f in "$DIRECTORY"/$pattern; do
+              [ -e "$f" ] && COUNT=$((COUNT + 1))
+            done
+            [ "$COUNT" -gt 0 ] && FOUND_COUNT=$((FOUND_COUNT + 1))
+          done <<< "$PATTERN_LINES"
+
+          if [ "$REQUIRE_ALL" = "true" ]; then
+            if [ "$FOUND_COUNT" -eq "$PATTERN_COUNT" ] && [ "$PATTERN_COUNT" -gt 0 ]; then
+              echo "All file patterns found!"
+              ls -lh "$DIRECTORY"/ || true
+              exit 0
+            fi
+          else
+            if [ "$FOUND_COUNT" -gt 0 ]; then
+              echo "Files found! ($FOUND_COUNT/$PATTERN_COUNT)"
+              ls -lh "$DIRECTORY"/ || true
+              exit 0
+            fi
+          fi
+
+          echo "Elapsed: ${ELAPSED}s / ${TIMEOUT}s - Files not yet present ($FOUND_COUNT/$PATTERN_COUNT patterns matched), waiting..."
+          sleep "$INTERVAL"
+          ELAPSED=$((ELAPSED + INTERVAL))
+        done
+
+        echo "Timeout waiting for files in $DIRECTORY"
+        ls -R "$DIRECTORY"/ || true
+        exit 1
