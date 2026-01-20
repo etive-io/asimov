@@ -7,8 +7,14 @@ hard-coded if-elif chains in the monitor loop.
 
 from abc import ABC, abstractmethod
 import configparser
+import sys
 import click
 from asimov import logger, LOGGER_LEVEL, config, condor
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 logger = logger.getChild("monitor_states")
 logger.setLevel(LOGGER_LEVEL)
@@ -330,6 +336,101 @@ STATE_REGISTRY = {
 }
 
 
+def register_state(state_handler):
+    """
+    Register a custom state handler.
+    
+    This function allows custom state handlers to be registered at runtime,
+    either programmatically or via entry points.
+    
+    Parameters
+    ----------
+    state_handler : MonitorState
+        An instance of a MonitorState subclass to register.
+        
+    Examples
+    --------
+    >>> class CustomState(MonitorState):
+    ...     @property
+    ...     def state_name(self):
+    ...         return "custom"
+    ...     def handle(self, context):
+    ...         return True
+    >>> register_state(CustomState())
+    """
+    if not isinstance(state_handler, MonitorState):
+        raise TypeError(
+            f"State handler must be an instance of MonitorState, "
+            f"got {type(state_handler).__name__}"
+        )
+    
+    state_name = state_handler.state_name
+    if state_name in STATE_REGISTRY:
+        logger.warning(
+            f"Overwriting existing state handler for '{state_name}'"
+        )
+    
+    STATE_REGISTRY[state_name] = state_handler
+    logger.debug(f"Registered state handler for '{state_name}'")
+
+
+def discover_custom_states():
+    """
+    Discover and register custom state handlers via entry points.
+    
+    This function looks for entry points in the 'asimov.monitor.states' group
+    and automatically registers any custom state handlers defined by plugins.
+    
+    Entry points should return an instance of a MonitorState subclass.
+    
+    Examples
+    --------
+    In your package's setup.py or pyproject.toml:
+    
+    .. code-block:: python
+    
+        # setup.py
+        entry_points={
+            'asimov.monitor.states': [
+                'validation = mypackage.states:ValidationState',
+            ]
+        }
+        
+    Or in pyproject.toml:
+    
+    .. code-block:: toml
+    
+        [project.entry-points."asimov.monitor.states"]
+        validation = "mypackage.states:ValidationState"
+    """
+    try:
+        discovered_states = entry_points(group="asimov.monitor.states")
+        
+        for state_entry in discovered_states:
+            try:
+                # Load the state handler class or instance
+                state_obj = state_entry.load()
+                
+                # If it's a class, instantiate it
+                if isinstance(state_obj, type):
+                    state_handler = state_obj()
+                else:
+                    state_handler = state_obj
+                
+                # Register the state
+                register_state(state_handler)
+                logger.info(
+                    f"Discovered and registered custom state '{state_entry.name}' "
+                    f"from {state_entry.value}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load custom state '{state_entry.name}': {e}"
+                )
+    except Exception as e:
+        logger.debug(f"No custom states discovered: {e}")
+
+
 def get_state_handler(status):
     """
     Get the appropriate state handler for a given status.
@@ -345,3 +446,7 @@ def get_state_handler(status):
         The state handler for this status, or None if not found.
     """
     return STATE_REGISTRY.get(status.lower())
+
+
+# Discover and register custom states on module import
+discover_custom_states()

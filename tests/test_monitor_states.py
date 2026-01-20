@@ -16,6 +16,8 @@ from asimov.monitor_states import (
     StuckState,
     StoppedState,
     get_state_handler,
+    register_state,
+    discover_custom_states,
     STATE_REGISTRY,
 )
 from asimov.monitor_context import MonitorContext
@@ -53,6 +55,128 @@ class TestStateRegistry(unittest.TestCase):
         ]
         for state in expected_states:
             self.assertIn(state, STATE_REGISTRY)
+
+
+class TestPluginSystem(unittest.TestCase):
+    """Test the plugin system for custom states."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        # Save the original registry
+        self.original_registry = STATE_REGISTRY.copy()
+    
+    def tearDown(self):
+        """Restore the original registry."""
+        STATE_REGISTRY.clear()
+        STATE_REGISTRY.update(self.original_registry)
+    
+    def test_register_state(self):
+        """Test registering a custom state."""
+        class CustomState(MonitorState):
+            @property
+            def state_name(self):
+                return "custom"
+            
+            def handle(self, context):
+                return True
+        
+        custom = CustomState()
+        register_state(custom)
+        
+        self.assertIn("custom", STATE_REGISTRY)
+        self.assertEqual(STATE_REGISTRY["custom"], custom)
+    
+    def test_register_state_invalid_type(self):
+        """Test that registering non-MonitorState raises TypeError."""
+        with self.assertRaises(TypeError):
+            register_state("not a state")
+    
+    def test_register_state_overwrites_warning(self):
+        """Test that overwriting existing state logs warning."""
+        class CustomReady(MonitorState):
+            @property
+            def state_name(self):
+                return "ready"
+            
+            def handle(self, context):
+                return True
+        
+        with patch('asimov.monitor_states.logger') as mock_logger:
+            register_state(CustomReady())
+            mock_logger.warning.assert_called_once()
+    
+    @patch('asimov.monitor_states.entry_points')
+    def test_discover_custom_states(self, mock_entry_points):
+        """Test discovering custom states via entry points."""
+        # Create a mock custom state
+        class MockCustomState(MonitorState):
+            @property
+            def state_name(self):
+                return "mock_custom"
+            
+            def handle(self, context):
+                return True
+        
+        # Mock entry point
+        mock_ep = Mock()
+        mock_ep.name = "mock_custom"
+        mock_ep.value = "test.states:MockCustomState"
+        mock_ep.load.return_value = MockCustomState
+        
+        mock_entry_points.return_value = [mock_ep]
+        
+        # Clear registry before discovery
+        STATE_REGISTRY.clear()
+        STATE_REGISTRY.update(self.original_registry)
+        
+        # Discover states
+        discover_custom_states()
+        
+        # Check that custom state was registered
+        self.assertIn("mock_custom", STATE_REGISTRY)
+    
+    @patch('asimov.monitor_states.entry_points')
+    def test_discover_custom_states_instance(self, mock_entry_points):
+        """Test discovering custom states that return instances."""
+        class MockCustomState(MonitorState):
+            @property
+            def state_name(self):
+                return "mock_instance"
+            
+            def handle(self, context):
+                return True
+        
+        # Mock entry point that returns an instance
+        mock_instance = MockCustomState()
+        mock_ep = Mock()
+        mock_ep.name = "mock_instance"
+        mock_ep.value = "test.states:custom_state_instance"
+        mock_ep.load.return_value = mock_instance
+        
+        mock_entry_points.return_value = [mock_ep]
+        
+        STATE_REGISTRY.clear()
+        STATE_REGISTRY.update(self.original_registry)
+        
+        discover_custom_states()
+        
+        self.assertIn("mock_instance", STATE_REGISTRY)
+        self.assertEqual(STATE_REGISTRY["mock_instance"], mock_instance)
+    
+    @patch('asimov.monitor_states.entry_points')
+    def test_discover_custom_states_error_handling(self, mock_entry_points):
+        """Test that errors in loading custom states are handled gracefully."""
+        # Mock entry point that raises an error
+        mock_ep = Mock()
+        mock_ep.name = "broken_state"
+        mock_ep.load.side_effect = ImportError("Module not found")
+        
+        mock_entry_points.return_value = [mock_ep]
+        
+        # Should not raise an exception
+        with patch('asimov.monitor_states.logger') as mock_logger:
+            discover_custom_states()
+            mock_logger.warning.assert_called()
 
 
 class TestMonitorContext(unittest.TestCase):

@@ -139,21 +139,22 @@ For monitoring multiple analyses, use ``monitor_analyses_list``:
 Extending the State Machine
 ---------------------------
 
-Adding Custom States
-^^^^^^^^^^^^^^^^^^^
+The monitor state machine supports a plugin architecture that allows you to add
+custom states without modifying asimov's core code.
 
-To add a new state to the system:
+Adding Custom States via Entry Points
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1. Create a new state class inheriting from ``MonitorState``
-2. Implement the ``state_name`` property and ``handle`` method
-3. Register the state in ``STATE_REGISTRY`` at module initialization
+The recommended way to add custom states is through Python's entry points system.
+This allows your custom states to be automatically discovered and registered when
+your package is installed.
 
-Example:
+**Step 1: Define your custom state**
 
 .. code-block:: python
 
-    # In asimov/monitor_states.py or your custom module
-    from asimov.monitor_states import MonitorState, STATE_REGISTRY
+    # In mypackage/states.py
+    from asimov.monitor_states import MonitorState
     
     class ValidationState(MonitorState):
         @property
@@ -163,21 +164,96 @@ Example:
         def handle(self, context):
             analysis = context.analysis
             # Custom validation logic
-            if validation_passes:
+            if self.validate_analysis(analysis):
                 analysis.status = "validated"
                 context.update_ledger()
                 return True
-            return False
-    
-    # Register the new state at module level (recommended)
-    def register_custom_states():
-        """Register custom states with the monitor system."""
-        STATE_REGISTRY["validation"] = ValidationState()
-    
-    # Call during initialization
-    register_custom_states()
+            else:
+                analysis.status = "validation_failed"
+                context.update_ledger()
+                return False
+        
+        def validate_analysis(self, analysis):
+            # Your validation logic here
+            return True
 
-**Note:** For production use, consider implementing a formal registration mechanism or plugin system rather than directly modifying ``STATE_REGISTRY`` after module import.
+**Step 2: Register via entry points**
+
+In your package's ``setup.py``:
+
+.. code-block:: python
+
+    from setuptools import setup
+    
+    setup(
+        name="mypackage",
+        # ... other setup parameters ...
+        entry_points={
+            'asimov.monitor.states': [
+                'validation = mypackage.states:ValidationState',
+            ]
+        }
+    )
+
+Or in ``pyproject.toml``:
+
+.. code-block:: toml
+
+    [project.entry-points."asimov.monitor.states"]
+    validation = "mypackage.states:ValidationState"
+
+**Step 3: Install your package**
+
+Once installed, asimov will automatically discover and register your custom state:
+
+.. code-block:: bash
+
+    pip install mypackage
+
+Your custom state is now available for use. When an analysis has ``status = "validation"``,
+the ``ValidationState`` handler will be invoked automatically.
+
+Programmatic Registration
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For runtime or dynamic state registration, use the ``register_state()`` function:
+
+.. code-block:: python
+
+    from asimov.monitor_states import MonitorState, register_state
+    
+    class CustomState(MonitorState):
+        @property
+        def state_name(self):
+            return "custom"
+        
+        def handle(self, context):
+            # Custom logic
+            return True
+    
+    # Register the state
+    register_state(CustomState())
+
+This approach is useful for:
+
+* Testing custom states before creating a plugin
+* Dynamic state registration based on runtime conditions
+* Temporary state handlers
+
+**Note:** States registered programmatically must be registered before the monitor
+loop runs. Consider registering them in your application's initialization code.
+
+Legacy Registration (Not Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Direct modification of ``STATE_REGISTRY`` still works but is not recommended:
+
+.. code-block:: python
+
+    from asimov.monitor_states import STATE_REGISTRY, CustomState
+    
+    # Not recommended - use register_state() instead
+    STATE_REGISTRY["custom"] = CustomState()
 
 Custom Pipeline Hooks
 ^^^^^^^^^^^^^^^^^^^^^
@@ -276,11 +352,106 @@ Example test:
 Best Practices
 -------------
 
-1. **Keep state handlers focused**: Each state should handle only its specific concerns
-2. **Use context methods**: Always use ``context.update_ledger()`` rather than direct ledger calls
-3. **Handle errors gracefully**: State handlers should catch exceptions and report them appropriately
-4. **Test state transitions**: Write unit tests for any custom state handlers
-5. **Document custom states**: Add documentation for any new states you introduce
+1. **Use entry points for production**: Entry points provide automatic discovery and clean separation
+2. **Keep state handlers focused**: Each state should handle only its specific concerns
+3. **Use context methods**: Always use ``context.update_ledger()`` rather than direct ledger calls
+4. **Handle errors gracefully**: State handlers should catch exceptions and report them appropriately
+5. **Test state transitions**: Write unit tests for any custom state handlers
+6. **Document custom states**: Add documentation for any new states you introduce
+7. **Version your plugins**: If distributing custom states as plugins, use semantic versioning
+
+Complete Plugin Example
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Here's a complete example of creating a plugin package with custom states:
+
+**Directory structure:**
+
+.. code-block::
+
+    my-asimov-plugin/
+    ├── pyproject.toml
+    ├── README.md
+    └── my_asimov_plugin/
+        ├── __init__.py
+        └── states.py
+
+**pyproject.toml:**
+
+.. code-block:: toml
+
+    [build-system]
+    requires = ["setuptools>=61.0"]
+    build-backend = "setuptools.build_meta"
+    
+    [project]
+    name = "my-asimov-plugin"
+    version = "0.1.0"
+    description = "Custom analysis states for asimov"
+    dependencies = [
+        "asimov>=0.7.0",
+    ]
+    
+    [project.entry-points."asimov.monitor.states"]
+    validation = "my_asimov_plugin.states:ValidationState"
+    calibration = "my_asimov_plugin.states:CalibrationState"
+
+**states.py:**
+
+.. code-block:: python
+
+    from asimov.monitor_states import MonitorState
+    import click
+    
+    class ValidationState(MonitorState):
+        """Validate analysis results before marking as complete."""
+        
+        @property
+        def state_name(self):
+            return "validation"
+        
+        def handle(self, context):
+            analysis = context.analysis
+            click.echo(f"  \t  ● Validating {analysis.name}")
+            
+            # Run validation checks
+            if self.validate_results(analysis):
+                analysis.status = "validated"
+                click.echo(f"  \t  ✓ Validation passed", fg="green")
+            else:
+                analysis.status = "validation_failed"
+                click.echo(f"  \t  ✗ Validation failed", fg="red")
+            
+            context.update_ledger()
+            return True
+        
+        def validate_results(self, analysis):
+            # Your validation logic here
+            return True
+    
+    class CalibrationState(MonitorState):
+        """Handle calibration-specific processing."""
+        
+        @property
+        def state_name(self):
+            return "calibration"
+        
+        def handle(self, context):
+            analysis = context.analysis
+            # Calibration logic here
+            analysis.status = "calibrated"
+            context.update_ledger()
+            return True
+
+**Installation and usage:**
+
+.. code-block:: bash
+
+    # Install the plugin
+    pip install my-asimov-plugin
+    
+    # Now your custom states are available in asimov
+    # Set analysis.status = "validation" to trigger ValidationState
 
 See Also
 --------
