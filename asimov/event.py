@@ -11,6 +11,7 @@ from ligo.gracedb.rest import GraceDb, HTTPError
 
 from asimov import config, logger, LOGGER_LEVEL
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
+from asimov.utils import expand_strategy
 
 from .git import EventRepo
 
@@ -130,7 +131,15 @@ class Event:
         self.graph = nx.DiGraph()
 
         if "productions" in kwargs:
+            # Expand any productions that have strategies defined
+            expanded_productions = []
             for production in kwargs["productions"]:
+                # Expand the production if it has a strategy
+                expanded = expand_strategy(production)
+                expanded_productions.extend(expanded)
+            
+            # Now create the actual production objects
+            for production in expanded_productions:
                 if ("analyses" in production) or ("productions" in production):
                     self.add_production(
                         SubjectAnalysis.from_dict(production, subject=self)
