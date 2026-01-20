@@ -763,15 +763,16 @@ class Analysis:
             
             # Show source analyses for SubjectAnalysis
             if hasattr(self, 'analyses') and self.analyses:
-                card += """<p class="asimov-source-analyses"><strong>Source Analyses:</strong><br>"""
-                source_analysis_html = []
-                for analysis in self.analyses:
-                    status_color = status_map.get(analysis.status, 'secondary')
-                    source_analysis_html.append(
-                        f"""<span class="badge badge-{status_color}">{analysis.name}</span>"""
-                    )
-                card += " ".join(source_analysis_html)
-                card += """</p>"""
+                if hasattr(self.analyses, "__iter__"):
+                    card += """<p class="asimov-source-analyses"><strong>Source Analyses:</strong><br>"""
+                    source_analysis_html = []
+                    for analysis in self.analyses:
+                        status_color = status_map.get(analysis.status, 'secondary')
+                        source_analysis_html.append(
+                            f"""<span class="badge badge-{status_color}">{analysis.name}</span>"""
+                        )
+                    card += " ".join(source_analysis_html)
+                    card += """</p>"""
             
             # Show dependencies
             if self.dependencies:
