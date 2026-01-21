@@ -13,6 +13,7 @@ from asimov.analysis import ProjectAnalysis
 from asimov import current_ledger as ledger
 from asimov.ledger import Ledger
 from asimov.utils import update
+from asimov.strategies import expand_strategy
 from copy import deepcopy
 from datetime import datetime
 import sys
@@ -116,39 +117,45 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
         elif document["kind"] == "analysis":
             logger.info("Found an analysis")
             document.pop("kind")
-            if event:
-                event_s = event
-            else:
-                if "event" in document:
-                    event_s = document["event"]
+            
+            # Expand strategy if present
+            expanded_documents = expand_strategy(document)
+            
+            for expanded_doc in expanded_documents:
+                if event:
+                    event_s = event
                 else:
-                    prompt = "Which event should these be applied to?"
-                    event_s = str(click.prompt(prompt))
-            try:
-                event_o = ledger.get_event(event_s)[0]
-            except KeyError as e:
-                click.echo(
-                    click.style("●", fg="red")
-                    + f" Could not apply a production, couldn't find the event {event}"
+                    if "event" in expanded_doc:
+                        event_s = expanded_doc["event"]
+                    else:
+                        prompt = "Which event should these be applied to?"
+                        event_s = str(click.prompt(prompt))
+                try:
+                    event_o = ledger.get_event(event_s)[0]
+                except KeyError as e:
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Could not apply a production, couldn't find the event {event}"
+                    )
+                    logger.exception(e)
+                    continue
+                production = asimov.event.Production.from_dict(
+                    parameters=expanded_doc, subject=event_o, ledger=ledger
                 )
-                logger.exception(e)
-            production = asimov.event.Production.from_dict(
-                parameters=document, subject=event_o, ledger=ledger
-            )
-            try:
-                ledger.add_analysis(production, event=event_o)
-                click.echo(
-                    click.style("●", fg="green")
-                    + f" Successfully applied {production.name} to {event_o.name}"
-                )
-                logger.info(f"Added {production.name} to {event_o.name}")
-            except ValueError as e:
-                click.echo(
-                    click.style("●", fg="red")
-                    + f" Could not apply {production.name} to {event_o.name} as "
-                    + "an analysis already exists with this name"
-                )
-                logger.exception(e)
+                try:
+                    ledger.add_analysis(production, event=event_o)
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Successfully applied {production.name} to {event_o.name}"
+                    )
+                    logger.info(f"Added {production.name} to {event_o.name}")
+                except ValueError as e:
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Could not apply {production.name} to {event_o.name} as "
+                        + "an analysis already exists with this name"
+                    )
+                    logger.exception(e)
 
         elif document["kind"].lower() == "postprocessing":
             # Handle a project analysis
