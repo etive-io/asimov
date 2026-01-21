@@ -135,7 +135,7 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
                 except KeyError as e:
                     click.echo(
                         click.style("●", fg="red")
-                        + f" Could not apply a production, couldn't find the event {event}"
+                        + f" Could not apply a production, couldn't find the event {event_s}"
                     )
                     logger.exception(e)
                     continue

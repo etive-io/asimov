@@ -65,7 +65,7 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     
     >>> blueprint = {
     ...     'kind': 'analysis',
-    ...     'name': 'bilby-{waveform}',
+    ...     'name': 'bilby-{approximant}',
     ...     'pipeline': 'bilby',
     ...     'strategy': {
     ...         'waveform.approximant': ['IMRPhenomXPHM', 'SEOBNRv4PHM']
@@ -86,10 +86,15 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     - Name templates can reference strategy parameters using {parameter_name}
       where parameter_name is the last component of the dot notation path
     - Multiple strategy parameters create a cross-product (matrix)
+    - If multiple parameters have the same final component (e.g., 
+      waveform.frequency and sampler.frequency), the behavior is undefined
+      and should be avoided
     """
     if "strategy" not in blueprint:
         return [blueprint]
     
+    # Create a copy to avoid modifying the original
+    blueprint = deepcopy(blueprint)
     strategy = blueprint.pop("strategy")
     
     # Get all parameter combinations

@@ -113,15 +113,15 @@ class TestExpandStrategy(unittest.TestCase):
             "name": "bilby-fref-{frequency}",
             "pipeline": "bilby",
             "strategy": {
-                "waveform.reference frequency": [20, 50, 100]
+                "waveform.frequency": [20, 50, 100]
             }
         }
         result = expand_strategy(deepcopy(blueprint))
         
         self.assertEqual(len(result), 3)
-        self.assertEqual(result[0]["waveform"]["reference frequency"], 20)
-        self.assertEqual(result[1]["waveform"]["reference frequency"], 50)
-        self.assertEqual(result[2]["waveform"]["reference frequency"], 100)
+        self.assertEqual(result[0]["waveform"]["frequency"], 20)
+        self.assertEqual(result[1]["waveform"]["frequency"], 50)
+        self.assertEqual(result[2]["waveform"]["frequency"], 100)
     
     def test_strategy_preserves_other_fields(self):
         """Test that strategy expansion preserves other blueprint fields."""

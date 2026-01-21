@@ -324,6 +324,10 @@ This creates:
 
 If no placeholder is used, all generated analyses will have the same name, which may cause conflicts.
 
+.. warning::
+   
+   Avoid using multiple strategy parameters with the same final component (e.g., ``waveform.frequency`` and ``sampler.frequency``), as this will cause ambiguity in name templates. Instead, use distinct parameter names or combine them differently (e.g., ``waveform.ref_frequency`` and ``sampler.rate``).
+
 Matrix Strategies (Multiple Parameters)
 ----------------------------------------
 
