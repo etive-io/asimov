@@ -698,6 +698,30 @@ class SubjectAnalysis(Analysis):
 
         return cls(subject, name, pipeline, **parameters)
 
+    @property
+    def rundir(self):
+        """
+        Return the run directory for this subject analysis.
+        """
+        if "rundir" in self.meta:
+            return os.path.abspath(self.meta["rundir"])
+        elif "working directory" in self.subject.meta:
+            value = os.path.join(self.subject.meta["working directory"], self.name)
+            self.meta["rundir"] = value
+            return os.path.abspath(self.meta["rundir"])
+        else:
+            return None
+
+    @rundir.setter
+    def rundir(self, value):
+        """
+        Set the run directory.
+        """
+        if "rundir" not in self.meta:
+            self.meta["rundir"] = value
+        else:
+            self.meta["rundir"] = value
+
 
 class ProjectAnalysis(Analysis):
     """

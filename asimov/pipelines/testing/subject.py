@@ -105,20 +105,23 @@ class SubjectTestPipeline(Pipeline):
             if self._ensure_rundir():
                 # Create a simple job script that will create results
                 job_script = os.path.join(self.production.rundir, "test_subject_job.sh")
+                results_file = os.path.join(self.production.rundir, "combined_results.dat")
                 with open(job_script, "w") as f:
                     f.write("#!/bin/bash\n")
                     f.write("# Subject analysis test pipeline job\n")
                     f.write("set -e\n")
                     f.write("echo 'Processing multiple analyses for subject'\n")
+                    f.write(f"echo 'Working directory: {self.production.rundir}'\n")
+                    f.write("echo 'Current directory:' $(pwd)\n")
                     f.write("sleep 2\n")
-                    f.write("# Create the results file\n")
-                    f.write("cat > combined_results.dat << 'EOF'\n")
+                    f.write("# Create the results file with absolute path\n")
+                    f.write(f"cat > {results_file} << 'EOF'\n")
                     f.write("# Subject analysis test pipeline results\n")
                     f.write("# Combined analysis for subject\n")
                     f.write("combined_metric: 1.5\n")
                     f.write("uncertainty: 0.2\n")
                     f.write("EOF\n")
-                    f.write("echo 'Subject analysis complete - combined_results.dat created'\n")
+                    f.write(f"echo 'Subject analysis complete - {results_file} created'\n")
                     f.write("ls -la\n")
                 
                 # Make script executable
