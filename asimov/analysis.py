@@ -929,14 +929,14 @@ class ProjectAnalysis(Analysis):
     @property
     def rundir(self):
         """
-        Returns the rundir for this event
+        Returns the rundir for this project analysis
         """
 
         if "rundir" in self.meta:
-            return self.meta["rundir"]
+            return os.path.abspath(self.meta["rundir"])
         elif self.work_dir:
             self.meta["rundir"] = self.work_dir
-            return self.meta["rundir"]
+            return os.path.abspath(self.meta["rundir"])
         else:
             return None
 
