@@ -54,7 +54,7 @@ class TestExpandStrategy(unittest.TestCase):
         """Test strategy with a single parameter."""
         blueprint = {
             "kind": "analysis",
-            "name": "bilby-{approximant}",
+            "name": "bilby-{waveform.approximant}",
             "pipeline": "bilby",
             "strategy": {
                 "waveform.approximant": ["IMRPhenomXPHM", "SEOBNRv4PHM"]
@@ -81,7 +81,7 @@ class TestExpandStrategy(unittest.TestCase):
         """Test strategy with multiple parameters (matrix/cross-product)."""
         blueprint = {
             "kind": "analysis",
-            "name": "bilby-{approximant}-{sampler}",
+            "name": "bilby-{waveform.approximant}-{sampler.sampler}",
             "pipeline": "bilby",
             "strategy": {
                 "waveform.approximant": ["IMRPhenomXPHM", "SEOBNRv4PHM"],
@@ -110,7 +110,7 @@ class TestExpandStrategy(unittest.TestCase):
         """Test strategy with numeric parameter values."""
         blueprint = {
             "kind": "analysis",
-            "name": "bilby-fref-{frequency}",
+            "name": "bilby-fref-{waveform.frequency}",
             "pipeline": "bilby",
             "strategy": {
                 "waveform.frequency": [20, 50, 100]
@@ -127,7 +127,7 @@ class TestExpandStrategy(unittest.TestCase):
         """Test that strategy expansion preserves other blueprint fields."""
         blueprint = {
             "kind": "analysis",
-            "name": "bilby-{approximant}",
+            "name": "bilby-{waveform.approximant}",
             "pipeline": "bilby",
             "event": "GW150914",
             "comment": "Test analysis",
@@ -172,7 +172,7 @@ class TestExpandStrategy(unittest.TestCase):
         """Test strategy with only one value (edge case)."""
         blueprint = {
             "kind": "analysis",
-            "name": "bilby-{approximant}",
+            "name": "bilby-{waveform.approximant}",
             "pipeline": "bilby",
             "strategy": {
                 "waveform.approximant": ["IMRPhenomXPHM"]

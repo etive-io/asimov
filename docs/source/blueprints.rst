@@ -291,7 +291,7 @@ Basic Strategy Syntax
 A strategy is defined using the ``strategy`` keyword in an analysis blueprint. The strategy specifies parameters and the values they should take::
 
     kind: analysis
-    name: bilby-{approximant}
+    name: bilby-{waveform.approximant}
     event: GW150914
     pipeline: bilby
     strategy:
@@ -308,10 +308,10 @@ This will create three separate analyses:
 Name Templates
 --------------
 
-The ``name`` field can include placeholders in curly braces (``{}``) that will be replaced with strategy parameter values. The placeholder name should match the last component of the parameter path (after the last dot)::
+The ``name`` field can include placeholders in curly braces (``{}``) that will be replaced with strategy parameter values. The placeholder name should match the full parameter path::
 
     kind: analysis
-    name: bilby-{approximant}-analysis
+    name: bilby-{waveform.approximant}-analysis
     pipeline: bilby
     strategy:
       waveform.approximant:
@@ -324,17 +324,13 @@ This creates:
 
 If no placeholder is used, all generated analyses will have the same name, which may cause conflicts.
 
-.. warning::
-   
-   Avoid using multiple strategy parameters with the same final component (e.g., ``waveform.frequency`` and ``sampler.frequency``), as this will cause ambiguity in name templates. Instead, use distinct parameter names or combine them differently (e.g., ``waveform.ref_frequency`` and ``sampler.rate``).
-
 Matrix Strategies (Multiple Parameters)
 ----------------------------------------
 
 You can specify multiple parameters in a strategy to create all combinations (cross-product)::
 
     kind: analysis
-    name: bilby-{approximant}-{sampler}
+    name: bilby-{waveform.approximant}-{sampler.sampler}
     event: GW150914
     pipeline: bilby
     strategy:
@@ -357,7 +353,7 @@ Nested Parameters
 Strategy parameters can use dot notation to set deeply nested values::
 
     kind: analysis
-    name: bilby-margdist-{distance}
+    name: bilby-margdist-{likelihood.marginalisation.distance}
     pipeline: bilby
     strategy:
       likelihood.marginalisation.distance:
@@ -372,7 +368,7 @@ Complete Strategy Example
 Here's a complete example combining multiple features::
 
     kind: analysis
-    name: pe-{approximant}-{sampler}
+    name: pe-{waveform.approximant}-{sampler.sampler}
     event: GW150914
     pipeline: bilby
     comment: Systematic waveform and sampler comparison

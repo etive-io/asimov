@@ -65,7 +65,7 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     
     >>> blueprint = {
     ...     'kind': 'analysis',
-    ...     'name': 'bilby-{approximant}',
+    ...     'name': 'bilby-{waveform.approximant}',
     ...     'pipeline': 'bilby',
     ...     'strategy': {
     ...         'waveform.approximant': ['IMRPhenomXPHM', 'SEOBNRv4PHM']
@@ -84,7 +84,7 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     - The 'strategy' field is removed from the expanded blueprints
     - Parameter names can use dot notation for nested values
     - Name templates can reference strategy parameters using {parameter_name}
-      where parameter_name is the last component of the dot notation path
+      where parameter_name is the full parameter path (e.g., {waveform.approximant})
     - Multiple strategy parameters create a cross-product (matrix)
     - If multiple parameters have the same final component (e.g., 
       waveform.frequency and sampler.frequency), the behavior is undefined
@@ -111,12 +111,11 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
         new_blueprint = deepcopy(blueprint)
         
         # Build a context for name formatting
-        # The context uses the last component of the parameter path as the key
+        # The context uses the fully qualified parameter name as the key
         context = {}
         for param_name, value in zip(param_names, combination):
-            # Extract the last component for use in name templates
-            key = param_name.split(".")[-1]
-            context[key] = value
+            # Use the full parameter path for name templates
+            context[param_name] = value
         
         # Apply the parameter values to the blueprint
         for param_name, value in zip(param_names, combination):
@@ -124,12 +123,12 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
         
         # Expand the name template if it contains placeholders
         if "name" in new_blueprint and isinstance(new_blueprint["name"], str):
-            try:
-                new_blueprint["name"] = new_blueprint["name"].format(**context)
-            except KeyError:
-                # If formatting fails, keep the original name
-                # This allows names without templates to work
-                pass
+            new_name = new_blueprint["name"]
+            # Replace each parameter placeholder with its value
+            for param_name, value in context.items():
+                placeholder = "{" + param_name + "}"
+                new_name = new_name.replace(placeholder, str(value))
+            new_blueprint["name"] = new_name
         
         expanded_blueprints.append(new_blueprint)
     
