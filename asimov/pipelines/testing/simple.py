@@ -103,19 +103,22 @@ class SimpleTestPipeline(Pipeline):
             if self._ensure_rundir():
                 # Create a simple job script that will create results
                 job_script = os.path.join(self.production.rundir, "test_job.sh")
+                results_file = os.path.join(self.production.rundir, "results.dat")
                 with open(job_script, "w") as f:
                     f.write("#!/bin/bash\n")
                     f.write("# Simple test pipeline job\n")
                     f.write("set -e\n")
                     f.write("echo 'Test job running'\n")
+                    f.write(f"echo 'Working directory: {self.production.rundir}'\n")
+                    f.write("echo 'Current directory:' $(pwd)\n")
                     f.write("sleep 2\n")
-                    f.write("# Create the results file\n")
-                    f.write("cat > results.dat << 'EOF'\n")
+                    f.write("# Create the results file with absolute path\n")
+                    f.write(f"cat > {results_file} << 'EOF'\n")
                     f.write("# Test pipeline results\n")
                     f.write("test_parameter: 1.0\n")
                     f.write("test_error: 0.1\n")
                     f.write("EOF\n")
-                    f.write("echo 'Test job complete - results.dat created'\n")
+                    f.write(f"echo 'Test job complete - {results_file} created'\n")
                     f.write("ls -la\n")
                 
                 # Make script executable
@@ -149,16 +152,16 @@ class SimpleTestPipeline(Pipeline):
     def submit_dag(self, dryrun=False):
         """
         Submit the pipeline job to HTCondor.
-        
+
         This submits the DAG file to HTCondor so the job actually runs
         on the scheduler and creates the results file.
-        
+
         Parameters
         ----------
         dryrun : bool, optional
             If True, only simulate the submission without actually submitting.
             Default is False.
-            
+
         Returns
         -------
         int
@@ -166,11 +169,14 @@ class SimpleTestPipeline(Pipeline):
         """
         import subprocess
         import re
-        
+
         if not self.production.rundir:
             self.logger.warning("No run directory specified, cannot submit job")
             return None
-            
+
+        # Build the DAG first
+        self.build_dag(dryrun=dryrun)
+
         self.before_submit(dryrun=dryrun)
         
         dag_file = "test.dag"

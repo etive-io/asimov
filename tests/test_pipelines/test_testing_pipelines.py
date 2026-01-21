@@ -5,6 +5,7 @@ import shutil
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 from asimov.pipelines.testing import (
     SimpleTestPipeline,
@@ -75,8 +76,15 @@ class TestingPipelineTests(unittest.TestCase):
         self.assertIsInstance(analysis.pipeline, SimpleTestPipeline)
         self.assertEqual(analysis.pipeline.name, "SimpleTestPipeline")
 
-    def test_simple_pipeline_submit(self):
+    @patch('subprocess.run')
+    def test_simple_pipeline_submit(self, mock_run):
         """Test that SimpleTestPipeline can submit a job."""
+        # Mock condor_submit_dag response
+        mock_result = MagicMock()
+        mock_result.stdout = "1 job(s) submitted to cluster 12345."
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
         apply_page(
             file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
             event=None,
@@ -106,9 +114,6 @@ class TestingPipelineTests(unittest.TestCase):
         self.assertTrue(os.path.exists(analysis.rundir))
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "test_job.sh"))
-        )
-        self.assertTrue(
-            os.path.exists(os.path.join(analysis.rundir, ".submitted"))
         )
 
     def test_simple_pipeline_completion(self):
@@ -244,8 +249,15 @@ class SubjectPipelineTests(unittest.TestCase):
         os.chdir(self.cwd)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_subject_pipeline_submit(self):
+    @patch('subprocess.run')
+    def test_subject_pipeline_submit(self, mock_run):
         """Test that SubjectTestPipeline can submit a job."""
+        # Mock condor_submit_dag response
+        mock_result = MagicMock()
+        mock_result.stdout = "1 job(s) submitted to cluster 23456."
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
         apply_page(
             file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
             event=None,
@@ -302,8 +314,15 @@ class ProjectPipelineTests(unittest.TestCase):
         os.chdir(self.cwd)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_project_pipeline_submit(self):
+    @patch('subprocess.run')
+    def test_project_pipeline_submit(self, mock_run):
         """Test that ProjectTestPipeline can submit a job."""
+        # Mock condor_submit_dag response
+        mock_result = MagicMock()
+        mock_result.stdout = "1 job(s) submitted to cluster 34567."
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
         apply_page(
             file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
             event=None,

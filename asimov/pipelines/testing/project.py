@@ -109,21 +109,24 @@ class ProjectTestPipeline(Pipeline):
             if self._ensure_rundir():
                 # Create a simple job script that will create results
                 job_script = os.path.join(self.production.rundir, "test_project_job.sh")
+                results_file = os.path.join(self.production.rundir, "population_results.dat")
                 with open(job_script, "w") as f:
                     f.write("#!/bin/bash\n")
                     f.write("# Project analysis test pipeline job\n")
                     f.write("set -e\n")
                     f.write("echo 'Processing analyses across multiple subjects'\n")
+                    f.write(f"echo 'Working directory: {self.production.rundir}'\n")
+                    f.write("echo 'Current directory:' $(pwd)\n")
                     f.write("sleep 2\n")
-                    f.write("# Create the results file\n")
-                    f.write("cat > population_results.dat << 'EOF'\n")
+                    f.write("# Create the results file with absolute path\n")
+                    f.write(f"cat > {results_file} << 'EOF'\n")
                     f.write("# Project analysis test pipeline results\n")
                     f.write("# Population/catalog analysis\n")
                     f.write("population_rate: 10.5\n")
                     f.write("rate_uncertainty: 2.3\n")
                     f.write("selection_effects: 0.85\n")
                     f.write("EOF\n")
-                    f.write("echo 'Project analysis complete - population_results.dat created'\n")
+                    f.write(f"echo 'Project analysis complete - {results_file} created'\n")
                     f.write("ls -la\n")
                 
                 # Make script executable
@@ -157,15 +160,15 @@ class ProjectTestPipeline(Pipeline):
     def submit_dag(self, dryrun=False):
         """
         Submit the pipeline job to HTCondor.
-        
+
         This submits the DAG file to HTCondor so the job actually runs
         on the scheduler and creates the results file.
-        
+
         Parameters
         ----------
         dryrun : bool, optional
             If True, only simulate the submission.
-            
+
         Returns
         -------
         int
@@ -173,11 +176,14 @@ class ProjectTestPipeline(Pipeline):
         """
         import subprocess
         import re
-        
+
         if not self.production.rundir:
             self.logger.warning("No run directory specified")
             return None
-            
+
+        # Build the DAG first
+        self.build_dag(dryrun=dryrun)
+
         self.before_submit(dryrun=dryrun)
         
         dag_file = "test_project.dag"

@@ -152,15 +152,15 @@ class SubjectTestPipeline(Pipeline):
     def submit_dag(self, dryrun=False):
         """
         Submit the pipeline job to HTCondor.
-        
+
         This submits the DAG file to HTCondor so the job actually runs
         on the scheduler and creates the results file.
-        
+
         Parameters
         ----------
         dryrun : bool, optional
             If True, only simulate the submission.
-            
+
         Returns
         -------
         int
@@ -168,11 +168,14 @@ class SubjectTestPipeline(Pipeline):
         """
         import subprocess
         import re
-        
+
         if not self.production.rundir:
             self.logger.warning("No run directory specified")
             return None
-            
+
+        # Build the DAG first
+        self.build_dag(dryrun=dryrun)
+
         self.before_submit(dryrun=dryrun)
         
         dag_file = "test_subject.dag"
