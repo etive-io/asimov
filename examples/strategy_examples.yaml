@@ -2,6 +2,11 @@
 #
 # This file shows how to use strategies to create multiple similar analyses
 # with parameter variations, similar to GitHub Actions matrix strategies.
+#
+# IMPORTANT: Parameter names in strategies must match the exact keys used in
+# the pipeline configuration templates. For bilby, see asimov/configs/bilby.ini
+# to find the correct parameter paths. Keys with spaces are supported
+# (e.g., "waveform.reference frequency").
 
 # First, define an event
 ---
@@ -53,12 +58,12 @@ strategy:
 # This creates 3 analyses with different reference frequencies
 ---
 kind: analysis
-name: bilby-fref-{waveform.frequency}
+name: bilby-fref-{waveform.reference frequency}
 event: GW150914_095045
 pipeline: bilby
 comment: Testing different reference frequencies
 strategy:
-  waveform.frequency:
+  waveform.reference frequency:
     - 20
     - 50
     - 100
@@ -67,12 +72,12 @@ strategy:
 # This creates 2 analyses with distance marginalization on/off
 ---
 kind: analysis
-name: bilby-margdist-{likelihood.marginalisation.distance}
+name: bilby-margdist-{likelihood.marginalization.distance}
 event: GW150914_095045
 pipeline: bilby
 comment: Testing distance marginalization
 strategy:
-  likelihood.marginalisation.distance:
+  likelihood.marginalization.distance:
     - true
     - false
 
