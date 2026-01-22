@@ -30,3 +30,6 @@ Thumbs.db
 tests/tmp/
 # Asimov specific
 .asimov/
+
+# Test artifacts
+tests/tmp/

@@ -3,6 +3,12 @@ Tools for adding data from JSON and YAML files.
 Inspired by the kubectl apply approach from kubernetes.
 """
 
+import os
+import sys
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+
 import click
 import requests
 import yaml
@@ -10,7 +16,6 @@ import yaml
 from asimov import LOGGER_LEVEL, logger
 import asimov.event
 from asimov.analysis import ProjectAnalysis
-from asimov import current_ledger as ledger
 from asimov.ledger import Ledger
 from asimov.utils import update
 from asimov.strategies import expand_strategy
@@ -28,8 +33,33 @@ logger = logger.getChild("cli").getChild("apply")
 logger.setLevel(LOGGER_LEVEL)
 
 
-def apply_page(file, event=None, ledger=ledger, update_page=False):
-    if file[:4] == "http":
+def get_ledger():
+    """
+    Get the current ledger instance.
+    
+    Reloads the ledger to ensure we have the latest state,
+    preventing issues where the ledger is cached at import time.
+    
+    Returns
+    -------
+    Ledger
+        The current ledger instance.
+    """
+    from asimov import config
+    if config.get("ledger", "engine") == "yamlfile":
+        from asimov.ledger import YAMLLedger
+        return YAMLLedger(config.get("ledger", "location"))
+    else:
+        from asimov import current_ledger
+        return current_ledger
+
+
+def apply_page(file, event=None, ledger=None, update_page=False):
+    # Get ledger if not provided
+    if ledger is None:
+        ledger = get_ledger()
+
+    if file.startswith("http://") or file.startswith("https://"):
         r = requests.get(file)
         if r.status_code == 200:
             data = r.text
@@ -48,14 +78,18 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
         if document["kind"] == "event":
             logger.info("Found an event")
             document.pop("kind")
-            event_obj = asimov.event.Event.from_yaml(yaml.dump(document))
+            event = asimov.event.Event.from_yaml(yaml.dump(document))
+
             # Check if the event is in the ledger already
-            if event_obj.name in ledger.events and update_page is True:
-                old_event = deepcopy(ledger.events[event_obj.name])
+            # ledger.events is a dict with event names as keys
+            event_exists = event.name in ledger.events
+
+            if event_exists and update_page is True:
+                old_event = deepcopy(ledger.events[event.name])
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
                 analyses = []
-                for prod in ledger.events[event_obj.name].get("productions", []):
+                for prod in ledger.events[event.name].get("productions", []):
                     prod_name = None
                     prod_data = None
 
@@ -81,37 +115,37 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
                 # Add the old version to the history
                 if "history" not in ledger.data:
                     ledger.data["history"] = {}
-                history = ledger.data["history"].get(event_obj.name, {})
+                history = ledger.data["history"].get(event.name, {})
                 version = f"version-{len(history)+1}"
                 history[version] = old_event
                 history[version]["date changed"] = datetime.now()
 
-                ledger.data["history"][event_obj.name] = history
+                ledger.data["history"][event.name] = history
                 ledger.save()
-                update(ledger.events[event_obj.name], event_obj.meta)
-                ledger.events[event_obj.name]["productions"] = analyses
-                ledger.events[event_obj.name].pop("ledger", None)
+                update(ledger.events[event.name], event.meta)
+                ledger.events[event.name]["productions"] = analyses
+                ledger.events[event.name].pop("ledger", None)
 
                 click.echo(
-                    click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
+                    click.style("●", fg="green") + f" Successfully updated {event.name}"
                 )
 
-            elif event_obj.name not in ledger.events and update_page is False:
-                ledger.update_event(event_obj)
+            elif not event_exists and update_page is False:
+                ledger.update_event(event)
                 click.echo(
-                    click.style("●", fg="green") + f" Successfully added {event_obj.name}"
+                    click.style("●", fg="green") + f" Successfully added {event.name}"
                 )
-                logger.info(f"Added {event_obj.name} to project")
+                logger.info(f"Added {event.name} to project")
 
-            elif event_obj.name not in ledger.events and update_page is True:
+            elif not event_exists and update_page is True:
                 click.echo(
                     click.style("●", fg="red")
-                    + f" {event_obj.name} cannot be updated as there is no record of it in the project."
+                    + f" {event.name} cannot be updated as there is no record of it in the project."
                 )
             else:
                 click.echo(
                     click.style("●", fg="red")
-                    + f" {event_obj.name} already exists in this project."
+                    + f" {event.name} already exists in this project."
                 )
 
         elif document["kind"] == "analysis":
@@ -134,34 +168,34 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
                     else:
                         prompt = "Which event should these be applied to?"
                     event_s = str(click.prompt(prompt))
-            
+                    
             for expanded_doc in expanded_documents:
-                try:
-                    event_o = ledger.get_event(event_s)[0]
-                except KeyError as e:
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Could not apply a production, couldn't find the event {event_s}"
-                    )
-                    logger.exception(e)
-                    continue
-                production = asimov.event.Production.from_dict(
-                    parameters=expanded_doc, subject=event_o, ledger=ledger
-                )
-                try:
-                    ledger.add_analysis(production, event=event_o)
-                    click.echo(
-                        click.style("●", fg="green")
-                        + f" Successfully applied {production.name} to {event_o.name}"
-                    )
-                    logger.info(f"Added {production.name} to {event_o.name}")
-                except ValueError as e:
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Could not apply {production.name} to {event_o.name} as "
-                        + "an analysis already exists with this name"
-                    )
-                    logger.exception(e)
+                    
+              try:
+                  event_obj = ledger.get_event(event_s)[0]
+              except KeyError as e:
+                  click.echo(
+                      click.style("●", fg="red")
+                      + f" Could not apply a production, couldn't find the event {event}"
+                  )
+                  logger.exception(e)
+              production = asimov.event.Production.from_dict(
+                  parameters=expanded_doc, subject=event_obj, ledger=ledger
+              )
+              try:
+                  ledger.add_analysis(production, event=event_obj)
+                  click.echo(
+                      click.style("●", fg="green")
+                      + f" Successfully applied {production.name} to {event_obj.name}"
+                  )
+                  logger.info(f"Added {production.name} to {event_obj.name}")
+              except ValueError as e:
+                  click.echo(
+                      click.style("●", fg="red")
+                      + f" Could not apply {production.name} to {event_obj.name} as "
+                      + "an analysis already exists with this name"
+                  )
+                  logger.exception(e)
 
         elif document["kind"].lower() == "postprocessing":
             # Handle a project analysis
@@ -172,8 +206,8 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
 
             if event:
                 try:
-                    event_o = ledger.get_event(event_s)[0]
-                    level = event_o
+                    event_obj = ledger.get_event(event_s)[0]
+                    level = event_obj
                 except KeyError as e:
                     click.echo(
                         click.style("●", fg="red")
@@ -235,6 +269,128 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
                 )
                 logger.exception(e)
 
+        elif document["kind"].lower() == "analysisbundle":
+            # Handle analysis bundle - a collection of analysis references
+            logger.info("Found an analysis bundle")
+            bundle_name = document.get("name", "unnamed bundle")
+            analyses_refs = document.get("analyses", [])
+
+            if not event:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" Analysis bundle '{bundle_name}' requires an event to be specified with -e"
+                )
+                logger.error(f"Analysis bundle '{bundle_name}' requires an event to be specified")
+                continue
+
+            try:
+                event_obj = ledger.get_event(event)[0]
+            except KeyError as e:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" Could not apply bundle '{bundle_name}', couldn't find the event {event}"
+                )
+                logger.exception(e)
+                continue
+
+            click.echo(
+                click.style("●", fg="cyan")
+                + f" Applying bundle '{bundle_name}' ({len(analyses_refs)} analyses) to {event_obj.name}"
+            )
+
+            # Resolve and apply each analysis in the bundle
+            for analysis_ref in analyses_refs:
+                # Analysis ref can be:
+                # - A string: "bayeswave-psd" (references file stem)
+                # - A dict: {"name": "...", ...} (inline definition)
+
+                if isinstance(analysis_ref, str):
+                    # Reference by file stem - need to find and load the file
+                    analysis_file_name = f"{analysis_ref}.yaml"
+
+                    # Try to find the file in common locations
+                    search_paths = [
+                        Path.cwd(),  # Current directory
+                        Path.cwd() / "analyses",  # Local analyses dir
+                    ]
+
+                    # Also check ASIMOV_DATA_PATH if set
+                    if "ASIMOV_DATA_PATH" in os.environ:
+                        data_path = Path(os.environ["ASIMOV_DATA_PATH"])
+                        search_paths.append(data_path / "analyses")
+
+                    # Check default asimov-data location
+                    home = Path.home()
+                    search_paths.append(home / ".asimov" / "gwdata" / "asimov-data" / "analyses")
+
+                    analysis_file = None
+                    for search_path in search_paths:
+                        candidate = search_path / analysis_file_name
+                        # Ensure the resolved path is within the expected search path
+                        try:
+                            candidate = candidate.resolve()
+                            search_path_resolved = search_path.resolve()
+                            if candidate.is_relative_to(search_path_resolved) and candidate.exists():
+                                analysis_file = candidate
+                                break
+                        except (ValueError, OSError):
+                            # Skip if path resolution fails or is invalid
+                            continue
+
+                    if not analysis_file:
+                        click.echo(
+                            click.style("  ●", fg="yellow")
+                            + f" Could not find analysis file '{analysis_file_name}', skipping"
+                        )
+                        logger.warning(f"Could not find analysis file '{analysis_file_name}'")
+                        continue
+
+                    # Load and apply the analysis file
+                    with open(analysis_file, "r") as f:
+                        analysis_content = f.read()
+
+                    # Parse the analysis file (might be multi-document)
+                    for analysis_doc in yaml.safe_load_all(analysis_content):
+                        if analysis_doc and analysis_doc.get("kind") == "analysis":
+                            try:
+                                production = asimov.event.Production.from_dict(
+                                    parameters=analysis_doc, subject=event_obj, ledger=ledger
+                                )
+                                ledger.add_analysis(production, event=event_obj)
+                                click.echo(
+                                    click.style("  ●", fg="green")
+                                    + f" Applied {production.name} from {analysis_ref}"
+                                )
+                            except ValueError as e:
+                                click.echo(
+                                    click.style("  ●", fg="yellow")
+                                    + f" {analysis_doc.get('name', 'analysis')} from {analysis_ref} already exists, skipping"
+                                )
+                                logger.warning(f"Analysis {analysis_doc.get('name', 'analysis')} already exists: {e}")
+
+                elif isinstance(analysis_ref, dict):
+                    # Inline analysis definition
+                    try:
+                        production = asimov.event.Production.from_dict(
+                            parameters=analysis_ref, subject=event_obj, ledger=ledger
+                        )
+                        ledger.add_analysis(production, event=event_obj)
+                        click.echo(
+                            click.style("  ●", fg="green")
+                            + f" Applied {production.name} (inline)"
+                        )
+                    except ValueError as e:
+                        click.echo(
+                            click.style("  ●", fg="yellow")
+                            + f" {analysis_ref.get('name', 'analysis')} already exists, skipping"
+                        )
+                        logger.warning(f"Analysis {analysis_ref.get('name', 'analysis')} already exists: {e}")
+
+            click.echo(
+                click.style("●", fg="green")
+                + f" Successfully applied bundle '{bundle_name}' to {event_obj.name}"
+            )
+
         elif document["kind"] == "configuration":
             logger.info("Found configurations")
             document.pop("kind")
@@ -282,8 +438,9 @@ def apply_via_plugin(event, hookname, **kwargs):
 )
 def apply(file, event, plugin, update):
     from asimov import setup_file_logging
+    current_ledger = get_ledger()
     setup_file_logging()
     if plugin:
         apply_via_plugin(event, hookname=plugin)
     elif file:
-        apply_page(file, event, update_page=update)
+        apply_page(file, event, ledger=current_ledger, update_page=update)
