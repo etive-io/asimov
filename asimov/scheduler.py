@@ -50,18 +50,26 @@ def file_lock(file_path, mode='r'):
         The opened and locked file.
     """
     # Ensure the directory exists
-    os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else '.', exist_ok=True)
+    dir_path = os.path.dirname(file_path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
     
     with open(file_path, mode) as f:
-        if HAS_FCNTL:
-            # Use fcntl for file locking on Unix systems
-            lock_type = fcntl.LOCK_EX if 'w' in mode or 'a' in mode else fcntl.LOCK_SH
-            fcntl.flock(f.fileno(), lock_type)
+        locked = False
         try:
+            if HAS_FCNTL:
+                # Use fcntl for file locking on Unix systems
+                lock_type = fcntl.LOCK_EX if 'w' in mode or 'a' in mode else fcntl.LOCK_SH
+                fcntl.flock(f.fileno(), lock_type)
+                locked = True
             yield f
         finally:
-            if HAS_FCNTL:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            if HAS_FCNTL and locked:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except (OSError, IOError):
+                    # Ignore unlock errors during cleanup
+                    pass
 
 
 class Scheduler(ABC):
