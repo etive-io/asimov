@@ -87,26 +87,25 @@ logger.addHandler(ch)
 
 # File handler is not added by default - it's lazy-loaded when needed
 _file_handler = None
+import threading
+_file_handler_lock = threading.Lock()
 
 def setup_file_logging(logfile=None):
     """
     Set up file logging for asimov.
-    
+
     This function should be called by commands that need to write logs to a file.
     Read-only commands like --help or --version should not call this.
-    
+
     Parameters
     ----------
     logfile : str, optional
         Path to the log file. If None, uses configuration or default location.
     """
     global _file_handler
-    
+
     # Only set up file handler once (thread-safe check)
-    import threading
-    _lock = threading.Lock()
-    
-    with _lock:
+    with _file_handler_lock:
         if _file_handler is not None:
             return
     
