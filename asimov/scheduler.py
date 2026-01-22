@@ -11,8 +11,17 @@ Supported Schedulers are:
 import os
 import datetime
 import yaml
-import htcondor
+import warnings
 from abc import ABC, abstractmethod
+
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+    import classad2 as classad  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
+    import classad  # NoQA
 
 
 class Scheduler(ABC):
@@ -168,8 +177,8 @@ class HTCondor(Scheduler):
         
         # Submit the job
         try:
-            with self.schedd.transaction() as txn:
-                cluster_id = submit_obj.queue(txn)
+            result = self.schedd.submit(submit_obj)
+            cluster_id = result.cluster()
             return cluster_id
         except htcondor.HTCondorIOError as e:
             raise RuntimeError(f"Failed to submit job to HTCondor: {e}")
@@ -253,8 +262,8 @@ class HTCondor(Scheduler):
                 submit_obj[key] = value
             
             # Submit the DAG
-            with self.schedd.transaction() as txn:
-                cluster_id = submit_obj.queue(txn)
+            result = self.schedd.submit(submit_obj)
+            cluster_id = result.cluster()
             
             return cluster_id
             

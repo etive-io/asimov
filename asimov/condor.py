@@ -114,6 +114,8 @@ def _submit_job_legacy(submit_description):
         )
         schedd = htcondor.Schedd(schedulers)
         logger.info(f"Found scheduler: {schedd}")
+        result = schedd.submit(hostname_job)
+        cluster_id = result.cluster()
     except (
         htcondor.HTCondorLocateError,
         htcondor.HTCondorIOError,
@@ -128,9 +130,9 @@ def _submit_job_legacy(submit_description):
             logger.info(f"Found {collector}")
             schedd = htcondor.Schedd(collector)
             try:
-                with schedd.transaction() as txn:
-                    cluster_id = hostname_job.queue(txn)
-                    break
+                result = schedd.submit(hostname_job)
+                cluster_id = result.cluster()
+                break
             except htcondor.HTCondorIOError:
                 logger.info(f"{collector} cannot receive jobs")
 
