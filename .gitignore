@@ -22,3 +22,6 @@ ENV/
 
 # Asimov specific
 .asimov/
+
+# Test artifacts
+tests/tmp/
