@@ -177,8 +177,8 @@ class HTCondor(Scheduler):
         
         # Submit the job
         try:
-            with self.schedd.transaction() as txn:
-                cluster_id = submit_obj.queue(txn)
+            result = self.schedd.submit(submit_obj)
+            cluster_id = result.cluster()
             return cluster_id
         except htcondor.HTCondorIOError as e:
             raise RuntimeError(f"Failed to submit job to HTCondor: {e}")
@@ -262,8 +262,8 @@ class HTCondor(Scheduler):
                 submit_obj[key] = value
             
             # Submit the DAG
-            with self.schedd.transaction() as txn:
-                cluster_id = submit_obj.queue(txn)
+            result = self.schedd.submit(submit_obj)
+            cluster_id = result.cluster()
             
             return cluster_id
             

@@ -670,11 +670,13 @@ class PESummaryPipeline(PostPipeline):
                     htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
                 )
                 schedd = htcondor.Schedd(schedulers)
-            except:  # NoQA
+            except (configparser.NoOptionError, configparser.NoSectionError):
                 # If you can't find a specified scheduler, use the first one you find
-                schedd = htcondor.Schedd()
-            with schedd.transaction() as txn:
-                cluster_id = hostname_job.queue(txn)
+                schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+                schedd = htcondor.Schedd(schedulers)
+            
+            result = schedd.submit(hostname_job)
+            cluster_id = result.cluster()
 
         else:
             cluster_id = 0
