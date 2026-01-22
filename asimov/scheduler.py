@@ -11,8 +11,17 @@ Supported Schedulers are:
 import os
 import datetime
 import yaml
-import htcondor
+import warnings
 from abc import ABC, abstractmethod
+
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+    import classad2 as classad  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
+    import classad  # NoQA
 
 
 class Scheduler(ABC):
