@@ -275,6 +275,127 @@ Stale analyses are indicated in the HTML report. You can mark an analysis as **r
 
 The resolved dependencies (those that were actually used when the analysis ran) are stored in the ledger and displayed in the HTML report alongside the current matching dependencies.
 
+Strategies
+==========
+
+Strategies allow you to create multiple similar analyses with parameter variations from a single blueprint. This is similar to GitHub Actions matrix strategies and is useful for:
+
+- Testing multiple waveform approximants
+- Comparing different samplers
+- Running parameter-parameter (p-p) tests
+- Performing systematic studies
+
+Basic Strategy Syntax
+---------------------
+
+A strategy is defined using the ``strategy`` keyword in an analysis blueprint. The strategy specifies parameters and the values they should take::
+
+    kind: analysis
+    name: bilby-{waveform.approximant}
+    event: GW150914
+    pipeline: bilby
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+        - IMRPhenomD
+
+This will create three separate analyses:
+- ``bilby-IMRPhenomXPHM`` with ``waveform.approximant: IMRPhenomXPHM``
+- ``bilby-SEOBNRv4PHM`` with ``waveform.approximant: SEOBNRv4PHM``
+- ``bilby-IMRPhenomD`` with ``waveform.approximant: IMRPhenomD``
+
+Name Templates
+--------------
+
+The ``name`` field can include placeholders in curly braces (``{}``) that will be replaced with strategy parameter values. The placeholder name should match the full parameter path::
+
+    kind: analysis
+    name: bilby-{waveform.approximant}-analysis
+    pipeline: bilby
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+
+This creates:
+- ``bilby-IMRPhenomXPHM-analysis``
+- ``bilby-SEOBNRv4PHM-analysis``
+
+If no placeholder is used, all generated analyses will have the same name, which may cause conflicts.
+
+Matrix Strategies (Multiple Parameters)
+----------------------------------------
+
+You can specify multiple parameters in a strategy to create all combinations (cross-product)::
+
+    kind: analysis
+    name: bilby-{waveform.approximant}-{sampler.sampler}
+    event: GW150914
+    pipeline: bilby
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+      sampler.sampler:
+        - dynesty
+        - emcee
+
+This creates 4 analyses (2 × 2 combinations):
+- ``bilby-IMRPhenomXPHM-dynesty``
+- ``bilby-IMRPhenomXPHM-emcee``
+- ``bilby-SEOBNRv4PHM-dynesty``
+- ``bilby-SEOBNRv4PHM-emcee``
+
+Nested Parameters
+-----------------
+
+Strategy parameters can use dot notation to set deeply nested values::
+
+    kind: analysis
+    name: bilby-margdist-{likelihood.marginalisation.distance}
+    pipeline: bilby
+    strategy:
+      likelihood.marginalisation.distance:
+        - true
+        - false
+
+This sets ``likelihood.marginalisation.distance`` in the generated analyses.
+
+.. note::
+
+   Special value handling:
+   
+   - Boolean values (``True``/``False``) are converted to lowercase strings (``true``/``false``) when used in name templates to match YAML conventions.
+   - Each strategy parameter must be a list with at least one value.
+   - Strategy parameters cannot be empty lists or non-list values.
+
+Complete Strategy Example
+-------------------------
+
+Here's a complete example combining multiple features::
+
+    kind: analysis
+    name: pe-{waveform.approximant}-{sampler.sampler}
+    event: GW150914
+    pipeline: bilby
+    comment: Systematic waveform and sampler comparison
+    needs:
+      - generate-psd
+    likelihood:
+      sample rate: 4096
+      psd length: 4
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+        - IMRPhenomD
+      sampler.sampler:
+        - dynesty
+        - emcee
+
+This creates 6 analyses (3 waveforms × 2 samplers), each inheriting the ``needs``, ``likelihood``, and ``comment`` settings while varying the waveform and sampler.
+
 Waveform
 ========
 
