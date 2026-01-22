@@ -43,6 +43,7 @@ extensions = [
     'sphinxcontrib.httpexample',
     'sphinxcontrib.autohttp.flask',
     "sphinx_multiversion",
+    "sphinxcontrib.autodoc_pydantic",
 ]
 
 html_logo = "textmark.png"

@@ -24,6 +24,7 @@ from asimov.cli import (  # NoQA
     project,
     report,
     review,
+    blueprint,
 )  # NoQA
 
 
@@ -36,7 +37,7 @@ def olivaw(ctx):
     """
 
     # Check that we're running in an actual asimov project
-    if not os.path.exists(".asimov") and ctx.invoked_subcommand != "init":
+    if not os.path.exists(".asimov") and ctx.invoked_subcommand not in {"init", "blueprint"}:
         # This isn't the root of an asimov project, let's fail.
         click.secho("This isn't an asimov project", fg="white", bg="red")
         sys.exit(1)
@@ -64,3 +65,5 @@ olivaw.add_command(production.production)
 # Review commands
 olivaw.add_command(review.review)
 olivaw.add_command(application.apply)
+# Blueprint commands
+olivaw.add_command(blueprint.blueprint)
