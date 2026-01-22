@@ -20,5 +20,11 @@ ENV/
 *.swp
 *.swo
 
+# OS
+.DS_Store
+Thumbs.db
+
+# Test temporary files
+tests/tmp/
 # Asimov specific
 .asimov/

@@ -281,6 +281,8 @@ def apply_via_plugin(event, hookname, **kwargs):
     help="Update the project with this blueprint rather than adding a new record.",
 )
 def apply(file, event, plugin, update):
+    from asimov import setup_file_logging
+    setup_file_logging()
     if plugin:
         apply_via_plugin(event, hookname=plugin)
     elif file:

@@ -162,7 +162,7 @@ class Project:
             project.working = config.get("general", "rundir_default")
             project.checkouts = config.get("general", "git_default")
             project.results = config.get("storage", "directory")
-            project.logs = config.get("logging", "directory")
+            project.logs = config.get("logging", "location")
             project.user = config.get("condor", "user")
         except (configparser.NoSectionError, configparser.NoOptionError) as e:
             raise ValueError(
