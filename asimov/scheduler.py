@@ -12,7 +12,15 @@ import os
 import datetime
 import yaml
 import warnings
+import contextlib
 from abc import ABC, abstractmethod
+
+# Import fcntl for file locking on Unix systems
+try:
+    import fcntl
+    HAS_FCNTL = True
+except ImportError:
+    HAS_FCNTL = False
 
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
@@ -22,6 +30,38 @@ except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
     import classad  # NoQA
+
+
+@contextlib.contextmanager
+def file_lock(file_path, mode='r'):
+    """
+    Context manager for file locking to prevent race conditions.
+    
+    Parameters
+    ----------
+    file_path : str
+        Path to the file to lock.
+    mode : str, optional
+        File open mode ('r' for read, 'w' for write). Default is 'r'.
+        
+    Yields
+    ------
+    file object
+        The opened and locked file.
+    """
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(file_path) if os.path.dirname(file_path) else '.', exist_ok=True)
+    
+    with open(file_path, mode) as f:
+        if HAS_FCNTL:
+            # Use fcntl for file locking on Unix systems
+            lock_type = fcntl.LOCK_EX if 'w' in mode or 'a' in mode else fcntl.LOCK_SH
+            fcntl.flock(f.fileno(), lock_type)
+        try:
+            yield f
+        finally:
+            if HAS_FCNTL:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 class Scheduler(ABC):
@@ -502,25 +542,29 @@ class JobList:
         if os.path.exists(self.cache_file):
             age = -os.stat(self.cache_file).st_mtime + datetime.datetime.now().timestamp()
             if float(age) < float(self.cache_time):
-                with open(self.cache_file, "r") as f:
-                    cached_data = yaml.safe_load(f)
-                    # Only use the cached data if it appears to be a mapping of
-                    # job-like objects (i.e., dictionaries with the keys
-                    # that JobList relies on). Otherwise, fall back to a refresh.
-                    if isinstance(cached_data, dict) and cached_data:
-                        valid_cache = True
-                        for job_obj in cached_data.values():
-                            # Cached jobs are stored as dictionaries produced by
-                            # Job.to_dict(), so we validate based on required keys.
-                            if not isinstance(job_obj, dict):
-                                valid_cache = False
-                                break
-                            if "job_id" not in job_obj or "dag_id" not in job_obj:
-                                valid_cache = False
-                                break
-                        if valid_cache:
-                            self.jobs = cached_data
-                            return
+                try:
+                    with file_lock(self.cache_file, "r") as f:
+                        cached_data = yaml.safe_load(f)
+                        # Only use the cached data if it appears to be a mapping of
+                        # job-like objects (i.e., dictionaries with the keys
+                        # that JobList relies on). Otherwise, fall back to a refresh.
+                        if isinstance(cached_data, dict) and cached_data:
+                            valid_cache = True
+                            for job_obj in cached_data.values():
+                                # Cached jobs are stored as dictionaries produced by
+                                # Job.to_dict(), so we validate based on required keys.
+                                if not isinstance(job_obj, dict):
+                                    valid_cache = False
+                                    break
+                                if "job_id" not in job_obj or "dag_id" not in job_obj:
+                                    valid_cache = False
+                                    break
+                            if valid_cache:
+                                self.jobs = cached_data
+                                return
+                except (IOError, OSError, yaml.YAMLError):
+                    # If cache read fails, fall back to refresh
+                    pass
         
         # Cache is stale, invalid, or doesn't exist, refresh from scheduler
         self.refresh()
@@ -561,8 +605,12 @@ class JobList:
         os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
         # Store Job objects directly so that cache loading logic, which expects
         # Job instances with methods, can validate and use the cached data.
-        with open(self.cache_file, "w") as f:
-            f.write(yaml.dump(self.jobs))
+        try:
+            with file_lock(self.cache_file, "w") as f:
+                f.write(yaml.dump(self.jobs))
+        except (IOError, OSError):
+            # If cache write fails, continue without caching
+            pass
     
     def _create_job_from_data(self, job_data):
         """

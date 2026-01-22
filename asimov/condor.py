@@ -27,7 +27,7 @@ except ImportError:
 import yaml
 
 from asimov import config, logger, LOGGER_LEVEL
-from asimov.scheduler import HTCondor as HTCondorScheduler
+from asimov.scheduler import HTCondor as HTCondorScheduler, file_lock
 
 UTC = tz.tzutc()
 
@@ -392,8 +392,12 @@ class CondorJobList:
             age = -os.stat(cache).st_mtime + datetime.datetime.now().timestamp()
             logger.info(f"Condor cache is {age} seconds old")
             if float(age) < float(config.get("condor", "cache_time")):
-                with open(cache, "r") as f:
-                    self.jobs = yaml.safe_load(f)
+                try:
+                    with file_lock(cache, "r") as f:
+                        self.jobs = yaml.safe_load(f)
+                except (IOError, OSError, yaml.YAMLError):
+                    # If cache read fails, fall back to refresh
+                    self.refresh()
             else:
                 self.refresh()
 
@@ -461,8 +465,13 @@ class CondorJobList:
                 else:
                     self.jobs[datum.idno] = datum.to_dict()
 
-        with open(os.path.join(".asimov", "_cache_jobs.yaml"), "w") as f:
-            f.write(yaml.dump(self.jobs))
+        try:
+            with file_lock(os.path.join(".asimov", "_cache_jobs.yaml"), "w") as f:
+                f.write(yaml.dump(self.jobs))
+        except (IOError, OSError):
+            # If cache write fails, continue without caching
+            logger.warning("Failed to write condor cache file")
+            pass
 
 
 def get_job_priority(job_id):
