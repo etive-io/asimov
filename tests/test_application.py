@@ -159,3 +159,89 @@ class DetcharTests(AsimovTestCase):
         self.assertEqual(event.meta["data"]["frame types"]["L1"], "NonstandardFrameL1")
         self.assertEqual(event.meta["data"]["frame types"]["H1"], "NonstandardFrame")
         self.assertEqual(event.meta["data"]["frame types"]["V1"], "UnusualFrameType")
+
+
+class StrategyTests(AsimovTestCase):
+    """
+    Tests to ensure that strategy blueprints are handled correctly.
+    """
+    
+    def test_single_parameter_strategy(self):
+        """Test that a single-parameter strategy creates multiple analyses."""
+        # First add the event
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_strategy_event.yaml",
+            ledger=self.ledger,
+        )
+        
+        # Apply the strategy blueprint
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_strategy_single.yaml",
+            event="S000000",
+            ledger=self.ledger
+        )
+        
+        event = self.ledger.get_event("S000000")[0]
+        
+        # Should have created 3 analyses from the strategy
+        self.assertEqual(len(event.productions), 3)
+        
+        # Check that each analysis has the correct waveform
+        analysis_names = {prod.name for prod in event.productions}
+        expected_names = {
+            "bilby-IMRPhenomXPHM",
+            "bilby-SEOBNRv4PHM",
+            "bilby-IMRPhenomD"
+        }
+        self.assertEqual(analysis_names, expected_names)
+        
+        # Check that each analysis has the correct waveform set
+        for prod in event.productions:
+            if prod.name == "bilby-IMRPhenomXPHM":
+                self.assertEqual(prod.meta["waveform"]["approximant"], "IMRPhenomXPHM")
+            elif prod.name == "bilby-SEOBNRv4PHM":
+                self.assertEqual(prod.meta["waveform"]["approximant"], "SEOBNRv4PHM")
+            elif prod.name == "bilby-IMRPhenomD":
+                self.assertEqual(prod.meta["waveform"]["approximant"], "IMRPhenomD")
+    
+    def test_multi_parameter_strategy_matrix(self):
+        """Test that a multi-parameter strategy creates all combinations."""
+        # First add the event
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_strategy_event.yaml",
+            ledger=self.ledger,
+        )
+        
+        # Apply the strategy blueprint
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_strategy_matrix.yaml",
+            event="S000000",
+            ledger=self.ledger
+        )
+        
+        event = self.ledger.get_event("S000000")[0]
+        
+        # Should have created 4 analyses (2 waveforms x 2 samplers)
+        self.assertEqual(len(event.productions), 4)
+        
+        # Check that each analysis has the correct combination
+        analysis_names = {prod.name for prod in event.productions}
+        expected_names = {
+            "bilby-IMRPhenomXPHM-dynesty",
+            "bilby-IMRPhenomXPHM-emcee",
+            "bilby-SEOBNRv4PHM-dynesty",
+            "bilby-SEOBNRv4PHM-emcee"
+        }
+        self.assertEqual(analysis_names, expected_names)
+        
+        # Verify parameter combinations
+        for prod in event.productions:
+            if "IMRPhenomXPHM" in prod.name:
+                self.assertEqual(prod.meta["waveform"]["approximant"], "IMRPhenomXPHM")
+            elif "SEOBNRv4PHM" in prod.name:
+                self.assertEqual(prod.meta["waveform"]["approximant"], "SEOBNRv4PHM")
+            
+            if "dynesty" in prod.name:
+                self.assertEqual(prod.meta["sampler"]["sampler"], "dynesty")
+            elif "emcee" in prod.name:
+                self.assertEqual(prod.meta["sampler"]["sampler"], "emcee")

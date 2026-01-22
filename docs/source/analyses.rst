@@ -129,6 +129,71 @@ For example:
 		  - "pipeline:giskard"
 		  - "waveform.approximant:impecableOstritchv56PHMX"
 
+Optional Dependencies
+^^^^^^^^^^^^^^^^^^^^^
+
+By default, all dependencies specified in the ``needs`` list are required.
+This means that if a dependency is not present in the ledger, the analysis will not run.
+However, you can mark dependencies as optional, which allows the analysis to run even if the dependency is missing.
+This is useful for creating reusable blueprints that can adapt to different situations.
+
+To mark a dependency as optional, use the dict format with an ``optional: true`` key:
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: flexible-analysis
+		pipeline: example
+		needs:
+		  - pipeline: bilby            # Required
+		  - optional: true             # Optional
+		    pipeline: rift
+
+In this example, the analysis will only run if at least one ``bilby`` analysis is present.
+However, if a ``rift`` analysis is also available, it will be included as a dependency.
+
+A Blueprint for a subject analysis
+-----------------------------------
+
+Subject analyses (also called "event analyses") can access the results of multiple simple analyses on a single event.
+A common use case is combining results from different parameter estimation runs into a single summary.
+
+For example, PESummary can be used as a subject analysis to combine results from multiple PE runs:
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: CombinedPESummary
+		pipeline: pesummary
+		analyses:
+		  - pipeline: bilby  # Combine all bilby analyses
+		refreshable: true    # Auto-update when new analyses finish
+
+The ``analyses`` field works similarly to ``needs``, but is used specifically for subject analyses to specify which simple analyses to include.
+You can also use optional dependencies in subject analyses:
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: FlexiblePESummary
+		pipeline: pesummary
+		analyses:
+		  - pipeline: bilby       # Required
+		  - optional: true        # Optional
+		    pipeline: rift
+		refreshable: true
+
+Refreshable Analyses
+^^^^^^^^^^^^^^^^^^^^
+
+Subject analyses can be marked as ``refreshable: true``.
+When an analysis is refreshable, asimov will automatically re-run it when:
+
+1. New analyses matching the dependencies complete
+2. The list of matching analyses changes
+
+This is particularly useful for PESummary subject analyses, which can automatically regenerate summary pages as new parameter estimation runs complete.
+
 A Blueprint for a project analysis
 ----------------------------------
 

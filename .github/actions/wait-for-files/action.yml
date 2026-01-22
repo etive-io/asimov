@@ -66,6 +66,7 @@ runs:
           # Show condor queue as submituser if requested
           if [ "$SHOW_Q" = "true" ]; then
             su - submituser -s /bin/bash -c 'condor_q' || true
+            su - submituser -s /bin/bash -c 'condor_q -hold' || true
           fi
 
           FOUND_COUNT=0

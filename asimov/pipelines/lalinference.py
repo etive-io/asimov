@@ -88,7 +88,7 @@ class LALInference(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "lalinference"
@@ -256,7 +256,7 @@ class LALInference(Pipeline):
         ----------
         category : str, optional
            The category of the job.
-           Defaults to "C01_offline".
+           Defaults to "analyses".
         production : str
            The production name.
         dryrun: bool

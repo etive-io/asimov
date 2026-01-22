@@ -27,7 +27,7 @@ class BayesWave(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "BayesWave"
@@ -47,8 +47,8 @@ class BayesWave(Pipeline):
         try:
             self.category = config.get("general", "calibration_directory")
         except configparser.NoOptionError:
-            self.category = "C01_offline"
-            self.logger.info("Assuming C01_offline calibration.")
+            self.category = "analyses"
+            self.logger.info("Assuming analyses directory.")
 
         if not production.meta.get("quality", {}).get("lowest minimum frequency", None):
             production.meta["quality"]["lowest minimum frequency"] = self.flow

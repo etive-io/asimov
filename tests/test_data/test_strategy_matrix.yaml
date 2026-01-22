@@ -1,0 +1,13 @@
+# Test blueprint with a multi-parameter strategy (matrix)
+kind: analysis
+name: bilby-{waveform.approximant}-{sampler.sampler}
+event: S000000
+pipeline: bilby
+comment: PE job testing waveform and sampler combinations
+strategy:
+  waveform.approximant:
+    - IMRPhenomXPHM
+    - SEOBNRv4PHM
+  sampler.sampler:
+    - dynesty
+    - emcee

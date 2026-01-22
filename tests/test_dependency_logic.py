@@ -56,25 +56,25 @@ class DependencyLogicTests(unittest.TestCase):
         """Test parsing a simple name dependency."""
         analysis = MockAnalysis('TestAnalysis', event=self.event)
         result = analysis._parse_single_dependency('Prod1')
-        self.assertEqual(result, (['name'], 'Prod1', False))
+        self.assertEqual(result, (['name'], 'Prod1', False, False))
     
     def test_parse_single_dependency_property(self):
         """Test parsing a property-based dependency."""
         analysis = MockAnalysis('TestAnalysis', event=self.event)
         result = analysis._parse_single_dependency('pipeline: bayeswave')
-        self.assertEqual(result, (['pipeline'], 'bayeswave', False))
+        self.assertEqual(result, (['pipeline'], 'bayeswave', False, False))
     
     def test_parse_single_dependency_nested_property(self):
         """Test parsing a nested property dependency."""
         analysis = MockAnalysis('TestAnalysis', event=self.event)
         result = analysis._parse_single_dependency('waveform.approximant: IMRPhenomXPHM')
-        self.assertEqual(result, (['waveform', 'approximant'], 'IMRPhenomXPHM', False))
+        self.assertEqual(result, (['waveform', 'approximant'], 'IMRPhenomXPHM', False, False))
     
     def test_parse_single_dependency_negated(self):
         """Test parsing a negated dependency."""
         analysis = MockAnalysis('TestAnalysis', event=self.event)
         result = analysis._parse_single_dependency('pipeline: !bayeswave')
-        self.assertEqual(result, (['pipeline'], 'bayeswave', True))
+        self.assertEqual(result, (['pipeline'], 'bayeswave', True, False))
     
     def test_matches_filter_simple_name(self):
         """Test matching by name."""
@@ -120,8 +120,8 @@ class DependencyLogicTests(unittest.TestCase):
         analysis = MockAnalysis('TestAnalysis', event=self.event, needs=['Prod1', 'Prod2'])
         result = analysis._process_dependencies(analysis._needs)
         expected = [
-            (['name'], 'Prod1', False),
-            (['name'], 'Prod2', False)
+            (['name'], 'Prod1', False, False),
+            (['name'], 'Prod2', False, False)
         ]
         self.assertEqual(result, expected)
     
@@ -134,8 +134,8 @@ class DependencyLogicTests(unittest.TestCase):
         )
         result = analysis._process_dependencies(analysis._needs)
         expected = [
-            (['pipeline'], 'bayeswave', False),
-            (['waveform', 'approximant'], 'IMRPhenomXPHM', False)
+            (['pipeline'], 'bayeswave', False, False),
+            (['waveform', 'approximant'], 'IMRPhenomXPHM', False, False)
         ]
         self.assertEqual(result, expected)
     
@@ -149,8 +149,8 @@ class DependencyLogicTests(unittest.TestCase):
         result = analysis._process_dependencies(analysis._needs)
         expected = [
             [
-                (['pipeline'], 'bayeswave', False),
-                (['status'], 'finished', False)
+                (['pipeline'], 'bayeswave', False, False),
+                (['status'], 'finished', False, False)
             ]
         ]
         self.assertEqual(result, expected)
@@ -274,7 +274,7 @@ class DependencyLogicTests(unittest.TestCase):
         dict_need = {'waveform.approximant': 'IMRPhenomXPHM'}
         result = analysis._parse_single_dependency(dict_need)
         
-        expected = (['waveform', 'approximant'], 'IMRPhenomXPHM', False)
+        expected = (['waveform', 'approximant'], 'IMRPhenomXPHM', False, False)
         self.assertEqual(result, expected)
     
     def test_parse_dict_format_with_negation(self):
@@ -284,7 +284,7 @@ class DependencyLogicTests(unittest.TestCase):
         dict_need = {'pipeline': '!bayeswave'}
         result = analysis._parse_single_dependency(dict_need)
         
-        expected = (['pipeline'], 'bayeswave', True)
+        expected = (['pipeline'], 'bayeswave', True, False)
         self.assertEqual(result, expected)
     
     def test_self_dependency_exclusion(self):
