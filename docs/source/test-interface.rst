@@ -25,7 +25,7 @@ Example: Checking prior files
 		       with self.subTest(event=event.title, production=production.name):
 			   repo = event.event_object.repository.directory
 			   try:
-			       with open(f"{repo}/C01_offline/{production.name}.prior", "r") as priorfile:
+			       with open(f"{repo}/analyses/{production.name}.prior", "r") as priorfile:
 				   self.assertFalse("name='chirp_mass', minimum=7.932707, maximum=14.759644" in priorfile.read())
 			   except FileNotFoundError:
 			       pass

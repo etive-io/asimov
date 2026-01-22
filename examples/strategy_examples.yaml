@@ -1,0 +1,106 @@
+# Example blueprint demonstrating strategy functionality
+#
+# This file shows how to use strategies to create multiple similar analyses
+# with parameter variations, similar to GitHub Actions matrix strategies.
+#
+# IMPORTANT: Parameter names in strategies must match the exact keys used in
+# the pipeline configuration templates. For bilby, see asimov/configs/bilby.ini
+# to find the correct parameter paths. Keys with spaces are supported
+# (e.g., "waveform.reference frequency").
+
+# First, define an event
+---
+kind: event
+name: GW150914_095045
+event time: 1126259462.391
+
+# Example 1: Single parameter strategy
+# This creates 3 analyses, one for each waveform approximant
+---
+kind: analysis
+name: bilby-{waveform.approximant}
+event: GW150914_095045
+pipeline: bilby
+comment: Testing multiple waveform approximants
+needs:
+  - generate-psd
+likelihood:
+  sample rate: 4096
+strategy:
+  waveform.approximant:
+    - IMRPhenomXPHM
+    - SEOBNRv4PHM
+    - IMRPhenomD
+
+# Example 2: Multi-parameter matrix strategy
+# This creates 6 analyses (3 waveforms × 2 samplers)
+---
+kind: analysis
+name: pe-{waveform.approximant}-{sampler.sampler}
+event: GW150914_095045
+pipeline: bilby
+comment: Systematic comparison of waveforms and samplers
+needs:
+  - generate-psd
+likelihood:
+  sample rate: 4096
+  psd length: 4
+strategy:
+  waveform.approximant:
+    - IMRPhenomXPHM
+    - SEOBNRv4PHM
+    - IMRPhenomD
+  sampler.sampler:
+    - dynesty
+    - emcee
+
+# Example 3: Strategy with numeric parameters
+# This creates 3 analyses with different reference frequencies
+---
+kind: analysis
+name: bilby-fref-{waveform.reference frequency}
+event: GW150914_095045
+pipeline: bilby
+comment: Testing different reference frequencies
+strategy:
+  waveform.reference frequency:
+    - 20
+    - 50
+    - 100
+
+# Example 4: Strategy with nested parameters
+# This creates 2 analyses with distance marginalization on/off
+---
+kind: analysis
+name: bilby-margdist-{likelihood.marginalization.distance}
+event: GW150914_095045
+pipeline: bilby
+comment: Testing distance marginalization
+strategy:
+  likelihood.marginalization.distance:
+    - true
+    - false
+
+# The above strategies would create the following analyses:
+#
+# From Example 1:
+# - bilby-IMRPhenomXPHM
+# - bilby-SEOBNRv4PHM
+# - bilby-IMRPhenomD
+#
+# From Example 2:
+# - pe-IMRPhenomXPHM-dynesty
+# - pe-IMRPhenomXPHM-emcee
+# - pe-SEOBNRv4PHM-dynesty
+# - pe-SEOBNRv4PHM-emcee
+# - pe-IMRPhenomD-dynesty
+# - pe-IMRPhenomD-emcee
+#
+# From Example 3:
+# - bilby-fref-20
+# - bilby-fref-50
+# - bilby-fref-100
+#
+# From Example 4:
+# - bilby-margdist-true
+# - bilby-margdist-false

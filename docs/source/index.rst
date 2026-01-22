@@ -159,7 +159,8 @@ Advanced topics
 
    analyses
    build-process
-
+   monitor-state-machine
+   monitor-api
    configuration
    test-interface
    clusters
@@ -214,6 +215,8 @@ Python API
    :maxdepth: 1
    :caption: Python API
 
+   python-api
+   api/project
    api/asimov
    api/condor
    api/event
