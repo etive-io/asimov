@@ -1,0 +1,13 @@
+kind: event
+name: S000000
+event time: 900
+priors:
+  mass ratio:
+    maximum: 1.0
+    minimum: 0.125
+  luminosity distance:
+    maximum: 1000
+    minimum: 10
+    name: luminosity_distance
+  geocent time:
+    name: geocent_time
