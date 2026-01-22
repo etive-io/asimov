@@ -670,7 +670,12 @@ class PESummaryPipeline(PostPipeline):
                     htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
                 )
                 schedd = htcondor.Schedd(schedulers)
-            except (configparser.NoOptionError, configparser.NoSectionError):
+            except (
+                configparser.NoOptionError,
+                configparser.NoSectionError,
+                htcondor.HTCondorLocateError,
+                htcondor.HTCondorIOError,
+            ):
                 # If you can't find a specified scheduler, use the first one you find
                 schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
                 schedd = htcondor.Schedd(schedulers)
