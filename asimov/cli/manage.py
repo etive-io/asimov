@@ -323,8 +323,9 @@ def submit(event, update, dryrun):
                 )
                 click.echo("Try running `asimov manage build` first.")
             try:
-                pipe.submit_dag(dryrun=dryrun)
+                cluster_id = pipe.submit_dag(dryrun=dryrun)
                 if not dryrun:
+                    analysis.job_id = int(cluster_id)
                     click.echo(
                         click.style("●", fg="green") + f" Submitted {analysis.name}"
                     )
@@ -440,6 +441,18 @@ def submit(event, update, dryrun):
                         + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
                     )
                 continue
+            
+            # For SubjectAnalysis, check if all source analyses are finished
+            from asimov.analysis import SubjectAnalysis
+            if isinstance(production, SubjectAnalysis):
+                if not production.source_analyses_ready():
+                    if dryrun:
+                        click.echo(
+                            click.style("●", fg="yellow")
+                            + f" {production.name} is waiting on source analyses to finish"
+                        )
+                    continue
+            
             if production.status.lower() == "restart":
                 pipe = production.pipeline
                 try:
@@ -475,8 +488,14 @@ def submit(event, update, dryrun):
                     )
                     click.echo("Try running `asimov manage build` first.")
                 try:
-                    pipe.submit_dag(dryrun=dryrun)
+                    cluster_id = pipe.submit_dag(dryrun=dryrun)
                     if not dryrun:
+                        # cluster_id may be a scalar or a sequence; normalize it
+                        if isinstance(cluster_id, (list, tuple)):
+                            job_id_value = cluster_id[0]
+                        else:
+                            job_id_value = cluster_id
+                        production.job_id = int(job_id_value)
                         click.echo(
                             click.style("●", fg="green")
                             + f" Submitted {production.event.name}/{production.name}"

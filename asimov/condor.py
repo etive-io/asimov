@@ -14,6 +14,7 @@ import os
 import datetime
 import configparser
 from dateutil import tz
+import configparser
 
 import warnings
 try:
@@ -108,7 +109,6 @@ def _submit_job_legacy(submit_description):
     hostname_job = htcondor.Submit(submit_description)
 
     try:
-        # There should really be a specified submit node, and if there is, use it.
         schedulers = htcondor.Collector().locate(
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
@@ -414,7 +414,7 @@ class CondorJobList:
             try:
                 schedd = htcondor.Schedd(schedd_ad)
                 jobs = schedd.query(
-                    opts=htcondor.htcondor.QueryOpts.DefaultMyJobsOnly,
+                    opts=htcondor.QueryOpts.DefaultMyJobsOnly,
                     projection=[
                         "ClusterId",
                         "Cmd",

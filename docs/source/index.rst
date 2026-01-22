@@ -160,6 +160,8 @@ Advanced topics
    analyses
    build-process
    scheduler-integration
+   monitor-state-machine
+   monitor-api
    configuration
    test-interface
    clusters

@@ -68,6 +68,7 @@ bilby = [
 	"bilby_pipe",
 	"bilby",
 ]
+testing = []
 
 [project.scripts]
 olivaw = "asimov.olivaw:olivaw"
@@ -82,6 +83,12 @@ include-package-data = true
 packages = [
 	"asimov",
 	"asimov.pipelines",
+	"asimov.pipelines.testing",
 	"asimov.cli",
 	"asimov.configs"
 ]
+
+[project.entry-points."asimov.pipelines"]
+simpletestpipeline = "asimov.pipelines.testing:SimpleTestPipeline"
+subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"
+projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"

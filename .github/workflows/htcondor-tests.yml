@@ -208,6 +208,61 @@ jobs:
         with:
           script: asimov monitor
 
+      - name: Test New Monitor API (programmatic)
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            python3 << 'EOF'
+            # Test the new programmatic monitor API
+            import sys
+            import os
+            import traceback
+            os.chdir('test_project')
+            
+            from asimov.monitor_api import run_monitor, list_active_analyses, get_analysis_status
+            
+            try:
+                print("=== Testing Programmatic Monitor API ===")
+                
+                # Test list_active_analyses
+                print("\n1. Testing list_active_analyses()...")
+                analyses = list_active_analyses()
+                print(f"   Found {len(analyses)} active analyses")
+                for analysis in analyses:
+                    print(f"   - {analysis['name']}: {analysis['status']}")
+                
+                # Test get_analysis_status
+                print("\n2. Testing get_analysis_status()...")
+                statuses = get_analysis_status()
+                print(f"   Found {len(statuses)} analyses total")
+                for name, status in statuses.items():
+                    print(f"   - {name}: {status}")
+                
+                # Test run_monitor with verbose
+                print("\n3. Testing run_monitor(verbose=True)...")
+                results = run_monitor(verbose=True)
+                
+                print("\n4. Monitor Results:")
+                print(f"   Total analyses: {results['total']}")
+                print(f"   Project analyses: {results['project_analyses']}")
+                print(f"   Event analyses: {results['event_analyses']}")
+                print(f"   Active: {results['active']}")
+                print(f"   Complete: {results['complete']}")
+                print(f"   Stuck: {results['stuck']}")
+                
+                # Verify results make sense
+                assert results['total'] >= 0, "Total should be non-negative"
+                assert results['total'] == results['project_analyses'] + results['event_analyses'], \
+                    "Total should equal sum of project and event analyses"
+                
+                print("\n=== All programmatic API tests passed! ===")
+                sys.exit(0)
+            except Exception as e:
+                print("\nERROR during programmatic monitor API tests:")
+                traceback.print_exc()
+                sys.exit(1)
+            EOF
+
       - name: Archive testing artifacts
         if: always()
         uses: actions/upload-artifact@v4

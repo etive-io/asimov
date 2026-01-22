@@ -157,6 +157,9 @@ class Event:
                             prod_meta, subject=self, ledger=self.ledger
                         )
                     )
+        # After all productions are added, update the graph to build dependency edges
+        # This ensures dependencies can be resolved regardless of order in the ledger
+        self.update_graph()
         self._check_required()
 
         if (
@@ -250,29 +253,26 @@ class Event:
         self.productions.append(production)
         self.graph.add_node(production)
 
-        if production.dependencies:
-            for dependency in production.dependencies:
-                if dependency == production:
-                    continue
-                analysis_dict = {
-                    production.name: production for production in self.productions
-                }
-                self.graph.add_edge(analysis_dict[dependency], production)
+        # Note: Dependencies are resolved dynamically when accessed, so we don't
+        # build edges here. Instead, call update_graph() after all productions
+        # are added to ensure the graph reflects current dependencies.
+        # This fixes the issue where dependencies appearing later in the ledger
+        # couldn't be found during initial loading.
     
     def update_graph(self):
         """
         Rebuild the dependency graph based on current production dependencies.
-        
+
         This is necessary because dependency queries (e.g., property-based filters)
         are evaluated dynamically and may change as productions are added or modified.
         Call this method before using the graph to ensure edges reflect current state.
         """
         # Clear all edges but keep nodes
         self.graph.clear_edges()
-        
+
         # Rebuild edges based on current dependencies
         analysis_dict = {production.name: production for production in self.productions}
-        
+
         for production in self.productions:
             if production.dependencies:
                 for dependency_name in production.dependencies:
@@ -280,6 +280,13 @@ class Event:
                         continue
                     if dependency_name in analysis_dict:
                         self.graph.add_edge(analysis_dict[dependency_name], production)
+
+        # Re-resolve SubjectAnalysis dependencies now that all productions are loaded
+        # This ensures smart dependencies work correctly regardless of production order
+        from asimov.analysis import SubjectAnalysis
+        for production in self.productions:
+            if isinstance(production, SubjectAnalysis):
+                production.resolve_analyses()
 
     def __repr__(self):
         return f"<Event {self.name}>"
@@ -591,17 +598,55 @@ class Event:
                             # Add review status indicator
                             review_indicator = get_review_indicator(review_status)
                             
+                            # Check if this is a subject analysis
+                            is_subject = hasattr(node, 'category') and node.category == 'subject_analyses'
+                            subject_class = ' graph-node-subject' if is_subject else ''
+                            
+                            # Check if stale (dependencies changed)
+                            is_stale = hasattr(node, 'is_stale') and node.is_stale
+                            is_refreshable = hasattr(node, 'is_refreshable') and node.is_refreshable
+                            stale_class = ' graph-node-stale' if is_stale else ''
+                            
+                            # Add staleness indicator for subject analyses
+                            stale_indicator = ''
+                            if is_subject and is_stale:
+                                stale_indicator = '<span class="stale-badge" title="Dependencies changed - needs rerun">⟳</span>'
+                            
+                            # Create unique node IDs by including event name
+                            node_id = f"node-{self.name}-{node.name}"
+                            data_id = f"analysis-data-{self.name}-{node.name}"
+                            
+                            # For subject analyses, include source analysis names
+                            source_analyses_str = ''
+                            if is_subject and hasattr(node, '_analysis_spec_names'):
+                                # Build list of source analyses with their statuses for styling
+                                source_specs = []
+                                for source_name in node._analysis_spec_names:
+                                    # Find the source analysis status
+                                    source_status = 'unknown'
+                                    for n in self.graph.nodes():
+                                        if n.name == source_name:
+                                            source_status = n.status if hasattr(n, 'status') else 'unknown'
+                                            break
+                                    source_specs.append(f"{source_name}:{source_status}")
+                                source_analyses_str = '|'.join(source_specs)
+                            
                             card += f"""
-                            <div class="graph-node status-{status} review-{review_status}" 
-                                 id="node-{node.name}"
+                            <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
+                                 id="{node_id}"
+                                 data-event-name="{self.name}"
                                  data-review="{review_status}" 
                                  data-status="{status}"
                                  data-node-name="{node.name}"
                                  data-predecessors="{predecessor_names}"
                                  data-successors="{successor_names}"
-                                 onclick="openAnalysisModal('{node.name}')">
+                                 data-source-analyses="{source_analyses_str}"
+                                 data-is-subject="{str(is_subject).lower()}"
+                                 data-is-stale="{str(is_stale).lower()}"
+                                 onclick="openAnalysisModal('{data_id}')">
                                 {running_indicator}
                                 {review_indicator}
+                                {stale_indicator}
                                 <div class="graph-node-title">{node.name}</div>
                                 <div class="graph-node-subtitle">{pipeline_name}</div>
                             </div>
@@ -612,6 +657,30 @@ class Event:
                             rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                             approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                             
+                            # Get webdir for results links
+                            webdir = ''
+                            if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
+                                webdir = node.event.webdir
+                            
+                            # Construct potential result page URLs based on pipeline
+                            result_pages = []
+                            if webdir and rundir:
+                                # Extract just the directory name from the full rundir path
+                                import os
+                                rundir_name = os.path.basename(rundir.rstrip('/'))
+                                base_url = f"{webdir}/{rundir_name}"
+                                
+                                # Add common result page patterns for different pipelines
+                                if pipeline_name.lower() == 'bilby':
+                                    result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
+                                    result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
+                                elif pipeline_name.lower() == 'bayeswave':
+                                    result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
+                                elif pipeline_name.lower() == 'pesummary':
+                                    result_pages.append(f"{base_url}/home.html|PESummary Results")
+                            
+                            result_pages_str = ';;'.join(result_pages) if result_pages else ''
+                            
                             # Get current dependencies
                             dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                             dependencies_str = ', '.join(dependencies) if dependencies else ''
@@ -620,7 +689,7 @@ class Event:
                             review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
                             
                             card += f"""
-                            <div id="analysis-data-{node.name}" style="display:none;"
+                            <div id="{data_id}" style="display:none;"
                                  data-name="{node.name}"
                                  data-status="{status}"
                                  data-status-badge="{status_badge}"
@@ -630,7 +699,8 @@ class Event:
                                  data-comment="{comment}"
                                  data-dependencies="{dependencies_str}"
                                  data-review-status="{review_status}"
-                                 data-review-message="{review_message_escaped}">
+                                 data-review-message="{review_message_escaped}"
+                                 data-result-pages="{result_pages_str}">
                             </div>
                             """
                         
@@ -668,17 +738,55 @@ class Event:
                         # Add review status indicator
                         review_indicator = get_review_indicator(review_status)
                         
+                        # Check if this is a subject analysis
+                        is_subject = hasattr(node, 'category') and node.category == 'subject_analyses'
+                        subject_class = ' graph-node-subject' if is_subject else ''
+                        
+                        # Check if stale (dependencies changed)
+                        is_stale = hasattr(node, 'is_stale') and node.is_stale
+                        is_refreshable = hasattr(node, 'is_refreshable') and node.is_refreshable
+                        stale_class = ' graph-node-stale' if is_stale else ''
+                        
+                        # Add staleness indicator for subject analyses
+                        stale_indicator = ''
+                        if is_subject and is_stale:
+                            stale_indicator = '<span class="stale-badge" title="Dependencies changed - needs rerun">⟳</span>'
+                        
+                        # Create unique node IDs by including event name
+                        node_id = f"node-{self.name}-{node.name}"
+                        data_id = f"analysis-data-{self.name}-{node.name}"
+                        
+                        # For subject analyses, include source analysis names
+                        source_analyses_str = ''
+                        if is_subject and hasattr(node, '_analysis_spec_names'):
+                            # Build list of source analyses with their statuses for styling
+                            source_specs = []
+                            for source_name in node._analysis_spec_names:
+                                # Find the source analysis status
+                                source_status = 'unknown'
+                                for n in self.graph.nodes():
+                                    if n.name == source_name:
+                                        source_status = n.status if hasattr(n, 'status') else 'unknown'
+                                        break
+                                source_specs.append(f"{source_name}:{source_status}")
+                            source_analyses_str = '|'.join(source_specs)
+                        
                         card += f"""
-                        <div class="graph-node status-{status} review-{review_status}" 
-                             id="node-{node.name}"
+                        <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
+                             id="{node_id}"
+                             data-event-name="{self.name}"
                              data-review="{review_status}"
                              data-status="{status}"
                              data-node-name="{node.name}"
                              data-predecessors="{predecessor_names}"
                              data-successors="{successor_names}"
-                             onclick="openAnalysisModal('{node.name}')">
+                             data-source-analyses="{source_analyses_str}"
+                             data-is-subject="{str(is_subject).lower()}"
+                             data-is-stale="{str(is_stale).lower()}"
+                             onclick="openAnalysisModal('{data_id}')">
                             {running_indicator}
                             {review_indicator}
+                            {stale_indicator}
                             <div class="graph-node-title">{node.name}</div>
                             <div class="graph-node-subtitle">{pipeline_name}</div>
                         </div>
@@ -688,6 +796,30 @@ class Event:
                         rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                         approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                         
+                        # Get webdir for results links
+                        webdir = ''
+                        if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
+                            webdir = node.event.webdir
+                        
+                        # Construct potential result page URLs based on pipeline
+                        result_pages = []
+                        if webdir and rundir:
+                            # Extract just the directory name from the full rundir path
+                            import os
+                            rundir_name = os.path.basename(rundir.rstrip('/'))
+                            base_url = f"{webdir}/{rundir_name}"
+                            
+                            # Add common result page patterns for different pipelines
+                            if pipeline_name.lower() == 'bilby':
+                                result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
+                                result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
+                            elif pipeline_name.lower() == 'bayeswave':
+                                result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
+                            elif pipeline_name.lower() == 'pesummary':
+                                result_pages.append(f"{base_url}/home.html|PESummary Results")
+                        
+                        result_pages_str = ';;'.join(result_pages) if result_pages else ''
+                        
                         # Get current dependencies
                         dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                         dependencies_str = ', '.join(dependencies) if dependencies else ''
@@ -696,7 +828,7 @@ class Event:
                         review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
                         
                         card += f"""
-                        <div id="analysis-data-{node.name}" style="display:none;"
+                        <div id="{data_id}" style="display:none;"
                              data-name="{node.name}"
                              data-status="{status}"
                              data-status-badge="{status_badge}"
@@ -706,7 +838,8 @@ class Event:
                              data-comment="{comment}"
                              data-dependencies="{dependencies_str}"
                              data-review-status="{review_status}"
-                             data-review-message="{review_message_escaped}">
+                             data-review-message="{review_message_escaped}"
+                             data-result-pages="{result_pages_str}">
                         </div>
                         """
                     card += """</div>"""
