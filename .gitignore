@@ -24,6 +24,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
+# Asimov specific
+.asimov/
 # Test temporary files
 tests/tmp/
 # Asimov specific

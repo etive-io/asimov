@@ -314,7 +314,7 @@ class BayesWave(Pipeline):
 
     def submit_dag(self, dryrun=False):
         """
-        Submit a DAG file to the condor cluster.
+        Submit a DAG file to the scheduler.
 
         Parameters
         ----------
@@ -336,50 +336,41 @@ class BayesWave(Pipeline):
         """
         self.before_submit()
 
-        command = [
-            "condor_submit_dag",
-            "-batch-name",
-            f"bwave/{self.production.event.name}/{self.production.name}",
-            f"{self.production.name}.dag",
-        ]
+        dag_filename = f"{self.production.name}.dag"
+        batch_name = f"bwave/{self.production.event.name}/{self.production.name}"
 
-        self.logger.info((" ".join(command)))
+        self.logger.info(f"Submitting DAG: {dag_filename} with batch name: {batch_name}")
 
         if dryrun:
-            print(" ".join(command))
+            print(f"Would submit DAG: {dag_filename} with batch name: {batch_name}")
 
         else:
             with set_directory(self.production.rundir):
                 try:
-                    dagman = subprocess.Popen(
-                        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                    # Use the scheduler API to submit the DAG
+                    cluster_id = self.scheduler.submit_dag(
+                        dag_file=dag_filename,
+                        batch_name=batch_name
                     )
+                    
+                    self.production.status = "running"
+                    self.production.job_id = int(cluster_id)
+                    self.logger.info(
+                        f"Successfully submitted to cluster {self.production.job_id}"
+                    )
+                    return (int(cluster_id),)
+                    
                 except FileNotFoundError as e:
                     self.logger.exception(e)
                     raise PipelineException(
-                        "It looks like condor isn't installed on this system.\n"
-                        f"""I wanted to run {" ".join(command)}."""
+                        "It looks like the scheduler isn't properly configured.\n"
+                        f"Failed to submit DAG file: {dag_filename}"
                     ) from e
-
-                stdout, stderr = dagman.communicate()
-
-            if "submitted to cluster" in str(stdout):
-                cluster = re.search(
-                    r"submitted to cluster ([\d]+)", str(stdout)
-                ).groups()[0]
-                self.production.status = "running"
-                self.production.job_id = int(cluster)
-                self.logger.info(
-                    f"Successfully submitted to cluster {self.production.job_id}"
-                )
-                self.logger.debug(stdout)
-                return (int(cluster),)
-            else:
-                self.logger.info(stdout)
-                self.logger.error(stderr)
-                raise PipelineException(
-                    f"The DAG file could not be submitted.\n\n{stdout}\n\n{stderr}",
-                )
+                except RuntimeError as e:
+                    self.logger.exception(e)
+                    raise PipelineException(
+                        f"The DAG file could not be submitted: {e}",
+                    ) from e
 
     def upload_assets(self):
         """
