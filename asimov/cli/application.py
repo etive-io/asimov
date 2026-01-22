@@ -121,15 +121,21 @@ def apply_page(file, event=None, ledger=ledger, update_page=False):
             # Expand strategy if present
             expanded_documents = expand_strategy(document)
             
-            for expanded_doc in expanded_documents:
-                if event:
-                    event_s = event
+            # Determine event once for all expanded analyses
+            if event:
+                event_s = event
+            else:
+                if "event" in document:
+                    event_s = document["event"]
                 else:
-                    if "event" in expanded_doc:
-                        event_s = expanded_doc["event"]
+                    num_analyses = len(expanded_documents)
+                    if num_analyses > 1:
+                        prompt = f"Which event should these {num_analyses} analyses be applied to?"
                     else:
                         prompt = "Which event should these be applied to?"
-                        event_s = str(click.prompt(prompt))
+                    event_s = str(click.prompt(prompt))
+            
+            for expanded_doc in expanded_documents:
                 try:
                     event_o = ledger.get_event(event_s)[0]
                 except KeyError as e:
