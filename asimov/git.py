@@ -43,6 +43,52 @@ class EventRepo:
 
         self.logger = logger
 
+    def get_default_branch(self):
+        """
+        Get the default branch name for this repository.
+        
+        Returns
+        -------
+        str
+            The name of the default branch (e.g., 'master', 'main')
+        """
+        try:
+            # Try to get the remote's default branch
+            if self.repo.remotes:
+                remote = self.repo.remotes[0]
+                # Get the symbolic reference for HEAD from the remote
+                if hasattr(remote, 'refs'):
+                    for ref in remote.refs:
+                        ref_name = getattr(ref, "name", "")
+                        if ref_name.endswith("HEAD"):
+                            # Get what HEAD points to
+                            remote_head = getattr(ref, "remote_head", None)
+                            if remote_head:
+                                return remote_head
+                            target_ref = getattr(ref, "ref", None)
+                            target_name = getattr(target_ref, "name", None)
+                            if target_name:
+                                return target_name.split("/")[-1]
+            
+            # Fallback: check local HEAD or common branch names
+            if self.repo.head.is_valid():
+                return self.repo.head.ref.name
+            
+            # Final fallback: try common names
+            for branch_name in ['main', 'master']:
+                try:
+                    self.repo.git.rev_parse('--verify', branch_name)
+                    return branch_name
+                except git.exc.GitCommandError:
+                    continue
+                    
+            # If all else fails, return 'master' as last resort
+            return 'master'
+        except (git.exc.GitCommandError, AttributeError) as e:
+            # In case of any error, return 'master' as a safe default
+            self.logger.warning(f"Could not detect default branch for {self.event}: {e}")
+            return 'master'
+
     def __repr__(self):
         return self.directory
 
@@ -59,8 +105,17 @@ class EventRepo:
         directory = config.get("general", "calibration_directory")
         os.makedirs(location, exist_ok=True)
         try:
-            repo = git.Repo.init(location, initial_branch="master")
-        except Exception:
+            # Try to create with 'main' as the initial branch (modern convention)
+            repo = git.Repo.init(location, initial_branch="main")
+        except (TypeError, git.exc.GitCommandError) as exc:
+            # Fallback for older git versions that don't support initial_branch
+            logger.warning(
+                "Git version does not support 'initial_branch' when initializing "
+                "repository at %s; falling back to default initial branch. "
+                "Original error: %s",
+                location,
+                exc,
+            )
             repo = git.Repo.init(location)
         os.makedirs(os.path.join(location, directory), exist_ok=True)
         with open(os.path.join(location, directory, ".gitkeep"), "w") as f:
@@ -179,6 +234,12 @@ class EventRepo:
     def find_timefile(self, category=config.get("general", "calibration_directory")):
         """
         Find the time file in this repository.
+        
+        Parameters
+        ----------
+        category : str, optional
+           The category directory to search in.
+           Defaults to the value of "general/calibration_directory" from config.
         """
 
         with set_directory(os.path.join(self.directory, category)):
@@ -191,6 +252,12 @@ class EventRepo:
     def find_coincfile(self, category=config.get("general", "calibration_directory")):
         """
         Find the coinc file for this calibration category in this repository.
+        
+        Parameters
+        ----------
+        category : str, optional
+           The category directory to search in.
+           Defaults to the value of "general/calibration_directory" from config.
         """
         coinc_file = glob.glob(
             os.path.join(os.getcwd(), self.directory, category, "*coinc*.xml")
@@ -214,7 +281,7 @@ class EventRepo:
            The name of the production.
            If omitted then all production ini files are returned.
         category : str, optional
-           The category of run. Defaults to "general/calibration_directory" from the config file.
+           The category of run. Defaults to the value of "general/calibration_directory" from config.
         """
 
         self.update()
@@ -242,7 +309,7 @@ class EventRepo:
         ----------
         category : str, optional
            The category of the job.
-           Defaults to "C01_offline".
+           Defaults to the value of "general/calibration_directory" from config.
         production : str
            The production name.
         rundir : str
@@ -277,7 +344,9 @@ class EventRepo:
         )
         out, err = dagman.communicate()
 
-        if err or "master -> master" not in str(out):
+        # Check if there was an error or if the push didn't succeed
+        # Instead of checking for "master -> master", check for general push success
+        if err:
             raise ValueError(f"Sample upload failed.\n{out}\n{err}")
         else:
             return out
@@ -357,7 +426,7 @@ class EventRepo:
 
         return True
 
-    def update(self, stash=False, branch="master"):
+    def update(self, stash=False, branch=None):
         """
         Pull the latest updates to the repository.
 
@@ -369,11 +438,14 @@ class EventRepo:
            Default is False.
         branch : str, optional
            The branch which should be checked-out.
-           Default is master.
+           If not provided, uses the repository's default branch.
         """
         if stash:
             self.repo.git.stash()
 
+        if branch is None:
+            branch = self.get_default_branch()
+            
         self.repo.git.checkout(branch)
         try:
             self.repo.git.pull()

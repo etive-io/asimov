@@ -1,6 +1,7 @@
 """Defines the interface with generic analysis pipelines."""
 
 import configparser
+
 import os
 import subprocess
 import time
@@ -166,6 +167,10 @@ class Pipeline:
         """
         Store the PE Summary results
         """
+        # Prefer absolute webroot; if relative, join to project root
+        webroot = config.get("general", "webroot")
+        if not os.path.isabs(webroot):
+            webroot = os.path.join(config.get("project", "root"), webroot)
 
         files = [
             f"{self.production.name}_pesummary.dat",
@@ -175,32 +180,94 @@ class Pipeline:
 
         for filename in files:
             results = os.path.join(
-                config.get("general", "webroot"),
+                webroot,
                 self.production.event.name,
                 self.production.name,
                 "pesummary",
                 "samples",
                 filename,
             )
-            store = Store(root=config.get("storage", "directory"))
-            store.add_file(
-                self.production.event.name, self.production.name, file=results
-            )
+            if os.path.exists(results):
+                try:
+                    store = Store(root=config.get("storage", "directory"))
+                    store.add_file(
+                        self.production.event.name, self.production.name, file=results
+                    )
+                except (OSError, IOError) as e:
+                    self.logger.warning("Failed to store result %s: %s", results, e)
+            else:
+                self.logger.debug("Result not found, skipping: %s", results)
 
     def detect_completion_processing(self):
-        files = f"{self.production.name}_pesummary.dat"
-        results = os.path.join(
-            config.get("general", "webroot"),
-            self.production.event.name,
-            self.production.name,
-            "pesummary",
-            "samples",
-            files,
-        )
-        if os.path.exists(results):
+        """
+        Detect that PESummary post-processing outputs exist and are valid.
+
+        For SubjectAnalysis productions, validates that the HDF5 file contains
+        all expected analyses as datasets. For regular analyses, just checks
+        that the file exists and is readable.
+        """
+        webroot = config.get("general", "webroot")
+        if not os.path.isabs(webroot):
+            webroot = os.path.join(config.get("project", "root"), webroot)
+
+        base = os.path.join(webroot, self.production.event.name, self.production.name, "pesummary")
+
+        # Posterior file is the primary completion criterion
+        posterior = os.path.join(base, "samples", "posterior_samples.h5")
+        if os.path.exists(posterior):
+            # Validate HDF5 file is readable and contains expected content
+            try:
+                import h5py
+                with h5py.File(posterior, 'r') as f:
+                    # For SubjectAnalysis, verify all expected analyses are present as datasets
+                    from asimov.analysis import SubjectAnalysis
+                    if isinstance(self.production, SubjectAnalysis):
+                        # Get the list of analyses that should be in the file
+                        # Use resolved_dependencies if available (what was actually processed)
+                        # Otherwise fall back to current analyses list
+                        expected_analyses = getattr(self.production, 'resolved_dependencies', None)
+                        if not expected_analyses and hasattr(self.production, 'analyses'):
+                            expected_analyses = [a.name for a in self.production.analyses]
+
+                        if expected_analyses:
+                            # Check if all expected analyses have datasets in the HDF5 file
+                            # PESummary stores each analysis as a top-level group
+                            available_keys = list(f.keys())
+                            missing = [name for name in expected_analyses if name not in available_keys]
+
+                            if missing:
+                                self.logger.warning(
+                                    f"HDF5 file exists but is missing expected analyses: {missing}. "
+                                    f"Available: {available_keys}"
+                                )
+                                return False
+
+                            self.logger.debug(f"HDF5 file validated with all expected analyses: {expected_analyses}")
+                    else:
+                        # For regular analysis, just verify the file has some content
+                        if len(f.keys()) == 0:
+                            self.logger.warning("HDF5 file exists but is empty")
+                            return False
+
+                    return True
+
+            except (OSError, IOError) as e:
+                self.logger.warning(f"HDF5 file exists but is not readable: {e}")
+                return False
+            except ImportError:
+                # h5py not available, fall back to simple existence check
+                self.logger.warning("h5py not available, cannot validate HDF5 contents")
+                return True
+            except Exception as e:
+                self.logger.warning(f"Error validating HDF5 file: {e}")
+                return False
+
+        # Legacy sentinel
+        legacy = os.path.join(base, "samples", f"{self.production.name}_pesummary.dat")
+        if os.path.exists(legacy):
             return True
-        else:
-            return False
+
+        return False
 
     def after_processing(self):
         """
@@ -208,9 +275,10 @@ class Pipeline:
         """
         try:
             self.store_results()
-            self.production.status = "uploaded"
         except Exception as e:
-            raise ValueError(e)
+            # Do not block upload on storage failures; log and continue
+            self.logger.warning("Post-processing storage error: %s", e)
+        self.production.status = "uploaded"
     
     def get_prior_interface(self):
         """
@@ -266,6 +334,61 @@ class Pipeline:
 
     def resurrect(self):
         pass
+
+    def while_running(self):
+        """
+        Define a hook to run while the job is running.
+        
+        This method is called during each monitor cycle while the analysis
+        is in the 'running' state. It can be used to collect intermediate
+        results, update progress information, etc.
+        
+        Note, this method should take no arguments, and should be over-written
+        in the specific pipeline implementation if required.
+        """
+        pass
+
+    def get_state_handlers(self):
+        """
+        Get pipeline-specific state handlers.
+        
+        This method allows pipelines to define their own custom state handlers
+        that override or extend the default state handlers. This enables
+        pipeline-specific behavior for different analysis states.
+        
+        Returns
+        -------
+        dict or None
+            A dictionary mapping state names (str) to MonitorState instances,
+            or None to use only default state handlers.
+            
+        Examples
+        --------
+        Override the running state handler:
+        
+        >>> from asimov.monitor_states import MonitorState
+        >>> 
+        >>> class CustomRunningState(MonitorState):
+        ...     @property
+        ...     def state_name(self):
+        ...         return "running"
+        ...     def handle(self, context):
+        ...         # Custom running logic for this pipeline
+        ...         return True
+        >>> 
+        >>> class MyPipeline(Pipeline):
+        ...     def get_state_handlers(self):
+        ...         return {
+        ...             "running": CustomRunningState(),
+        ...         }
+        
+        Note
+        ----
+        Pipeline-specific handlers take precedence over default handlers.
+        If a state is not defined in the pipeline's handlers, the default
+        handler will be used.
+        """
+        return None
 
     @classmethod
     def read_ini(cls, filepath):

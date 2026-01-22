@@ -35,7 +35,7 @@ jobs:
         uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
-          extra-packages: "-U bilby bilby_pipe git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor"
+          extra-packages: "-U bilby bilby_pipe==1.4.0 git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor pesummary"
 
       - name: Set up git
         run: |
@@ -46,6 +46,35 @@ jobs:
               git config --global user.name "Your Name"
               SUBMITUSER
 
+      - name: Start MockGWDataFindServer in background
+        run: |
+          python3 << EOF &
+          from tests.mock_gwdatafind_server import MockGWDataFindServer
+          import time
+          
+          frame_configs = {
+              ('H', 'H1_LOSC_16_V1'): ['file://$GITHUB_WORKSPACE/tests/test_data/frames/H-H1_GWOSC_16KHZ_R1-1126259447-32.gwf'],
+              ('L', 'L1_LOSC_16_V1'): ['file://$GITHUB_WORKSPACE/tests/test_data/frames/L-L1_GWOSC_16KHZ_R1-1126259447-32.gwf']
+          }
+          
+          server = MockGWDataFindServer(port=8765, frame_configs=frame_configs)
+          server.start()
+          print("MockGWDataFindServer started on port 8765", flush=True)
+          
+          try:
+              while True:
+                  time.sleep(1)
+          except KeyboardInterrupt:
+              server.stop()
+          EOF
+          
+          # Give the server time to start
+          sleep 3
+      
+      - name: Verify server is running
+        run: |
+          curl -f http://localhost:8765/api/v1/gwf/H/H1_LOSC_16_V1/1126259460,1126259464/file.json || echo "Server check failed but continuing..."
+      
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
         with:
@@ -79,15 +108,25 @@ jobs:
 
       - name: Add asimov-gwdata job
         env:
-          GWDATAFIND_SERVER: https://datafind.gwosc.org
+          GWDATAFIND_SERVER: http://localhost:8765
         uses: ./.github/actions/run-asimov-command
         with:
           script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
 
       - name: Build and submit gwdata job
         uses: ./.github/actions/run-asimov-command
+        env:
+          GWDATAFIND_SERVER: http://localhost:8765        
         with: 
           script: asimov manage build submit
+
+      - name: Show Pip Environment
+        run: |
+          pip freeze
+
+      # - name: Debugging run for gwdata
+      #   run: |
+      #     gwdata --settings /__w/asimov/asimov/checkouts/GW150914_095045/C01_offline/get-data.ini
 
       - name: Wait for frame files
         uses: ./.github/actions/wait-for-files
@@ -141,7 +180,7 @@ jobs:
             
       - name: Test Bilby
         env:
-          GWDATAFIND_SERVER: https://datafind.gwosc.org
+          GWDATAFIND_SERVER: http://localhost:8765
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
@@ -160,7 +199,7 @@ jobs:
         with:
           patterns: "final_result/*.hdf5"
           directory: "working/GW150914_095045/bilby-IMRPhenomXPHM"
-          timeout: "2400"
+          timeout: "600"
           interval: "30"
           working-directory: .
 
@@ -168,3 +207,73 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           script: asimov monitor
+
+      - name: Test New Monitor API (programmatic)
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            python3 << 'EOF'
+            # Test the new programmatic monitor API
+            import sys
+            import os
+            import traceback
+            os.chdir('test_project')
+            
+            from asimov.monitor_api import run_monitor, list_active_analyses, get_analysis_status
+            
+            try:
+                print("=== Testing Programmatic Monitor API ===")
+                
+                # Test list_active_analyses
+                print("\n1. Testing list_active_analyses()...")
+                analyses = list_active_analyses()
+                print(f"   Found {len(analyses)} active analyses")
+                for analysis in analyses:
+                    print(f"   - {analysis['name']}: {analysis['status']}")
+                
+                # Test get_analysis_status
+                print("\n2. Testing get_analysis_status()...")
+                statuses = get_analysis_status()
+                print(f"   Found {len(statuses)} analyses total")
+                for name, status in statuses.items():
+                    print(f"   - {name}: {status}")
+                
+                # Test run_monitor with verbose
+                print("\n3. Testing run_monitor(verbose=True)...")
+                results = run_monitor(verbose=True)
+                
+                print("\n4. Monitor Results:")
+                print(f"   Total analyses: {results['total']}")
+                print(f"   Project analyses: {results['project_analyses']}")
+                print(f"   Event analyses: {results['event_analyses']}")
+                print(f"   Active: {results['active']}")
+                print(f"   Complete: {results['complete']}")
+                print(f"   Stuck: {results['stuck']}")
+                
+                # Verify results make sense
+                assert results['total'] >= 0, "Total should be non-negative"
+                assert results['total'] == results['project_analyses'] + results['event_analyses'], \
+                    "Total should equal sum of project and event analyses"
+                
+                print("\n=== All programmatic API tests passed! ===")
+                sys.exit(0)
+            except Exception as e:
+                print("\nERROR during programmatic monitor API tests:")
+                traceback.print_exc()
+                sys.exit(1)
+            EOF
+
+      - name: Archive testing artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            checkouts/
+            working/
+          retention-days: 5
+
+      - name: Stop background server
+        if: always()
+        run: |
+          # Kill the background Python process running the server
+          pkill -f "MockGWDataFindServer" || true                        

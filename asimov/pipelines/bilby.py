@@ -162,6 +162,7 @@ class BilbyPriorInterface(PriorInterface):
             'bilby.gw.prior.UniformInComponentsMassRatio',
             'bilby.gw.prior.AlignedSpin',
             'bilby.gw.prior.UniformComovingVolume',
+            'bilby.gw.prior.UniformSourceFrame',
             'bilby.core.prior.Uniform',
             'bilby.core.prior.LogUniform',
             'bilby.core.prior.PowerLaw',
@@ -289,7 +290,7 @@ class Bilby(Pipeline):
        The production object.
     category : str, optional
         The category of the job.
-        Defaults to "C01_offline".
+        Defaults to "analyses".
     """
 
     name = "bilby"
@@ -352,6 +353,31 @@ class Bilby(Pipeline):
         """
         pass
 
+    def get_sampler_kwargs(self):
+        defaults = self.production.meta.get("sampler", {}).get("sampler kwargs", {})
+        if self.production.dependencies:
+            productions = {}
+            for production in self.production.event.productions:
+                productions[production.name] = production
+            for previous_job in self.production.dependencies:
+                if "samples" in productions[previous_job].pipeline.collect_assets():
+                    posterior_file = productions[previous_job].pipeline.collect_assets()['samples']
+                    defaults['initial_result_file'] = posterior_file[0]
+        return defaults
+
+    def get_additional_files(self):
+        defaults = self.production.meta.get("scheduler", {}).get("additional files", [])
+        if self.production.dependencies:
+            productions = {}
+            for production in self.production.event.productions:
+                productions[production.name] = production
+            for previous_job in self.production.dependencies:
+                if "samples" in productions[previous_job].pipeline.collect_assets():
+                    posterior_file = productions[previous_job].pipeline.collect_assets()['samples']
+                    defaults.append(posterior_file[0])
+        return defaults
+
+    
     @auth.refresh_scitoken
     def build_dag(self, psds=None, user=None, clobber_psd=False, dryrun=False):
         """

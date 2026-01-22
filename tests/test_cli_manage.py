@@ -67,7 +67,7 @@ class TestBuild(unittest.TestCase):
                 self.assertTrue(f"Working on {event}" in result.output)
                 self.assertTrue(f"Production config Prod0 created" in result.output)
                 self.assertFalse(f"Production config Prod1 created" in result.output)
-                self.assertTrue(os.path.exists(os.path.join(self.cwd, "tests", "tmp", "project", "checkouts", event, "C01_offline", "Prod0.ini")))
+                self.assertTrue(os.path.exists(os.path.join(self.cwd, "tests", "tmp", "project", "checkouts", event, "analyses", "Prod0.ini")))
                     
 
     def test_build_dryruns(self):
@@ -148,7 +148,7 @@ class TestSubmit(unittest.TestCase):
                 self.assertTrue(f"Working on {event}" in result.output)
                 self.assertTrue(f"Production config Prod0 created" in result.output)
                 self.assertFalse(f"Production config Prod1 created" in result.output)
-                self.assertTrue(os.path.exists(os.path.join(self.cwd, "tests", "tmp", "project", "checkouts", event, "C01_offline", "Prod0.ini")))
+                self.assertTrue(os.path.exists(os.path.join(self.cwd, "tests", "tmp", "project", "checkouts", event, "analyses", "Prod0.ini")))
                     
 
     def test_build_submit_dryruns(self):

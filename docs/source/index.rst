@@ -162,6 +162,8 @@ Advanced topics
    analyses
    build-process
    cli-reference
+   monitor-state-machine
+   monitor-api
    configuration
    troubleshooting
    faq
