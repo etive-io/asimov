@@ -362,6 +362,14 @@ Strategy parameters can use dot notation to set deeply nested values::
 
 This sets ``likelihood.marginalisation.distance`` in the generated analyses.
 
+.. note::
+
+   Special value handling:
+   
+   - Boolean values (``True``/``False``) are converted to lowercase strings (``true``/``false``) when used in name templates to match YAML conventions.
+   - Each strategy parameter must be a list with at least one value.
+   - Strategy parameters cannot be empty lists or non-list values.
+
 Complete Strategy Example
 -------------------------
 

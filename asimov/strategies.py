@@ -29,6 +29,11 @@ def set_nested_value(dictionary: Dict[str, Any], path: str, value: Any) -> None:
     >>> set_nested_value(d, "waveform.approximant", "IMRPhenomXPHM")
     >>> d
     {'waveform': {'approximant': 'IMRPhenomXPHM'}}
+    
+    Raises
+    ------
+    TypeError
+        If an intermediate key exists but is not a dictionary
     """
     keys = path.split(".")
     current = dictionary
@@ -36,6 +41,12 @@ def set_nested_value(dictionary: Dict[str, Any], path: str, value: Any) -> None:
     for key in keys[:-1]:
         if key not in current:
             current[key] = {}
+        elif not isinstance(current[key], dict):
+            raise TypeError(
+                f"Cannot set nested value for path '{path}': "
+                f"intermediate key '{key}' is of type "
+                f"{type(current[key]).__name__}, expected dict."
+            )
         current = current[key]
     
     current[keys[-1]] = value
@@ -97,9 +108,27 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     blueprint = deepcopy(blueprint)
     strategy = blueprint.pop("strategy")
     
+    # Validate strategy parameters
+    if not strategy:
+        raise ValueError("Strategy is defined but empty")
+    
     # Get all parameter combinations
     param_names = list(strategy.keys())
     param_values = list(strategy.values())
+    
+    # Validate that all strategy values are lists or iterables
+    for param_name, values in zip(param_names, param_values):
+        if not isinstance(values, (list, tuple)):
+            raise TypeError(
+                f"Strategy parameter '{param_name}' must be a list, "
+                f"got {type(values).__name__}. "
+                f"Did you mean: {param_name}: [{values}]?"
+            )
+        if len(values) == 0:
+            raise ValueError(
+                f"Strategy parameter '{param_name}' has an empty list. "
+                f"Each parameter must have at least one value."
+            )
     
     # Create all combinations (cross product)
     combinations = list(itertools.product(*param_values))
@@ -127,7 +156,12 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
             # Replace each parameter placeholder with its value
             for param_name, value in context.items():
                 placeholder = "{" + param_name + "}"
-                new_name = new_name.replace(placeholder, str(value))
+                # Convert booleans to lowercase strings for YAML convention
+                if isinstance(value, bool):
+                    value_str = str(value).lower()
+                else:
+                    value_str = str(value)
+                new_name = new_name.replace(placeholder, value_str)
             new_blueprint["name"] = new_name
         
         expanded_blueprints.append(new_blueprint)

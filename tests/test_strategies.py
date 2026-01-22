@@ -199,6 +199,72 @@ class TestExpandStrategy(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["likelihood"]["marginalisation"]["distance"], True)
         self.assertEqual(result[1]["likelihood"]["marginalisation"]["distance"], False)
+    
+    def test_boolean_values_in_name(self):
+        """Test that boolean values are converted to lowercase in names."""
+        blueprint = {
+            "kind": "analysis",
+            "name": "test-{likelihood.marginalisation.distance}",
+            "pipeline": "bilby",
+            "strategy": {
+                "likelihood.marginalisation.distance": [True, False]
+            }
+        }
+        result = expand_strategy(deepcopy(blueprint))
+        
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["name"], "test-true")
+        self.assertEqual(result[1]["name"], "test-false")
+    
+    def test_empty_strategy(self):
+        """Test that an empty strategy raises an error."""
+        blueprint = {
+            "kind": "analysis",
+            "name": "test",
+            "pipeline": "bilby",
+            "strategy": {}
+        }
+        with self.assertRaises(ValueError) as context:
+            expand_strategy(deepcopy(blueprint))
+        self.assertIn("empty", str(context.exception).lower())
+    
+    def test_empty_parameter_list(self):
+        """Test that empty parameter lists raise an error."""
+        blueprint = {
+            "kind": "analysis",
+            "name": "test",
+            "pipeline": "bilby",
+            "strategy": {
+                "waveform.approximant": []
+            }
+        }
+        with self.assertRaises(ValueError) as context:
+            expand_strategy(deepcopy(blueprint))
+        self.assertIn("empty", str(context.exception).lower())
+        self.assertIn("waveform.approximant", str(context.exception))
+    
+    def test_non_list_parameter_value(self):
+        """Test that non-list parameter values raise an error."""
+        blueprint = {
+            "kind": "analysis",
+            "name": "test",
+            "pipeline": "bilby",
+            "strategy": {
+                "waveform.approximant": "IMRPhenomXPHM"  # Should be a list
+            }
+        }
+        with self.assertRaises(TypeError) as context:
+            expand_strategy(deepcopy(blueprint))
+        self.assertIn("must be a list", str(context.exception))
+        self.assertIn("waveform.approximant", str(context.exception))
+    
+    def test_set_nested_value_with_non_dict_intermediate(self):
+        """Test that set_nested_value raises error for non-dict intermediate values."""
+        d = {"waveform": "some_string"}
+        with self.assertRaises(TypeError) as context:
+            set_nested_value(d, "waveform.approximant", "IMRPhenomXPHM")
+        self.assertIn("intermediate key", str(context.exception).lower())
+        self.assertIn("waveform", str(context.exception))
 
 
 if __name__ == "__main__":
