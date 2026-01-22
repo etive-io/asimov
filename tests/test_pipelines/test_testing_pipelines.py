@@ -13,9 +13,9 @@ from asimov.pipelines.testing import (
     ProjectTestPipeline
 )
 from asimov.analysis import SimpleAnalysis, SubjectAnalysis, ProjectAnalysis
-from asimov.event import Event
+
 from asimov.ledger import YAMLLedger
-from asimov.cli.project import make_project
+
 from asimov.cli.application import apply_page
 
 from click.testing import CliRunner

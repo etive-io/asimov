@@ -717,10 +717,7 @@ class SubjectAnalysis(Analysis):
         """
         Set the run directory.
         """
-        if "rundir" not in self.meta:
-            self.meta["rundir"] = value
-        else:
-            self.meta["rundir"] = value
+        self.meta["rundir"] = value
 
 
 class ProjectAnalysis(Analysis):

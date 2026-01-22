@@ -8,7 +8,7 @@ ideal for end-to-end testing and as a template for pipeline developers.
 """
 
 import os
-import time
+
 from pathlib import Path
 
 from ...pipeline import Pipeline

@@ -7,7 +7,7 @@ implementation ideal for testing and as a template for population analyses.
 """
 
 import os
-import time
+
 from pathlib import Path
 
 from ...pipeline import Pipeline

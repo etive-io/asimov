@@ -146,7 +146,7 @@ Each pipeline creates specific output files:
 
 **SimpleTestPipeline:**
 - `test_job.sh` - Job script
-- `.submitted` - Submission marker
+
 - `results.dat` - Analysis results
 - `posterior_samples.dat` - Sample outputs
 
@@ -229,7 +229,7 @@ subjects:
   - GW150914_095045
   - GW151226_033853
 analyses:
-  - status:finished
+  - status: finished
 ```
 
 ## Contributing

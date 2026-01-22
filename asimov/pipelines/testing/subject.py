@@ -7,7 +7,7 @@ It provides a minimal implementation ideal for testing and as a template.
 """
 
 import os
-import time
+
 from pathlib import Path
 
 from ...pipeline import Pipeline
