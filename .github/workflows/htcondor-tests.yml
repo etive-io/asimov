@@ -178,15 +178,16 @@ jobs:
           script: |
             asimov monitor
             
-      - name: Test Bilby
+      - name: Apply Bilby and LALInference jobs
         env:
           GWDATAFIND_SERVER: http://localhost:8765
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
             asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/lalinference_quick_test.yaml" -e GW150914_095045
 
-      - name: Test Bilby submit
+      - name: Submit Bilby and LALInference jobs
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         uses: ./.github/actions/run-asimov-command
@@ -199,11 +200,21 @@ jobs:
         with:
           patterns: "final_result/*.hdf5"
           directory: "working/GW150914_095045/bilby-IMRPhenomXPHM"
-          timeout: "600"
+          timeout: "1800"
+          interval: "60"
+          working-directory: .
+
+      - name: Wait for LALInference result files
+        continue-on-error: true
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "posterior_samples/posterior*.hdf5"
+          directory: "working/GW150914_095045/lalinference-IMRPhenomXPHM"
+          timeout: "2400"
           interval: "30"
           working-directory: .
 
-      - name: Monitor Bilby
+      - name: Monitor jobs
         uses: ./.github/actions/run-asimov-command
         with:
           script: asimov monitor

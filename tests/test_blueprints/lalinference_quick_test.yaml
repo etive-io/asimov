@@ -1,0 +1,10 @@
+# This file contains a standard lalinference analysis
+kind: analysis
+name: lalinference-IMRPhenomXPHM
+pipeline: lalinference
+waveform:
+  approximant: IMRPhenomXPHM
+
+comment: PE job using IMRPhenomXPHM and lalinference
+needs:
+    - generate-psd

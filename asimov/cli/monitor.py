@@ -28,6 +28,8 @@ else:
 @click.command()
 def start(dry_run, use_scheduler_api):
     """Set up a cron job on condor to monitor the project."""
+    from asimov import setup_file_logging
+    setup_file_logging()
 
     try:
         minute_expression = config.get("condor", "cron_minute")
@@ -95,6 +97,8 @@ def start(dry_run, use_scheduler_api):
 @click.command()
 def stop(dry_run, use_scheduler_api):
     """Set up a cron job on condor to monitor the project."""
+    from asimov import setup_file_logging
+    setup_file_logging()
     cluster = ledger.data["cronjob"]
     
     # Use the new scheduler API if requested, otherwise use the legacy interface
@@ -137,6 +141,8 @@ def monitor(ctx, event, update, dry_run, chain):
     """
     Monitor condor jobs' status, and collect logging information.
     """
+    from asimov import setup_file_logging
+    setup_file_logging()
 
     def _webdir_for(subject_name, production_name):
         webroot = Path(config.get("general", "webroot"))

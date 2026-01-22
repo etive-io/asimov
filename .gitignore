@@ -26,6 +26,7 @@ Thumbs.db
 
 # Asimov specific
 .asimov/
+# Test temporary files
 tests/tmp/
 # Asimov specific
 .asimov/

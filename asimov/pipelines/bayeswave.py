@@ -416,7 +416,7 @@ class BayesWave(Pipeline):
         messages = {}
 
         logfile = os.path.join(
-            config.get("logging", "directory"),
+            config.get("logging", "location"),
             self.production.event.name,
             self.production.name,
             "asimov.log",
