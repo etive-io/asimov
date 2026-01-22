@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 
@@ -31,7 +32,7 @@ class ProjectAwareGroup(click.Group):
     """
     Custom Click Group that checks for project directory.
 
-    Allows certain commands (init, clone, and all plugin commands) to run
+    Allows certain commands (init and all plugin commands) to run
     outside of an asimov project directory.
     """
 
@@ -50,8 +51,7 @@ class ProjectAwareGroup(click.Group):
         commands_allowed_outside_project = {"init", "clone"}
 
         # Add all registered plugin commands (they handle their own project checks if needed)
-        if hasattr(self, '_plugin_commands'):
-            commands_allowed_outside_project.update(self._plugin_commands)
+        commands_allowed_outside_project.update(self._plugin_commands)
 
         # Check if we're in a project or running an allowed command
         if not os.path.exists(".asimov") and ctx.invoked_subcommand not in commands_allowed_outside_project:
@@ -104,8 +104,12 @@ for ep in discovered_commands:
         command = ep.load()
         olivaw.add_command(command)
         olivaw._plugin_commands.add(ep.name)
-    except Exception as e:
-        # Log but don't fail if a plugin command can't load
-        import logging
+    except (ImportError, ModuleNotFoundError, AttributeError) as e:
+        # Log but don't fail if a plugin command can't load due to import/attribute issues
         logger = logging.getLogger("asimov.olivaw")
         logger.debug(f"Failed to load plugin command {ep.name}: {e}")
+    except Exception as e:
+        # For unexpected errors, log with full traceback and re-raise
+        logger = logging.getLogger("asimov.olivaw")
+        logger.exception(f"Unexpected error while loading plugin command {ep.name}: {e}")
+        raise
