@@ -6,12 +6,14 @@ import pydantic
 from pydantic import BaseModel, ConfigDict, model_validator
 import yaml
 
-def select_blueprint_kind(file_path: str) -> type:
+def select_blueprint_kind(file_path: str) -> tuple[type, dict]:
 
     with open(file_path, "r") as f:
         blueprint_data = yaml.safe_load(f)
     
     kind = blueprint_data.pop("kind", None)
+    if kind is None:
+        raise ValueError("Blueprint 'kind' is missing from the blueprint data.")
     if kind.lower() == "analysis":
         return Analysis, blueprint_data
     elif kind.lower() in {"event", "subject"}:
@@ -66,7 +68,7 @@ class Waveform(Blueprint):
         alias="pn phase order",
         description="The post-Newtonian phase order to use in the waveform model.",
         default=None,
-    )   
+    )
     pn_amplitude_order: int | None = pydantic.Field(
         alias="pn amplitude order",
         description="The post-Newtonian amplitude order to use in the waveform model.",
@@ -118,8 +120,9 @@ class Marginalisation(Blueprint):
         default=None,
         description="Whether to marginalise over distance."
     )
-    Calibration: bool | None = pydantic.Field(
+    calibration: bool | None = pydantic.Field(
         default=None,
+        alias="Calibration",
         description="Whether to marginalise over calibration."
     )
     

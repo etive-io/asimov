@@ -3,4 +3,5 @@ import unittest
 from asimov import blueprints
 
 class TestAnalysisBlueprint(unittest.TestCase):
-    pass
+    def test_blueprints_module_importable(self):
+        self.assertIsNotNone(blueprints)

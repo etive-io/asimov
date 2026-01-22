@@ -1,12 +1,12 @@
-import click 
+import click
 from ..blueprints import select_blueprint_kind
 
 @click.group()
 def blueprint():
     pass
 
-@click.argument("file_path", type=click.Path(exists=True))
 @blueprint.command()
+@click.argument("file_path", type=click.Path(exists=True))
 def validate(file_path):
     """
     Validate a blueprint file.
