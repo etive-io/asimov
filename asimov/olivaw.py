@@ -1,6 +1,10 @@
 import logging
 import os
 import sys
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 # Ignore warnings from the condor module
 import warnings
@@ -25,6 +29,7 @@ from asimov.cli import (  # NoQA
     project,
     report,
     review,
+    blueprint,
 )  # NoQA
 
 
@@ -67,6 +72,12 @@ def olivaw():
     """
     This is the main program which runs the DAGs for each event issue.
     """
+
+    # Check that we're running in an actual asimov project
+    if not os.path.exists(".asimov") and ctx.invoked_subcommand not in {"init", "blueprint"}:
+        # This isn't the root of an asimov project, let's fail.
+        click.secho("This isn't an asimov project", fg="white", bg="red")
+        sys.exit(1)
     pass
 
 
@@ -93,10 +104,6 @@ olivaw.add_command(review.review)
 olivaw.add_command(application.apply)
 
 # Auto-discover plugin commands
-if sys.version_info < (3, 10):
-    from importlib_metadata import entry_points
-else:
-    from importlib.metadata import entry_points
 
 discovered_commands = entry_points(group="asimov.commands")
 for ep in discovered_commands:
