@@ -89,7 +89,7 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
                 analyses = []
-                for prod in ledger.events[event_obj.name].get("productions", []):
+                for prod in ledger.events[event.name].get("productions", []):
                     prod_name = None
                     prod_data = None
 
@@ -115,37 +115,37 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                 # Add the old version to the history
                 if "history" not in ledger.data:
                     ledger.data["history"] = {}
-                history = ledger.data["history"].get(event_obj.name, {})
+                history = ledger.data["history"].get(event.name, {})
                 version = f"version-{len(history)+1}"
                 history[version] = old_event
                 history[version]["date changed"] = datetime.now()
 
-                ledger.data["history"][event_obj.name] = history
+                ledger.data["history"][event.name] = history
                 ledger.save()
-                update(ledger.events[event_obj.name], event_obj.meta)
-                ledger.events[event_obj.name]["productions"] = analyses
-                ledger.events[event_obj.name].pop("ledger", None)
+                update(ledger.events[event.name], event.meta)
+                ledger.events[event.name]["productions"] = analyses
+                ledger.events[event.name].pop("ledger", None)
 
                 click.echo(
-                    click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
+                    click.style("●", fg="green") + f" Successfully updated {event.name}"
                 )
 
             elif not event_exists and update_page is False:
                 ledger.update_event(event)
                 click.echo(
-                    click.style("●", fg="green") + f" Successfully added {event_obj.name}"
+                    click.style("●", fg="green") + f" Successfully added {event.name}"
                 )
-                logger.info(f"Added {event_obj.name} to project")
+                logger.info(f"Added {event.name} to project")
 
             elif not event_exists and update_page is True:
                 click.echo(
                     click.style("●", fg="red")
-                    + f" {event_obj.name} cannot be updated as there is no record of it in the project."
+                    + f" {event.name} cannot be updated as there is no record of it in the project."
                 )
             else:
                 click.echo(
                     click.style("●", fg="red")
-                    + f" {event_obj.name} already exists in this project."
+                    + f" {event.name} already exists in this project."
                 )
 
         elif document["kind"] == "analysis":
@@ -180,7 +180,7 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                   )
                   logger.exception(e)
               production = asimov.event.Production.from_dict(
-                  parameters=document, subject=event_obj, ledger=ledger
+                  parameters=expanded_doc, subject=event_obj, ledger=ledger
               )
               try:
                   ledger.add_analysis(production, event=event_obj)
@@ -195,20 +195,7 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                       + f" Could not apply {production.name} to {event_obj.name} as "
                       + "an analysis already exists with this name"
                   )
-                  try:
-                      ledger.add_analysis(production, event=event_o)
-                      click.echo(
-                          click.style("●", fg="green")
-                          + f" Successfully applied {production.name} to {event_o.name}"
-                      )
-                      logger.info(f"Added {production.name} to {event_o.name}")
-                  except ValueError as e:
-                      click.echo(
-                          click.style("●", fg="red")
-                          + f" Could not apply {production.name} to {event_o.name} as "
-                          + "an analysis already exists with this name"
-                      )
-                      logger.exception(e)
+                  logger.exception(e)
 
         elif document["kind"].lower() == "postprocessing":
             # Handle a project analysis
