@@ -82,14 +82,24 @@ priors:
         type: bilby.gw.prior.UniformInComponentsMassRatio
     phase:
         boundary: periodic
+        minimum: 0
+        maximum: 2 * np.pi
         type: Uniform
     phi 12:
+        minimum: 0
+        maximum: 2 * np.pi    
         type: Uniform
     phi jl:
+        minimum: 0
+        maximum: 2 * np.pi    
         type: Uniform
     psi:
+        minimum: 0
+        maximum: np.pi
         type: Uniform
     ra:
+        minimum: 0
+        maximum: 2 * np.pi
         type: Uniform
     spin 1:
         maximum: 0.99

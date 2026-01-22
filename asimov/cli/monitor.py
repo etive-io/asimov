@@ -10,6 +10,7 @@ from pathlib import Path
 from asimov import condor, config, logger, LOGGER_LEVEL
 from asimov import current_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
+from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
 
 logger = logger.getChild("cli").getChild("monitor")
@@ -22,9 +23,13 @@ else:
 
 
 @click.option("--dry-run", "-n", "dry_run", is_flag=True)
+@click.option("--use-scheduler-api", is_flag=True, default=False, 
+              help="Use the new scheduler API directly (experimental)")
 @click.command()
-def start(dry_run):
+def start(dry_run, use_scheduler_api):
     """Set up a cron job on condor to monitor the project."""
+    from asimov import setup_file_logging
+    setup_file_logging()
 
     try:
         minute_expression = config.get("condor", "cron_minute")
@@ -65,7 +70,21 @@ def start(dry_run):
             " some clusters."
         )
 
-    cluster = condor.submit_job(submit_description)
+    # Use the new scheduler API if requested, otherwise use the legacy interface
+    if use_scheduler_api:
+        logger.info("Using new scheduler API")
+        try:
+            scheduler = get_configured_scheduler()
+            job = create_job_from_dict(submit_description)
+            cluster = scheduler.submit(job)
+        except Exception as e:
+            logger.error(f"Failed to submit using scheduler API: {e}")
+            logger.info("Falling back to legacy condor.submit_job")
+            cluster = condor.submit_job(submit_description)
+    else:
+        # Use legacy interface (which internally uses the scheduler API)
+        cluster = condor.submit_job(submit_description)
+    
     ledger.data["cronjob"] = cluster
     ledger.save()
     click.secho(f"  \t  ● Asimov is running ({cluster})", fg="green")
@@ -73,11 +92,29 @@ def start(dry_run):
 
 
 @click.option("--dry-run", "-n", "dry_run", is_flag=True)
+@click.option("--use-scheduler-api", is_flag=True, default=False,
+              help="Use the new scheduler API directly (experimental)")
 @click.command()
-def stop(dry_run):
+def stop(dry_run, use_scheduler_api):
     """Set up a cron job on condor to monitor the project."""
+    from asimov import setup_file_logging
+    setup_file_logging()
     cluster = ledger.data["cronjob"]
-    condor.delete_job(cluster)
+    
+    # Use the new scheduler API if requested, otherwise use the legacy interface
+    if use_scheduler_api:
+        logger.info("Using new scheduler API")
+        try:
+            scheduler = get_configured_scheduler()
+            scheduler.delete(cluster)
+        except Exception as e:
+            logger.error(f"Failed to delete using scheduler API: {e}")
+            logger.info("Falling back to legacy condor.delete_job")
+            condor.delete_job(cluster)
+    else:
+        # Use legacy interface (which internally uses the scheduler API)
+        condor.delete_job(cluster)
+    
     click.secho("  \t  ● Asimov has been stopped", fg="red")
     logger.info(f"Stopped asimov cronjob {cluster}")
 
@@ -104,6 +141,8 @@ def monitor(ctx, event, update, dry_run, chain):
     """
     Monitor condor jobs' status, and collect logging information.
     """
+    from asimov import setup_file_logging
+    setup_file_logging()
 
     def _webdir_for(subject_name, production_name):
         webroot = Path(config.get("general", "webroot"))
@@ -130,16 +169,29 @@ def monitor(ctx, event, update, dry_run, chain):
         ctx.invoke(manage.submit, event=event)
 
     try:
-        # First pull the condor job listing
-        job_list = condor.CondorJobList()
-    except condor.htcondor.HTCondorLocateError:
-        click.echo(click.style("Could not find the condor scheduler", bold=True))
+        # Get the job listing using the new scheduler API
+        job_list = get_job_list()
+    except RuntimeError as e:
+        click.echo(click.style(f"Could not query the scheduler: {e}", bold=True))
         click.echo(
             "You need to run asimov on a machine which has access to a"
-            "condor scheduler in order to work correctly, or to specify"
-            "the address of a valid sceduler."
+            "scheduler in order to work correctly, or to specify"
+            "the address of a valid scheduler."
         )
         sys.exit()
+    except Exception as e:
+        # Fall back to legacy CondorJobList for backward compatibility
+        logger.warning(f"Failed to use new JobList, falling back to legacy: {e}")
+        try:
+            job_list = condor.CondorJobList()
+        except condor.htcondor.HTCondorLocateError:
+            click.echo(click.style("Could not find the scheduler", bold=True))
+            click.echo(
+                "You need to run asimov on a machine which has access to a"
+                "scheduler in order to work correctly, or to specify"
+                "the address of a valid scheduler."
+            )
+            sys.exit()
 
     # also check the analyses in the project analyses
     for analysis in ledger.project_analyses:

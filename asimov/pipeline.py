@@ -12,9 +12,11 @@ import asimov.analysis
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
     import htcondor2 as htcondor  # NoQA
+    import classad2 as classad  # NoQA
 except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
+    import classad  # NoQA
 
 from asimov import utils  # NoQA
 from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
@@ -103,8 +105,29 @@ class Pipeline:
         self.logger = logger.getChild(full_name)
         self.logger.setLevel(LOGGER_LEVEL)
         
+        # Initialize scheduler instance (lazy-loaded via property)
+        self._scheduler = None
+        
         # Initialize prior interface
         self._prior_interface = None
+
+    @property
+    def scheduler(self):
+        """
+        Get the configured scheduler instance for this pipeline.
+        
+        The scheduler is lazy-loaded on first access and cached for reuse.
+        
+        Returns
+        -------
+        Scheduler
+            A configured scheduler instance
+        """
+        if self._scheduler is None:
+            from asimov.scheduler_utils import get_configured_scheduler
+            self._scheduler = get_configured_scheduler()
+        return self._scheduler
+
 
     def __repr__(self):
         return self.name.lower()
@@ -616,7 +639,7 @@ class PESummaryPipeline(PostPipeline):
             # "should_transfer_files": "YES",
             "request_disk": "8192MB",
             "+flock_local": "True",
-            "+DESIRED_Sites": htcondor.classad.quote("nogrid"),
+            "+DESIRED_Sites": classad.quote("nogrid"),
         }
 
         if "accounting group" in self.meta:
@@ -647,11 +670,18 @@ class PESummaryPipeline(PostPipeline):
                     htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
                 )
                 schedd = htcondor.Schedd(schedulers)
-            except:  # NoQA
+            except (
+                configparser.NoOptionError,
+                configparser.NoSectionError,
+                htcondor.HTCondorLocateError,
+                htcondor.HTCondorIOError,
+            ):
                 # If you can't find a specified scheduler, use the first one you find
-                schedd = htcondor.Schedd()
-            with schedd.transaction() as txn:
-                cluster_id = hostname_job.queue(txn)
+                schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+                schedd = htcondor.Schedd(schedulers)
+            
+            result = schedd.submit(hostname_job)
+            cluster_id = result.cluster()
 
         else:
             cluster_id = 0
