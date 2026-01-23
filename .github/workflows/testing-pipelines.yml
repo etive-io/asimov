@@ -1,0 +1,159 @@
+name: Testing Pipelines with HTCondor
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test-pipelines:
+    name: "Testing Pipelines HTCondor Test"
+    runs-on: ubuntu-latest
+    container:
+      image: htcondor/mini:latest
+      options: --privileged
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-htcondor
+
+      - name: Install base tools
+        run: |
+          yum install -y sudo git
+
+      - name: Create submit user
+        uses: ./.github/actions/create-submit-user
+
+      - name: Ensure submituser can access workspace
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test_project"
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
+
+      - name: Setup Asimov Environment
+        uses: ./.github/actions/setup-asimov-env
+        with:
+          python-version: "3.10"
+          extra-packages: ""
+
+      - name: Set up git
+        run: |
+              su - submituser <<SUBMITUSER
+              set -euo pipefail
+              git config --global init.defaultBranch master
+              git config --global user.email "you@example.com"
+              git config --global user.name "Your Name"
+              SUBMITUSER
+
+      - name: Create asimov project
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov init "Test Project"
+
+      - name: Configure asimov user
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov configuration update condor/user submituser
+
+      - name: Configure HTCondor settings
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov configuration update condor/cache_time 30
+          
+      - name: Set cron minute to 1
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov configuration update condor/cron_minute '*/1'
+
+      - name: Apply testing configuration
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_data/testing_pe.yaml"
+
+      - name: Add test event
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+
+      - name: Add SimpleTestPipeline analysis
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline.yaml" -e GW150914_095045
+
+      - name: Build and submit SimpleTestPipeline job
+        uses: ./.github/actions/run-asimov-command
+        with: 
+          script: asimov manage build submit
+
+      - name: Wait for SimpleTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW150914_095045/test-simple-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+
+      - name: Run asimov monitor for SimpleTestPipeline
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov monitor
+
+      - name: Add SubjectTestPipeline analysis
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/subject_test_pipeline.yaml" -e GW150914_095045
+
+      - name: Build and submit SubjectTestPipeline job
+        uses: ./.github/actions/run-asimov-command
+        with: 
+          script: asimov manage build submit
+
+      - name: Wait for SubjectTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "combined_results.dat"
+          directory: "working/GW150914_095045/test-subject-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+
+      - name: Run asimov monitor for SubjectTestPipeline
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov monitor
+
+      - name: Add ProjectTestPipeline analysis
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/project_test_pipeline.yaml"
+
+      - name: Build and submit ProjectTestPipeline job
+        uses: ./.github/actions/run-asimov-command
+        with: 
+          script: asimov manage build submit
+
+      - name: Wait for ProjectTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "population_results.dat"
+          directory: "working/project-analyses/GW150914_095045/test-project-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+
+      - name: Run asimov monitor for ProjectTestPipeline
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov monitor
+
+      - name: Verify all testing pipelines completed
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            asimov monitor
+            echo "All testing pipelines completed successfully!"

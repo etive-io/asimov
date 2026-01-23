@@ -159,7 +159,9 @@ Advanced topics
 
    analyses
    build-process
-
+   scheduler-integration
+   monitor-state-machine
+   monitor-api
    configuration
    test-interface
    clusters
@@ -176,8 +178,6 @@ Developers' Guide
 
    
    asimov-repository
-
-   code-overview
 	     
    ledger   
    pipelines-dev
@@ -237,6 +237,7 @@ Python API
    api/mattermost
    api/olivaw
    api/pipeline
+   api/schedulers
    config
 
 LIGO Analysis Cookbook

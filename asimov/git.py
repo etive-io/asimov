@@ -107,7 +107,7 @@ class EventRepo:
         try:
             # Try to create with 'main' as the initial branch (modern convention)
             repo = git.Repo.init(location, initial_branch="main")
-        except TypeError as exc:
+        except (TypeError, git.exc.GitCommandError) as exc:
             # Fallback for older git versions that don't support initial_branch
             logger.warning(
                 "Git version does not support 'initial_branch' when initializing "

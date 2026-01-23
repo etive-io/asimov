@@ -155,6 +155,9 @@ class YAMLLedger(Ledger):
         --------
         """
         if isinstance(analysis, ProjectAnalysis):
+            # Ensure "project analyses" key exists for old ledgers
+            if "project analyses" not in self.data:
+                self.data["project analyses"] = []
             names = [ana["name"] for ana in self.data["project analyses"]]
             if analysis.name not in names:
                 self.data["project analyses"].append(analysis.to_dict())

@@ -517,6 +517,96 @@ def html(event, webdir):
             stroke-width: 2;
             opacity: 0.6;
         }
+        
+        /* Subject analysis styling */
+        .graph-node-subject {
+            border-width: 3px;
+            border-style: double;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%);
+        }
+        
+        .graph-node-subject .graph-node-title::before {
+            content: '◆ ';
+            color: #6f42c1;
+            font-weight: bold;
+        }
+        
+        /* Stale analysis styling */
+        .graph-node-stale {
+            border-color: #fd7e14 !important;
+            box-shadow: 0 0 0 2px rgba(253, 126, 20, 0.2);
+        }
+        
+        .stale-badge {
+            position: absolute;
+            top: 0.25rem;
+            left: 0.25rem;
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #fd7e14;
+            color: white;
+            text-align: center;
+            line-height: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            z-index: 10;
+            animation: rotate 2s linear infinite;
+        }
+        
+        @keyframes rotate {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        /* Subject analysis connection styling - use purple for dependencies */
+        .connection-line-subject {
+            stroke: #6f42c1;
+            stroke-width: 3;
+            opacity: 0.7;
+        }
+
+        /* Subject analysis source dependency styling - different styles based on source status */
+        .connection-edge {
+            transition: opacity 0.3s ease;
+        }
+        
+        .connection-edge:hover {
+            opacity: 1 !important;
+        }
+        
+        .connection-edge.connection-included .connection-line {
+            stroke: #28a745;
+            stroke-dasharray: none;
+            stroke-width: 2.5;
+            opacity: 0.8;
+        }
+        
+        .connection-edge.connection-pending .connection-line {
+            stroke: #ffc107;
+            stroke-dasharray: 5,5;
+            stroke-width: 2.5;
+            opacity: 0.7;
+            animation: flow 0.6s linear infinite;
+        }
+        
+        .connection-edge.connection-waiting .connection-line {
+            stroke: #586069;
+            stroke-dasharray: 2,3;
+            stroke-width: 2;
+            opacity: 0.4;
+        }
+        
+        @keyframes flow {
+            to {
+                stroke-dashoffset: 10;
+            }
+        }
 
         /* Modal styles */
         .modal-backdrop {
@@ -787,9 +877,11 @@ def html(event, webdir):
         if (!node.dataset || !node.dataset.successors) return;
         
         var successorNames = node.dataset.successors.split(',').filter(function(name) { return name.trim(); });
+        var eventName = node.dataset.eventName || '';
         
         successorNames.forEach(function(successorName) {
-            var successorNode = document.getElementById('node-' + successorName.trim());
+            var successorNodeId = 'node-' + eventName + '-' + successorName.trim();
+            var successorNode = document.getElementById(successorNodeId);
             if (successorNode && successorNode.style.display !== 'none') {
                 successorNode.style.display = 'none';
                 successorNode.classList.add('filtered-hidden');
@@ -866,10 +958,10 @@ def html(event, webdir):
     }
 
     // Modal functionality
-    function openAnalysisModal(analysisId) {
+    function openAnalysisModal(dataId) {
         var modal = document.getElementById('analysis-modal');
         var backdrop = document.getElementById('modal-backdrop');
-        var analysisData = document.getElementById('analysis-data-' + analysisId);
+        var analysisData = document.getElementById(dataId);
         
         if (modal && backdrop && analysisData) {
             // Populate modal with analysis data
@@ -938,6 +1030,31 @@ def html(event, webdir):
             } else {
                 document.getElementById('modal-analysis-dependencies').textContent = 'None';
                 document.getElementById('modal-dependencies-section').style.display = 'block';
+            }
+            
+            // Handle results pages
+            if (analysisData.dataset.resultPages) {
+                var resultPagesStr = analysisData.dataset.resultPages;
+                var resultPages = resultPagesStr.split(';;').filter(function(p) { return p.trim(); });
+                
+                if (resultPages.length > 0) {
+                    var linksHtml = '<ul>';
+                    resultPages.forEach(function(page) {
+                        var parts = page.split('|');
+                        if (parts.length === 2) {
+                            var url = parts[0];
+                            var label = parts[1];
+                            linksHtml += '<li><a href="' + url + '" target="_blank">' + label + '</a></li>';
+                        }
+                    });
+                    linksHtml += '</ul>';
+                    document.getElementById('modal-results-links').innerHTML = linksHtml;
+                    document.getElementById('modal-results-section').style.display = 'block';
+                } else {
+                    document.getElementById('modal-results-section').style.display = 'none';
+                }
+            } else {
+                document.getElementById('modal-results-section').style.display = 'none';
             }
             
             modal.classList.add('show');
@@ -1059,7 +1176,7 @@ def html(event, webdir):
             svg.setAttribute('width', containerRect.width);
             svg.setAttribute('height', containerRect.height);
             
-            // Draw connections based on actual dependencies
+            // Draw regular connections based on actual dependencies
             allNodes.forEach(function(sourceNode) {
                 // Skip if source node is hidden
                 if (sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
@@ -1072,8 +1189,13 @@ def html(event, webdir):
                 
                 var successorNames = successors.split(',').map(function(name) { return name.trim(); }).filter(function(name) { return name; });
                 
+                // Get event name for scoped lookups
+                var eventName = sourceNode.dataset.eventName || '';
+                
                 successorNames.forEach(function(successorName) {
-                    var targetNode = document.getElementById('node-' + successorName);
+                    // Create scoped node ID using event name
+                    var targetNodeId = 'node-' + eventName + '-' + successorName;
+                    var targetNode = document.getElementById(targetNodeId);
                     
                     // Skip if target node doesn't exist or is hidden
                     if (!targetNode || targetNode.style.display === 'none' || targetNode.classList.contains('hidden') || targetNode.classList.contains('filtered-hidden')) {
@@ -1106,7 +1228,85 @@ def html(event, webdir):
                                    x2 + ' ' + y2;
                     
                     path.setAttribute('d', d);
-                    path.classList.add('connection-line');
+                    
+                    // Use different styling for connections to/from subject analyses
+                    var isTargetSubject = targetNode.dataset.isSubject === 'true';
+                    if (isTargetSubject) {
+                        path.classList.add('connection-line-subject');
+                    } else {
+                        path.classList.add('connection-line');
+                    }
+                    
+                    svg.appendChild(path);
+                });
+            });
+            
+            // Draw subject analysis source dependencies with status-based styling
+            allNodes.forEach(function(subjectNode) {
+                // Only process subject analyses
+                if (subjectNode.dataset.isSubject !== 'true') return;
+                
+                var sourceAnalyses = subjectNode.dataset.sourceAnalyses;
+                if (!sourceAnalyses || !sourceAnalyses.trim()) return;
+                
+                // Parse source analyses: "name1:status1|name2:status2|..."
+                var sourceSpecs = sourceAnalyses.split('|').filter(function(spec) { return spec.trim(); });
+                var eventName = subjectNode.dataset.eventName || '';
+                
+                sourceSpecs.forEach(function(spec) {
+                    var parts = spec.split(':');
+                    var sourceName = parts[0];
+                    var sourceStatus = parts[1] || 'unknown';
+                    
+                    // Find the source analysis node
+                    var sourceNodeId = 'node-' + eventName + '-' + sourceName;
+                    var sourceNode = document.getElementById(sourceNodeId);
+                    
+                    if (!sourceNode || sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
+                        return;
+                    }
+                    
+                    var sourceRect = sourceNode.getBoundingClientRect();
+                    var targetRect = subjectNode.getBoundingClientRect();
+                    
+                    // Calculate connection points
+                    var x1 = sourceRect.right - containerRect.left;
+                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
+                    var x2 = targetRect.left - containerRect.left;
+                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
+                    
+                    // Create path for source analysis dependency
+                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    
+                    // Calculate control points for bezier curve
+                    var controlPointOffset = Math.abs(x2 - x1) / 2;
+                    var cx1 = x1 + controlPointOffset;
+                    var cy1 = y1;
+                    var cx2 = x2 - controlPointOffset;
+                    var cy2 = y2;
+                    
+                    // Create smooth cubic bezier curve
+                    var d = 'M ' + x1 + ' ' + y1 + 
+                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
+                                   cx2 + ' ' + cy2 + ', ' + 
+                                   x2 + ' ' + y2;
+                    
+                    path.setAttribute('d', d);
+                    
+                    // Determine path styling based on source analysis status
+                    if (sourceStatus === 'finished' || sourceStatus === 'uploaded') {
+                        path.classList.add('connection-included');
+                    } else if (sourceStatus === 'processing' || sourceStatus === 'running') {
+                        path.classList.add('connection-pending');
+                    } else {
+                        path.classList.add('connection-waiting');
+                    }
+                    
+                    // Add title for hover tooltip
+                    var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                    title.textContent = subjectNode.dataset.nodeName + ' uses ' + sourceName + ' (' + sourceStatus + ')';
+                    path.appendChild(title);
+                    
                     svg.appendChild(path);
                 });
             });
@@ -1290,6 +1490,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-dependencies-section">
             <h5>Dependencies</h5>
             <p id="modal-analysis-dependencies">-</p>
+        </div>
+        <div class="modal-section" id="modal-results-section" style="display:none;">
+            <h5>Results</h5>
+            <div id="modal-results-links"></div>
         </div>
     </div>
 </div>
