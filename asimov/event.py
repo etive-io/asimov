@@ -648,7 +648,29 @@ class Event:
                                 {review_indicator}
                                 {stale_indicator}
                                 <div class="graph-node-title">{node.name}</div>
-                                <div class="graph-node-subtitle">{pipeline_name}</div>
+                                <div class="graph-node-subtitle">{pipeline_name}</div>"""
+                            
+                            # Add label badges if labels exist
+                            if hasattr(node, 'meta') and node.meta and 'labels' in node.meta:
+                                labels = node.meta['labels']
+                                if labels:
+                                    card += '<div style="margin-top: 0.5rem;">'
+                                    for label_name, label_value in labels.items():
+                                        # Determine badge color based on value
+                                        if isinstance(label_value, bool):
+                                            badge_class = 'badge-success' if label_value else 'badge-secondary'
+                                            badge_text = label_name
+                                        elif isinstance(label_value, (int, float)):
+                                            badge_class = 'badge-info'
+                                            badge_text = f'{label_name}: {label_value}'
+                                        else:
+                                            badge_class = 'badge-secondary'
+                                            badge_text = f'{label_name}: {label_value}'
+                                        
+                                        card += f'<span class="badge {badge_class}" style="margin-right: 0.25rem; margin-top: 0.25rem;">{badge_text}</span>'
+                                    card += '</div>'
+                            
+                            card += """
                             </div>
                             """
                             
@@ -788,7 +810,29 @@ class Event:
                             {review_indicator}
                             {stale_indicator}
                             <div class="graph-node-title">{node.name}</div>
-                            <div class="graph-node-subtitle">{pipeline_name}</div>
+                            <div class="graph-node-subtitle">{pipeline_name}</div>"""
+                        
+                        # Add label badges if labels exist
+                        if hasattr(node, 'meta') and node.meta and 'labels' in node.meta:
+                            labels = node.meta['labels']
+                            if labels:
+                                card += '<div style="margin-top: 0.5rem;">'
+                                for label_name, label_value in labels.items():
+                                    # Determine badge color based on value
+                                    if isinstance(label_value, bool):
+                                        badge_class = 'badge-success' if label_value else 'badge-secondary'
+                                        badge_text = label_name
+                                    elif isinstance(label_value, (int, float)):
+                                        badge_class = 'badge-info'
+                                        badge_text = f'{label_name}: {label_value}'
+                                    else:
+                                        badge_class = 'badge-secondary'
+                                        badge_text = f'{label_name}: {label_value}'
+                                    
+                                    card += f'<span class="badge {badge_class}" style="margin-right: 0.25rem; margin-top: 0.25rem;">{badge_text}</span>'
+                                card += '</div>'
+                        
+                        card += """
                         </div>
                         """
                         

@@ -229,12 +229,109 @@ def discover_labellers():
         logger.debug(f"No labellers discovered: {e}")
 
 
+def load_labellers_from_ledger(ledger):
+    """
+    Load and register labellers from ledger configuration.
+    
+    Labellers can be configured in the ledger via blueprint:
+    
+    .. code-block:: yaml
+    
+        kind: configuration
+        labellers:
+          interesting:
+            my_package.labellers:InterestLabeller:
+              config_key: config_value
+    
+    Parameters
+    ----------
+    ledger : Ledger
+        The ledger object containing the configuration.
+        
+    Examples
+    --------
+    >>> from asimov import current_ledger
+    >>> from asimov.labellers import load_labellers_from_ledger
+    >>> load_labellers_from_ledger(current_ledger)
+    """
+    if "labellers" not in ledger.data:
+        return
+    
+    labellers_config = ledger.data["labellers"]
+    
+    for labeller_name, labeller_spec in labellers_config.items():
+        try:
+            # labeller_spec can be either:
+            # 1. A string: "my_package.labellers:InterestLabeller"
+            # 2. A dict: {"my_package.labellers:InterestLabeller": {"config": "value"}}
+            
+            if isinstance(labeller_spec, str):
+                module_path = labeller_spec
+                config = {}
+            elif isinstance(labeller_spec, dict):
+                # Get the first (and should be only) key-value pair
+                if len(labeller_spec) != 1:
+                    logger.warning(
+                        f"Invalid labeller spec for '{labeller_name}': "
+                        f"expected single module path with optional config"
+                    )
+                    continue
+                module_path, config = list(labeller_spec.items())[0]
+                if config is None:
+                    config = {}
+            else:
+                logger.warning(
+                    f"Invalid labeller spec for '{labeller_name}': "
+                    f"expected string or dict, got {type(labeller_spec)}"
+                )
+                continue
+            
+            # Parse module path (e.g., "my_package.labellers:InterestLabeller")
+            if ":" not in module_path:
+                logger.warning(
+                    f"Invalid module path for labeller '{labeller_name}': "
+                    f"expected 'module.path:ClassName', got '{module_path}'"
+                )
+                continue
+            
+            module_name, class_name = module_path.rsplit(":", 1)
+            
+            # Import the labeller class
+            import importlib
+            module = importlib.import_module(module_name)
+            labeller_class = getattr(module, class_name)
+            
+            # Instantiate with config if it's a class
+            if isinstance(labeller_class, type):
+                if config:
+                    labeller = labeller_class(**config)
+                else:
+                    labeller = labeller_class()
+            else:
+                labeller = labeller_class
+            
+            # Register the labeller
+            register_labeller(labeller)
+            logger.info(
+                f"Loaded and registered labeller '{labeller_name}' "
+                f"from ledger configuration"
+            )
+            
+        except Exception as e:
+            logger.warning(
+                f"Failed to load labeller '{labeller_name}' from configuration: {e}"
+            )
+
+
 def apply_labellers(analysis, context=None):
     """
     Apply all registered labellers to an analysis.
     
     This function runs all registered labellers on the given analysis
-    and updates the analysis metadata with the returned labels.
+    and stores the labels in analysis.meta['labels'] dictionary.
+    
+    Labels are stored as key-value pairs where the key is the label name
+    and the value can be any JSON-serializable value (int, str, bool, etc.).
     
     Parameters
     ----------
@@ -253,10 +350,21 @@ def apply_labellers(analysis, context=None):
     Apply labellers during monitoring:
     
     >>> labels = apply_labellers(analysis, context)
-    >>> if labels.get("interest status"):
+    >>> if labels.get("interesting"):
     ...     print(f"Analysis {analysis.name} is interesting!")
+    
+    Access labels from analysis:
+    
+    >>> if analysis.meta.get('labels', {}).get('interesting'):
+    ...     print("This analysis is labelled as interesting")
     """
     all_labels = {}
+    
+    # Initialize labels dict if it doesn't exist
+    if not hasattr(analysis, 'meta'):
+        analysis.meta = {}
+    if 'labels' not in analysis.meta:
+        analysis.meta['labels'] = {}
     
     for labeller_name, labeller in LABELLER_REGISTRY.items():
         try:
@@ -275,13 +383,9 @@ def apply_labellers(analysis, context=None):
                     f"Labeller '{labeller_name}' returned labels for {analysis.name}: {labels}"
                 )
                 
-                # Update analysis metadata
-                if not hasattr(analysis, 'meta'):
-                    analysis.meta = {}
-                
-                # Merge labels into metadata
+                # Merge labels into the labels dict
                 for key, value in labels.items():
-                    analysis.meta[key] = value
+                    analysis.meta['labels'][key] = value
                     all_labels[key] = value
                     
         except Exception as e:

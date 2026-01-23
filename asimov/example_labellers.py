@@ -17,7 +17,7 @@ class AlwaysInterestingLabeller(Labeller):
     Example labeller that marks all analyses as interesting.
     
     This is a simple demonstration labeller that always returns
-    interest status as True for any analysis.
+    the "interesting" label as True for any analysis.
     
     Examples
     --------
@@ -34,7 +34,7 @@ class AlwaysInterestingLabeller(Labeller):
     
     def label(self, analysis, context=None):
         """Mark all analyses as interesting."""
-        return {"interest status": True}
+        return {"interesting": True}
 
 
 class PipelineInterestLabeller(Labeller):
@@ -82,8 +82,7 @@ class PipelineInterestLabeller(Labeller):
         Returns
         -------
         dict
-            Dictionary with "interest status" set to True if the pipeline
-            is in the interesting_pipelines list.
+            Dictionary with "interesting" label set to True/False based on pipeline.
         """
         if not hasattr(analysis, 'pipeline'):
             return {}
@@ -95,9 +94,9 @@ class PipelineInterestLabeller(Labeller):
                 logger.debug(
                     f"Marking {analysis.name} as interesting (pipeline: {pipeline_name})"
                 )
-                return {"interest status": True}
+                return {"interesting": True}
         
-        return {"interest status": False}
+        return {"interesting": False}
 
 
 class FinishedAnalysisLabeller(Labeller):
@@ -123,7 +122,7 @@ class FinishedAnalysisLabeller(Labeller):
     
     def label(self, analysis, context=None):
         """Mark finished analyses as interesting."""
-        return {"interest status": True}
+        return {"interesting": True}
 
 
 class ConditionalLabeller(Labeller):
@@ -179,11 +178,11 @@ class ConditionalLabeller(Labeller):
         Returns
         -------
         dict
-            Dictionary with "interest status" based on condition_func result.
+            Dictionary with "interesting" label based on condition_func result.
         """
         try:
             is_interesting = self.condition_func(analysis)
-            return {"interest status": bool(is_interesting)}
+            return {"interesting": bool(is_interesting)}
         except Exception as e:
             logger.warning(
                 f"Error evaluating condition for {analysis.name}: {e}"

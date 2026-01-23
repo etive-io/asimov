@@ -547,6 +547,8 @@ class Analysis:
             - pipeline
 
             - name
+            
+            - label (with optional comparison operators, e.g. "interesting>=1")
 
         In addition, any quantity contained in the analysis metadata
         may be used by accessing it in the nested structure of this
@@ -559,7 +561,8 @@ class Analysis:
         attribute : list
            The attribute path to be tested (e.g., ["waveform", "approximant"])
         match : str
-           The string to be matched against the value of the attribute
+           The string to be matched against the value of the attribute.
+           For labels, can include comparison operators: >=, <=, >, <, ==, !=
         negate : bool, optional
            If True, invert the match result (default: False)
 
@@ -573,9 +576,14 @@ class Analysis:
         is_status = False
         is_name = False
         is_pipeline = False
+        is_label = False
         in_meta = False
         
-        if attribute[0] == "review":
+        if attribute[0] == "label":
+            # Handle label-based dependencies
+            # Format: label: interesting>=1
+            is_label = self._matches_label(match)
+        elif attribute[0] == "review":
             is_review = match.lower() == str(self.review.status).lower()
         elif attribute[0] == "status":
             is_status = match.lower() == self.status.lower()
@@ -598,12 +606,84 @@ class Analysis:
             except (KeyError, TypeError, AttributeError):
                 in_meta = False
 
-        result = is_name | in_meta | is_status | is_review | is_pipeline
+        result = is_name | in_meta | is_status | is_review | is_pipeline | is_label
         
         # Apply negation if requested
         if negate:
             return not result
         return result
+    
+    def _matches_label(self, spec):
+        """
+        Check if analysis matches a label specification.
+        
+        Supports comparison operators for numeric labels:
+        - interesting>=1 (label value must be >= 1)
+        - priority>5 (label value must be > 5)
+        - status==complete (label value must equal "complete")
+        - interesting (label must be truthy, any value)
+        
+        Parameters
+        ----------
+        spec : str
+            Label specification with optional comparison operator
+            
+        Returns
+        -------
+        bool
+            True if label matches the specification
+        """
+        import re
+        
+        # Get labels from metadata
+        labels = self.meta.get('labels', {})
+        
+        # Parse the specification for comparison operators
+        # Match patterns like "interesting>=1", "priority>5", "status==complete", "interesting"
+        match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)(>=|<=|>|<|==|!=)?(.*)$', spec.strip())
+        
+        if not match:
+            return False
+        
+        label_name = match.group(1)
+        operator = match.group(2)
+        threshold = match.group(3).strip() if match.group(3) else None
+        
+        # Check if label exists
+        if label_name not in labels:
+            return False
+        
+        label_value = labels[label_name]
+        
+        # If no operator specified, just check if label is truthy
+        if not operator or not threshold:
+            return bool(label_value)
+        
+        # Try to convert to numeric for comparison
+        try:
+            label_num = float(label_value) if not isinstance(label_value, bool) else int(label_value)
+            threshold_num = float(threshold)
+            
+            if operator == '>=':
+                return label_num >= threshold_num
+            elif operator == '<=':
+                return label_num <= threshold_num
+            elif operator == '>':
+                return label_num > threshold_num
+            elif operator == '<':
+                return label_num < threshold_num
+            elif operator == '==':
+                return label_num == threshold_num
+            elif operator == '!=':
+                return label_num != threshold_num
+        except (ValueError, TypeError):
+            # Fall back to string comparison
+            if operator == '==':
+                return str(label_value).lower() == threshold.lower()
+            elif operator == '!=':
+                return str(label_value).lower() != threshold.lower()
+        
+        return False
 
     def results(self, filename=None, handle=False, hash=None):
         store = Store(root=config.get("storage", "results_store"))

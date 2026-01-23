@@ -10,10 +10,31 @@ from asimov import logger, LOGGER_LEVEL
 from asimov.cli import ACTIVE_STATES
 from asimov.monitor_states import get_state_handler
 from asimov.monitor_context import MonitorContext
-from asimov.labellers import apply_labellers
+from asimov.labellers import apply_labellers, load_labellers_from_ledger
 
 logger = logger.getChild("monitor_helpers")
 logger.setLevel(LOGGER_LEVEL)
+
+# Track if labellers have been initialized
+_labellers_initialized = False
+
+
+def initialize_labellers(ledger):
+    """
+    Initialize labellers from ledger configuration.
+    
+    This should be called once at the start of monitoring to load
+    any labellers configured in the ledger.
+    
+    Parameters
+    ----------
+    ledger : Ledger
+        The ledger containing labeller configuration.
+    """
+    global _labellers_initialized
+    if not _labellers_initialized:
+        load_labellers_from_ledger(ledger)
+        _labellers_initialized = True
 
 
 def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=None):
