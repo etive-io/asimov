@@ -13,6 +13,13 @@ from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
 
+# Try to import crontab for Slurm cron support
+try:
+    from crontab import CronTab
+    CRONTAB_AVAILABLE = True
+except ImportError:
+    CRONTAB_AVAILABLE = False
+
 logger = logger.getChild("cli").getChild("monitor")
 logger.setLevel(LOGGER_LEVEL)
 
@@ -109,8 +116,10 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
 
 def _start_slurm_monitor():
     """Start monitoring using system cron job for Slurm."""
-    import subprocess
-    from crontab import CronTab
+    if not CRONTAB_AVAILABLE:
+        # python-crontab not available, provide manual instructions
+        _start_slurm_monitor_manual()
+        return
     
     try:
         minute_expression = config.get("slurm", "cron_minute")
@@ -125,7 +134,6 @@ def _start_slurm_monitor():
         click.secho("  \t  ● Error: asimov executable not found in PATH", fg="red")
         return
     
-    # Create a cron job using python-crontab
     try:
         # Use the user's crontab
         cron = CronTab(user=True)
@@ -158,25 +166,39 @@ def _start_slurm_monitor():
         click.secho(f"  \t  ● Asimov is running via cron ({job_comment})", fg="green")
         logger.info(f"Running asimov cronjob via cron: {job_comment}")
         
-    except ImportError:
-        # If python-crontab is not available, provide manual instructions
-        click.secho("  \t  ● python-crontab not installed. Setting up cron manually...", fg="yellow")
-        
-        # Create a shell script as an alternative
-        script_path = os.path.join(".asimov", "asimov_monitor.sh")
-        with open(script_path, 'w') as f:
-            f.write("#!/bin/bash\n")
-            f.write(f"cd {project_root}\n")
-            f.write(f"{asimov_executable} monitor --chain >> {os.path.join('.asimov', 'asimov_cron.out')} 2>> {os.path.join('.asimov', 'asimov_cron.err')}\n")
-        
-        os.chmod(script_path, 0o755)
-        
-        click.echo(f"\nPlease add the following line to your crontab (crontab -e):")
-        click.echo(f"{minute_expression} * * * * {script_path}")
-        
-        # Save a marker in the ledger
-        ledger.data["cronjob"] = "manual-cron"
-        ledger.save()
+    except Exception as e:
+        logger.error(f"Failed to create cron job: {e}")
+        click.secho(f"  \t  ● Error creating cron job: {e}", fg="red")
+        _start_slurm_monitor_manual()
+
+
+def _start_slurm_monitor_manual():
+    """Provide manual instructions for setting up Slurm monitoring."""
+    try:
+        minute_expression = config.get("slurm", "cron_minute")
+    except (configparser.NoOptionError, configparser.NoSectionError):
+        minute_expression = "*/15"
+    
+    project_root = os.getcwd()
+    asimov_executable = shutil.which("asimov") or "asimov"
+    
+    click.secho("  \t  ● python-crontab not installed. Setting up cron manually...", fg="yellow")
+    
+    # Create a shell script as an alternative
+    script_path = os.path.join(".asimov", "asimov_monitor.sh")
+    with open(script_path, 'w') as f:
+        f.write("#!/bin/bash\n")
+        f.write(f"cd {project_root}\n")
+        f.write(f"{asimov_executable} monitor --chain >> {os.path.join('.asimov', 'asimov_cron.out')} 2>> {os.path.join('.asimov', 'asimov_cron.err')}\n")
+    
+    os.chmod(script_path, 0o755)
+    
+    click.echo(f"\nPlease add the following line to your crontab (crontab -e):")
+    click.echo(f"{minute_expression} * * * * {script_path}")
+    
+    # Save a marker in the ledger
+    ledger.data["cronjob"] = "manual-cron"
+    ledger.save()
 
 
 @click.option("--dry-run", "-n", "dry_run", is_flag=True)
@@ -226,7 +248,9 @@ def _stop_htcondor_monitor(dry_run, use_scheduler_api):
 
 def _stop_slurm_monitor():
     """Stop monitoring by removing cron job for Slurm."""
-    from crontab import CronTab
+    if not CRONTAB_AVAILABLE:
+        _stop_slurm_monitor_manual()
+        return
     
     cronjob_id = ledger.data.get("cronjob", None)
     
@@ -235,8 +259,7 @@ def _stop_slurm_monitor():
         return
     
     if cronjob_id == "manual-cron":
-        click.secho("  \t  ● Manual cron setup detected. Please remove from crontab manually.", fg="yellow")
-        click.echo("Run 'crontab -e' and remove the line containing 'asimov_monitor.sh'")
+        _stop_slurm_monitor_manual()
         return
     
     try:
@@ -253,9 +276,17 @@ def _stop_slurm_monitor():
         else:
             click.secho(f"  \t  ● No cron job found with identifier: {cronjob_id}", fg="yellow")
             
-    except ImportError:
-        click.secho("  \t  ● python-crontab not installed. Please remove cron job manually.", fg="yellow")
-        click.echo(f"Run 'crontab -e' and remove the line with comment: {cronjob_id}")
+    except Exception as e:
+        logger.error(f"Failed to remove cron job: {e}")
+        click.secho(f"  \t  ● Error removing cron job: {e}", fg="red")
+        _stop_slurm_monitor_manual()
+
+
+def _stop_slurm_monitor_manual():
+    """Provide manual instructions for removing Slurm monitoring."""
+    cronjob_id = ledger.data.get("cronjob", "asimov_monitor.sh")
+    click.secho("  \t  ● Manual cron setup detected or python-crontab not installed.", fg="yellow")
+    click.echo(f"Run 'crontab -e' and remove the line containing '{cronjob_id}'")
 
 
 @click.argument("event", default=None, required=False)

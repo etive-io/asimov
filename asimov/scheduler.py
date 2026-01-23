@@ -405,6 +405,7 @@ class Slurm(Scheduler):
             )
         return int(match.group(1))
 
+
     def _create_batch_script(self, submit_dict):
         """Build a Slurm batch script string from a submit dictionary."""
         lines = ["#!/bin/bash"]
@@ -458,6 +459,7 @@ class Slurm(Scheduler):
             "squeue", "--format=%i|%j|%t|%N", "--noheader",
             "--user", self.user or os.environ.get("USER", ""),
         ]
+
         if job_id is not None:
             cmd += ["--job", str(job_id)]
         try:
