@@ -159,10 +159,10 @@ class ProjectTestPipeline(Pipeline):
         
     def submit_dag(self, dryrun=False):
         """
-        Submit the pipeline job to the scheduler.
+        Submit the pipeline job to HTCondor.
 
-        This submits the DAG file to the scheduler so the job actually runs
-        and creates the results file.
+        This submits the DAG file to HTCondor so the job actually runs
+        on the scheduler and creates the results file.
 
         Parameters
         ----------
@@ -172,8 +172,11 @@ class ProjectTestPipeline(Pipeline):
         Returns
         -------
         int
-            The scheduler cluster/job ID.
+            The HTCondor cluster ID.
         """
+        import subprocess
+        import re
+
         if not self.production.rundir:
             self.logger.warning("No run directory specified")
             return None
@@ -183,28 +186,52 @@ class ProjectTestPipeline(Pipeline):
 
         self.before_submit(dryrun=dryrun)
         
-        dag_file = os.path.join(self.production.rundir, "test_project.dag")
-        batch_name = f"test-project/{self.production.name}"
+        dag_file = "test_project.dag"
         
-        self.logger.info(f"Submitting project DAG: {dag_file}")
+        command = [
+            "condor_submit_dag",
+            "-batch-name",
+            f"test-project/{self.production.name}",
+            dag_file
+        ]
+        
+        self.logger.info(f"Submitting project DAG: {' '.join(command)}")
         
         if dryrun:
-            print(f"Would submit DAG: {dag_file} with batch name: {batch_name}")
+            print(f"Would run: {' '.join(command)}")
             return 34567
         else:
+            # Change to run directory before submitting
+            original_dir = os.getcwd()
+            os.chdir(self.production.rundir)
+            
             try:
-                # Use the scheduler API to submit the DAG
-                cluster_id = self.scheduler.submit_dag(
-                    dag_file=dag_file,
-                    batch_name=batch_name
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=True
                 )
                 
-                self.logger.info(f"Project DAG submitted successfully with cluster ID: {cluster_id}")
-                return cluster_id
+                self.logger.info(f"Project DAG submitted successfully")
+                self.logger.debug(f"Output: {result.stdout}")
+                
+                # Extract cluster ID from output
+                match = re.search(r'submitted to cluster (\d+)', result.stdout)
+                if match:
+                    cluster_id = int(match.group(1))
+                    self.logger.info(f"Cluster ID: {cluster_id}")
+                    return cluster_id
+                else:
+                    self.logger.warning("Could not extract cluster ID from condor_submit_dag output")
+                    return None
                     
-            except Exception as e:
+            except subprocess.CalledProcessError as e:
                 self.logger.error(f"Failed to submit project DAG: {e}")
+                self.logger.error(f"stderr: {e.stderr}")
                 raise
+            finally:
+                os.chdir(original_dir)
         
     def detect_completion(self):
         """

@@ -18,6 +18,11 @@ try:
     warnings.filterwarnings("ignore", module="htcondor2")
     import htcondor2 as htcondor  # NoQA
     import classad2 as classad  # NoQA
+    # htcondor2 uses different exception names, create aliases for compatibility
+    if not hasattr(htcondor, 'HTCondorIOError'):
+        htcondor.HTCondorIOError = htcondor.HTCondorException
+    if not hasattr(htcondor, 'HTCondorLocateError'):
+        htcondor.HTCondorLocateError = htcondor.HTCondorException
 except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
