@@ -402,6 +402,105 @@ class SlurmSchedulerTests(unittest.TestCase):
             self.assertIn("job_b", script)
             self.assertIn("--dependency=afterok:", script)
 
+    def test_is_slurm_batch_script_detection(self):
+        """Test detection of Slurm batch scripts vs HTCondor DAGs."""
+        scheduler = Slurm()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a Slurm batch script
+            slurm_file = os.path.join(tmpdir, "test.sh")
+            with open(slurm_file, "w") as f:
+                f.write("#!/bin/bash\n")
+                f.write("#SBATCH --job-name=test\n")
+                f.write("#SBATCH --output=test.out\n")
+                f.write("echo 'Hello from Slurm'\n")
+
+            # Create an HTCondor DAG file
+            dag_file = os.path.join(tmpdir, "test.dag")
+            with open(dag_file, "w") as f:
+                f.write("JOB job_a job_a.sub\n")
+                f.write("PARENT job_a CHILD job_b\n")
+
+            # Test detection
+            self.assertTrue(scheduler._is_slurm_batch_script(slurm_file))
+            self.assertFalse(scheduler._is_slurm_batch_script(dag_file))
+
+    def test_slurm_submit_dag_with_slurm_script(self):
+        """Test that Slurm scheduler can submit Slurm batch scripts directly."""
+        scheduler = Slurm()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a Slurm batch script
+            slurm_file = os.path.join(tmpdir, "test.sh")
+            with open(slurm_file, "w") as f:
+                f.write("#!/bin/bash\n")
+                f.write("#SBATCH --job-name=test\n")
+                f.write("echo 'Test job'\n")
+
+            # Mock subprocess.run for sbatch
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = Mock(
+                    stdout="Submitted batch job 12345\n",
+                    returncode=0
+                )
+
+                # Should detect it's already a Slurm script and submit directly
+                job_id = scheduler.submit_dag(slurm_file, "test-job")
+                self.assertEqual(job_id, 12345)
+
+
+class HTCondorSchedulerTests(unittest.TestCase):
+    """Test the HTCondor scheduler implementation with symmetric conversion."""
+
+    def test_htcondor_slurm_to_dag_conversion(self):
+        """Test converting Slurm batch script to HTCondor DAG."""
+        scheduler = HTCondor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a Slurm batch script with job dependencies
+            slurm_file = os.path.join(tmpdir, "workflow.sh")
+            with open(slurm_file, "w") as f:
+                f.write("#!/bin/bash\n")
+                f.write("#SBATCH --job-name=workflow\n")
+                f.write("\n")
+                f.write('job_ids[job_a]=$(sbatch --parsable --wrap "echo Job A")\n')
+                f.write('job_ids[job_b]=$(sbatch --dependency=afterok:${job_ids[job_a]} --parsable --wrap "echo Job B")\n')
+
+            # Convert to HTCondor DAG
+            dag_file = scheduler._convert_slurm_to_dag(slurm_file, "test-workflow")
+
+            # Verify DAG file was created
+            self.assertTrue(os.path.exists(dag_file))
+
+            # Read and verify DAG content
+            with open(dag_file, "r") as f:
+                dag_content = f.read()
+
+            self.assertIn("JOB job_a", dag_content)
+            self.assertIn("JOB job_b", dag_content)
+            self.assertIn("PARENT job_a CHILD job_b", dag_content)
+
+    def test_is_slurm_batch_script_htcondor(self):
+        """Test detection of file formats in HTCondor scheduler."""
+        scheduler = HTCondor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a Slurm batch script
+            slurm_file = os.path.join(tmpdir, "test.sh")
+            with open(slurm_file, "w") as f:
+                f.write("#!/bin/bash\n")
+                f.write("#SBATCH --job-name=test\n")
+                f.write("echo 'Hello from Slurm'\n")
+
+            # Create an HTCondor DAG file
+            dag_file = os.path.join(tmpdir, "test.dag")
+            with open(dag_file, "w") as f:
+                f.write("JOB job_a job_a.sub\n")
+
+            # Test detection
+            self.assertTrue(scheduler._is_slurm_batch_script(slurm_file))
+            self.assertFalse(scheduler._is_slurm_batch_script(dag_file))
+
 
 if __name__ == "__main__":
     unittest.main()

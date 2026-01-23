@@ -224,10 +224,13 @@ class HTCondor(Scheduler):
         """
         Submit a DAG file to the HTCondor scheduler.
         
+        This method can handle both HTCondor DAG files and Slurm-style batch scripts.
+        If a Slurm-style script is detected, it will be converted to HTCondor DAG format.
+        
         Parameters
         ----------
         dag_file : str
-            Path to the DAG submit file.
+            Path to the DAG submit file (HTCondor or Slurm format).
         batch_name : str, optional
             A name for the batch of jobs.
         **kwargs
@@ -247,6 +250,11 @@ class HTCondor(Scheduler):
         """
         if not os.path.exists(dag_file):
             raise FileNotFoundError(f"DAG file not found: {dag_file}")
+        
+        # Check if this is a Slurm-style batch script
+        if self._is_slurm_batch_script(dag_file):
+            # Convert Slurm batch script to HTCondor DAG
+            dag_file = self._convert_slurm_to_dag(dag_file, batch_name, **kwargs)
         
         try:
             # Use HTCondor's Submit.from_dag to create a submit description from the DAG file
@@ -271,6 +279,132 @@ class HTCondor(Scheduler):
             raise RuntimeError(f"Failed to submit DAG to HTCondor: {e}")
         except Exception as e:
             raise RuntimeError(f"Unexpected error submitting DAG: {e}")
+    
+    def _is_slurm_batch_script(self, file_path):
+        """
+        Detect if a file is a Slurm batch script.
+        
+        Parameters
+        ----------
+        file_path : str
+            Path to the file to check.
+            
+        Returns
+        -------
+        bool
+            True if the file appears to be a Slurm batch script.
+        """
+        try:
+            with open(file_path, 'r') as f:
+                first_lines = [f.readline() for _ in range(10)]
+                content = ''.join(first_lines)
+                
+                # Check for Slurm-specific markers
+                slurm_markers = ['#SBATCH', 'sbatch', 'squeue', 'scancel']
+                has_slurm = any(marker in content for marker in slurm_markers)
+                
+                # Check for HTCondor-specific markers
+                htcondor_markers = ['JOB ', 'PARENT ', 'CHILD ', 'SCRIPT ']
+                has_htcondor = any(marker in content for marker in htcondor_markers)
+                
+                # It's a Slurm script if it has Slurm markers but not HTCondor markers
+                return has_slurm and not has_htcondor
+        except Exception:
+            return False
+    
+    def _convert_slurm_to_dag(self, slurm_file, batch_name=None, **kwargs):
+        """
+        Convert a Slurm batch script to an HTCondor DAG file.
+        
+        This is a simplified conversion that handles basic Slurm batch scripts.
+        
+        Parameters
+        ----------
+        slurm_file : str
+            Path to the Slurm batch script.
+        batch_name : str, optional
+            Name for the batch job.
+        **kwargs
+            Additional parameters.
+            
+        Returns
+        -------
+        str
+            Path to the generated HTCondor DAG file.
+        """
+        import tempfile
+        import re
+        
+        slurm_dir = os.path.dirname(os.path.abspath(slurm_file))
+        
+        # Parse the Slurm script to extract job submissions
+        jobs = []
+        dependencies = {}
+        
+        with open(slurm_file, 'r') as f:
+            content = f.read()
+            
+            # Find sbatch commands with dependency tracking
+            # Pattern: job_id=$(sbatch [--dependency=afterok:$dep_id] --parsable --wrap "command")
+            sbatch_pattern = r'job_ids?\[(\w+)\]=\$\(sbatch\s+(.*?)--wrap\s+"([^"]+)"\)'
+            
+            for match in re.finditer(sbatch_pattern, content, re.MULTILINE | re.DOTALL):
+                job_name = match.group(1)
+                sbatch_args = match.group(2)
+                command = match.group(3)
+                
+                jobs.append({
+                    'name': job_name,
+                    'command': command,
+                    'args': sbatch_args
+                })
+                
+                # Extract dependencies
+                dep_pattern = r'--dependency=afterok:\$\{job_ids\[(\w+)\]\}'
+                dep_matches = re.findall(dep_pattern, sbatch_args)
+                if dep_matches:
+                    dependencies[job_name] = dep_matches
+        
+        # Create HTCondor DAG file
+        dag_lines = []
+        dag_lines.append(f"# Converted from Slurm batch script: {os.path.basename(slurm_file)}")
+        dag_lines.append("")
+        
+        # Create submit files for each job
+        submit_files = {}
+        for job in jobs:
+            job_name = job['name']
+            command = job['command']
+            
+            # Create a submit file for this job
+            submit_file = os.path.join(slurm_dir, f"{job_name}.sub")
+            with open(submit_file, 'w') as f:
+                f.write(f"# Submit file for {job_name}\n")
+                f.write(f"executable = /bin/bash\n")
+                f.write(f'arguments = -c "{command}"\n')
+                f.write(f"output = {job_name}.out\n")
+                f.write(f"error = {job_name}.err\n")
+                f.write(f"log = {job_name}.log\n")
+                f.write(f"request_cpus = 1\n")
+                f.write(f"request_memory = 1GB\n")
+                f.write(f"queue\n")
+            
+            submit_files[job_name] = submit_file
+            dag_lines.append(f"JOB {job_name} {submit_file}")
+        
+        dag_lines.append("")
+        
+        # Add dependencies
+        for child, parents in dependencies.items():
+            for parent in parents:
+                dag_lines.append(f"PARENT {parent} CHILD {child}")
+        
+        # Write the DAG file
+        dag_file = os.path.join(slurm_dir, f"{os.path.splitext(os.path.basename(slurm_file))[0]}_converted.dag")
+        with open(dag_file, 'w') as f:
+            f.write('\n'.join(dag_lines) + '\n')
+        
+        return dag_file
     
     def query_all_jobs(self):
         """
@@ -571,13 +705,14 @@ class Slurm(Scheduler):
         """
         Submit a DAG file to the Slurm scheduler.
         
-        This method converts an HTCondor DAG file to a Slurm batch script
-        with job dependencies and submits it.
+        This method can handle both HTCondor DAG files and Slurm-style batch scripts.
+        HTCondor DAG files are automatically converted to Slurm batch scripts.
+        Slurm batch scripts are submitted directly.
         
         Parameters
         ----------
         dag_file : str
-            Path to the HTCondor DAG file to convert and submit.
+            Path to the DAG file (HTCondor or Slurm format).
         batch_name : str, optional
             A name for the batch of jobs.
         **kwargs
@@ -598,14 +733,20 @@ class Slurm(Scheduler):
         if not os.path.exists(dag_file):
             raise FileNotFoundError(f"DAG file not found: {dag_file}")
         
-        # Convert the DAG file to a Slurm script
-        slurm_script = self._convert_dag_to_slurm(dag_file, batch_name, **kwargs)
-        
-        # Write the script to a temporary file
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as script_file:
-            script_file.write(slurm_script)
-            script_path = script_file.name
+        # Check if this is already a Slurm batch script
+        if self._is_slurm_batch_script(dag_file):
+            # Submit directly without conversion
+            script_path = dag_file
+            slurm_script = None
+        else:
+            # Convert HTCondor DAG file to a Slurm script
+            slurm_script = self._convert_dag_to_slurm(dag_file, batch_name, **kwargs)
+            
+            # Write the script to a temporary file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as script_file:
+                script_file.write(slurm_script)
+                script_path = script_file.name
         
         try:
             # Submit the script
@@ -628,9 +769,41 @@ class Slurm(Scheduler):
         except (ValueError, IndexError) as e:
             raise RuntimeError(f"Failed to parse Slurm job ID from output: {result.stdout}")
         finally:
-            # Keep the script file for debugging purposes
+            # Keep the script file for debugging purposes if we created it
             # (it will be in /tmp and cleaned up by the system)
             pass
+    
+    def _is_slurm_batch_script(self, file_path):
+        """
+        Detect if a file is a Slurm batch script.
+        
+        Parameters
+        ----------
+        file_path : str
+            Path to the file to check.
+            
+        Returns
+        -------
+        bool
+            True if the file appears to be a Slurm batch script.
+        """
+        try:
+            with open(file_path, 'r') as f:
+                first_lines = [f.readline() for _ in range(10)]
+                content = ''.join(first_lines)
+                
+                # Check for Slurm-specific markers
+                slurm_markers = ['#SBATCH', 'sbatch', 'squeue', 'scancel']
+                has_slurm = any(marker in content for marker in slurm_markers)
+                
+                # Check for HTCondor-specific markers
+                htcondor_markers = ['JOB ', 'PARENT ', 'CHILD ', 'SCRIPT ']
+                has_htcondor = any(marker in content for marker in htcondor_markers)
+                
+                # It's a Slurm script if it has Slurm markers but not HTCondor markers
+                return has_slurm and not has_htcondor
+        except Exception:
+            return False
     
     def _convert_dag_to_slurm(self, dag_file, batch_name=None, **kwargs):
         """

@@ -84,7 +84,11 @@ When you submit jobs with Slurm, asimov:
 2. Submits the script using `sbatch`
 3. Returns the Slurm job ID for tracking
 
-### DAG Translation
+### Symmetric DAG Translation
+
+Asimov provides **bidirectional DAG translation** between HTCondor and Slurm:
+
+**HTCondor to Slurm**
 
 Pipelines like bilby, bayeswave, and lalinference generate HTCondor DAG files. When using Slurm, asimov automatically:
 
@@ -93,7 +97,22 @@ Pipelines like bilby, bayeswave, and lalinference generate HTCondor DAG files. W
 3. Converts to a Slurm batch script with `--dependency` flags
 4. Submits the workflow using `sbatch`
 
-This allows existing pipelines to work seamlessly with Slurm without modification.
+**Slurm to HTCondor**
+
+Some pipelines can generate Slurm batch scripts directly. When using HTCondor, asimov automatically:
+
+1. Parses the Slurm batch script
+2. Identifies job dependencies (`--dependency=afterok:` flags)
+3. Converts to an HTCondor DAG file with PARENT-CHILD relationships
+4. Submits the workflow using HTCondor's DAG manager
+
+**Format Auto-Detection**
+
+The scheduler automatically detects the input file format by examining its content:
+- HTCondor DAG files contain `JOB`, `PARENT`, `CHILD` directives
+- Slurm batch scripts contain `#SBATCH` directives or `sbatch` commands
+
+This means you can submit either format to either scheduler - the conversion happens automatically!
 
 ### Monitor Daemon
 
