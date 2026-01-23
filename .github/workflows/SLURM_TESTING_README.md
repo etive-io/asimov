@@ -2,47 +2,68 @@
 
 ## Current Status
 
-The Slurm testing workflow (`.github/workflows/slurm-tests.yml`) is currently set to **manual trigger** (`workflow_dispatch`) due to the complexity of setting up Slurm in GitHub Actions CI environment.
+The Slurm testing workflow (`.github/workflows/slurm-tests.yml`) uses the **pitt-crc/Slurm-Test-Environment** Docker images for automated Slurm testing in GitHub Actions.
 
-## Why Manual?
+Repository: https://github.com/pitt-crc/Slurm-Test-Environment
 
-1. **Docker Image Availability**: The original workflow used a non-existent Docker image (`ghcr.io/natejenkins/slurm-docker-cluster:23.11.7`)
-2. **Complexity**: Running Slurm requires:
-   - Privileged container access
-   - Munge authentication setup
-   - Multiple Slurm daemons (controller, compute nodes)
-   - Proper networking configuration
-3. **Maintenance**: Community Slurm Docker images may become outdated or unavailable
+## How It Works
 
-## Running Slurm Tests Locally
+The workflow:
+1. Uses pre-built Slurm Docker images from `ghcr.io/pitt-crc/test-env`
+2. Tests against multiple Slurm versions (23.02.5, 23.11.10)
+3. Automatically starts Slurm services via the image's entrypoint
+4. Runs comprehensive asimov tests with actual Slurm job submission
 
-### Option 1: Using Docker
+## Test Matrix
+
+The CI tests against multiple Slurm versions to ensure compatibility:
+- Slurm 23.02.5 (older stable)
+- Slurm 23.11.10 (newer stable)
+
+Additional versions can be added by updating the matrix in the workflow file.
+
+## Running Tests Locally
+
+### Option 1: Using the Same Docker Image
 
 ```bash
-# Pull a Slurm Docker image
-docker pull nathanhess/slurm:latest
+# Pull the test environment
+docker pull ghcr.io/pitt-crc/test-env:23.02.5
 
-# Run the container
-docker run -it --privileged --hostname slurmctld nathanhess/slurm:latest /bin/bash
+# Run interactively
+docker run -it ghcr.io/pitt-crc/test-env:23.02.5 /bin/bash
 
-# Inside the container:
-# 1. Start munge
-munged
-
-# 2. Start Slurm daemons
-slurmctld
-slurmd
-
-# 3. Verify Slurm is running
-sinfo
-squeue
-
-# 4. Run asimov tests
+# Inside the container, the entrypoint has already started Slurm
+# Run your tests
 cd /path/to/asimov
 python -m unittest tests.test_scheduler
 ```
 
-### Option 2: Install Slurm on Ubuntu
+### Option 2: Using Docker Compose
+
+Create a `docker-compose.yml`:
+
+```yaml
+version: '3'
+services:
+  slurm-test:
+    image: ghcr.io/pitt-crc/test-env:23.02.5
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: /bin/bash -c "/usr/local/bin/entrypoint.sh && /bin/bash"
+    stdin_open: true
+    tty: true
+```
+
+Then run:
+```bash
+docker-compose run slurm-test
+```
+
+### Option 3: Install Slurm on Ubuntu
+
+For local development without Docker:
 
 ```bash
 # Install Slurm
@@ -61,59 +82,107 @@ sudo systemctl start slurmd
 sinfo
 ```
 
-### Option 3: Unit Tests Only
+### Option 4: Unit Tests Only (No Slurm Required)
 
-The unit tests for Slurm scheduler can run without a real Slurm installation:
+The unit tests for Slurm scheduler use mocking and don't require a real Slurm installation:
 
 ```bash
 cd /path/to/asimov
 python -m unittest tests.test_scheduler.SlurmSchedulerTests -v
 ```
 
-These tests use mocking and don't require an actual Slurm cluster.
+## What Gets Tested
 
-## Enabling Automatic CI Testing
+The CI workflow tests:
 
-To enable automatic Slurm testing in CI:
+1. **Slurm Detection**: Verifies `asimov init` correctly detects Slurm
+2. **Scheduler Unit Tests**: All 30 unit tests for the scheduler abstraction
+3. **Job Submission**: Actual Slurm job submission and monitoring
+4. **DAG Translation**: HTCondor DAG to Slurm batch script conversion
+5. **Integration**: End-to-end workflow with asimov commands
 
-1. **Build Your Own Slurm Container**:
-   ```dockerfile
-   FROM ubuntu:22.04
-   RUN apt-get update && apt-get install -y \
-       slurm-wlm munge sudo python3 python3-pip git
-   # Add your Slurm configuration
-   COPY slurm.conf /etc/slurm/slurm.conf
-   # Add startup script
-   COPY start-slurm.sh /start-slurm.sh
-   RUN chmod +x /start-slurm.sh
-   CMD ["/start-slurm.sh"]
-   ```
+## Customizing the Test Environment
 
-2. **Push to Container Registry**:
-   ```bash
-   docker build -t your-org/slurm-test:latest .
-   docker push your-org/slurm-test:latest
-   ```
+To test with a different Slurm version:
 
-3. **Update Workflow**:
-   - Edit `.github/workflows/slurm-tests.yml`
-   - Change `image: nathanhess/slurm:latest` to `image: your-org/slurm-test:latest`
-   - Change `on: workflow_dispatch` to `on: [push, pull_request]`
+1. Check available versions at: https://github.com/pitt-crc/Slurm-Test-Environment/pkgs/container/test-env
+2. Update the matrix in `.github/workflows/slurm-tests.yml`:
 
-## Alternative: Use Existing Public Images
+```yaml
+matrix:
+  slurm_version:
+    - "20.11.9"
+    - "22.05.11"
+    - "23.02.5"
+    - "23.11.10"
+```
 
-Community-maintained Slurm images (use at your own risk):
-- `nathanhess/slurm:latest` - Basic Slurm installation
-- `agaveapi/slurm:latest` - Includes controller and compute nodes
-- `xenonmiddleware/slurm:latest` - For Xenon middleware testing
+## Building Your Own Slurm Test Image
 
-Update the workflow file to use one of these images if they meet your requirements.
+If you need custom Slurm configuration:
 
-## Testing Strategy
+```dockerfile
+FROM ghcr.io/pitt-crc/test-env:23.02.5
 
-The current testing strategy prioritizes:
-1. **Unit tests** - Mock-based tests that don't require Slurm (always run)
-2. **Integration tests** - Manual or local testing with real Slurm
-3. **CI tests** - Manual trigger when Slurm container is available
+# Add your custom Slurm configuration
+COPY my-slurm.conf /etc/slurm/slurm.conf
 
-This ensures the code is well-tested without blocking CI on Slurm setup complexity.
+# Add custom setup
+COPY setup-script.sh /usr/local/bin/custom-setup.sh
+RUN chmod +x /usr/local/bin/custom-setup.sh
+```
+
+Then build and push to your registry:
+```bash
+docker build -t your-org/slurm-test:custom .
+docker push your-org/slurm-test:custom
+```
+
+Update the workflow to use your image:
+```yaml
+container:
+  image: your-org/slurm-test:custom
+```
+
+## Advantages of This Approach
+
+1. **Reliable**: Uses maintained Docker images specifically designed for CI testing
+2. **Versioned**: Test against multiple Slurm versions
+3. **Pre-configured**: Slurm services start automatically via entrypoint
+4. **No Manual Setup**: No need to manually start munge, slurmctld, slurmd
+5. **Fast**: Images are optimized for quick startup in CI
+6. **Maintained**: The pitt-crc project actively maintains these images
+
+## Troubleshooting
+
+### Container Fails to Start
+
+Check the workflow logs for entrypoint errors. The entrypoint script should handle Slurm service startup automatically.
+
+### Slurm Commands Not Found
+
+Ensure the entrypoint has been called:
+```bash
+/usr/local/bin/entrypoint.sh
+```
+
+### Jobs Stay in Pending State
+
+Check node status:
+```bash
+sinfo -N -o "%N %t %C"
+```
+
+If nodes are down, the entrypoint may not have completed successfully.
+
+### Permission Errors
+
+The test environment runs as root by default. If you encounter permission issues, check file ownership in the workspace.
+
+## References
+
+- [Slurm Test Environment Repository](https://github.com/pitt-crc/Slurm-Test-Environment)
+- [Available Docker Images](https://github.com/pitt-crc/Slurm-Test-Environment/pkgs/container/test-env)
+- [Slurm Documentation](https://slurm.schedmd.com/)
+- [GitHub Actions Container Jobs](https://docs.github.com/en/actions/using-jobs/running-jobs-in-a-container)
+
