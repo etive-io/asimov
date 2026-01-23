@@ -9,7 +9,8 @@ import os
 import subprocess
 import sys
 import json
-from datetime import datetime
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -60,6 +61,10 @@ class EnvironmentCapture:
         str or None
             The output of 'conda list --export' if successful, None otherwise
         """
+        # Validate conda exists in PATH before attempting to run
+        if not shutil.which('conda'):
+            return None
+        
         try:
             result = subprocess.run(
                 ['conda', 'list', '--export'],
@@ -112,7 +117,7 @@ class EnvironmentCapture:
             - conda_env_name: Name of conda environment if applicable
         """
         info = {
-            'timestamp': datetime.now().astimezone().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'environment_type': self.env_type,
             'python_version': sys.version,
             'python_executable': sys.executable,

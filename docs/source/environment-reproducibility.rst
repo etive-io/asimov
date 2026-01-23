@@ -81,7 +81,7 @@ To reproduce an analysis with the exact same environment:
 1. Retrieve the environment files from the results store (as shown above)
 2. Create a new environment using the captured specifications:
 
-For pip environments:
+For pip environments (Linux/macOS):
 
 .. code-block:: console
 
@@ -89,7 +89,15 @@ For pip environments:
    $ source reproduce-env/bin/activate
    $ pip install -r environment-pip.txt
 
-For conda environments:
+For pip environments (Windows):
+
+.. code-block:: console
+
+   > python -m venv reproduce-env
+   > reproduce-env\Scripts\activate
+   > pip install -r environment-pip.txt
+
+For conda environments (all platforms):
 
 .. code-block:: console
 
