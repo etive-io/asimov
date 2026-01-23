@@ -9,11 +9,12 @@ The asimov monitor loop has been refactored to use a state machine pattern, repl
 Architecture Components
 ----------------------
 
-The refactored monitor system consists of three main components:
+The refactored monitor system consists of four main components:
 
 1. **MonitorState**: Abstract state handlers for each analysis state
 2. **MonitorContext**: Context object managing analysis monitoring
 3. **monitor_helpers**: Reusable functions for monitoring analyses
+4. **Labellers**: Plugin system for automatically labelling analyses (see :doc:`labeller-plugins`)
 
 MonitorState Classes
 -------------------
@@ -505,9 +506,40 @@ Here's a complete example of creating a plugin package with custom states:
     # Now your custom states are available in asimov
     # Set analysis.status = "validation" to trigger ValidationState
 
+Labeller Integration
+-------------------
+
+The monitor loop integrates with the labeller plugin system to automatically assign labels to analyses during monitoring. Labellers can mark analyses as "interesting" or add other metadata based on custom logic.
+
+For detailed information on creating and using labellers, see :doc:`labeller-plugins`.
+
+Quick Example
+^^^^^^^^^^^^
+
+.. code-block:: python
+
+    from asimov.labellers import Labeller, register_labeller
+    
+    class MyLabeller(Labeller):
+        @property
+        def name(self):
+            return "my_labeller"
+        
+        def label(self, analysis, context=None):
+            # Mark bilby analyses as interesting
+            if hasattr(analysis, 'pipeline') and 'bilby' in str(analysis.pipeline).lower():
+                return {"interest status": True}
+            return {}
+    
+    # Register the labeller
+    register_labeller(MyLabeller())
+
+During monitoring, this labeller will automatically mark all bilby analyses as interesting by setting the ``interest status`` metadata field.
+
 See Also
 --------
 
 * :doc:`code-overview` - General asimov architecture
 * :doc:`hooks` - Post-monitor hooks
+* :doc:`labeller-plugins` - Labeller plugin system
 * :doc:`api/asimov` - API reference

@@ -161,6 +161,7 @@ Advanced topics
    build-process
    scheduler-integration
    monitor-state-machine
+   labeller-plugins
    monitor-api
    configuration
    test-interface
