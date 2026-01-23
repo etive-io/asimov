@@ -30,7 +30,7 @@ class TestAlwaysInterestingLabeller(unittest.TestCase):
         
         labels = labeller.label(mock_analysis)
         
-        self.assertEqual(labels, {"interest status": True})
+        self.assertEqual(labels, {"interesting": True})
 
 
 class TestPipelineInterestLabeller(unittest.TestCase):
@@ -52,7 +52,7 @@ class TestPipelineInterestLabeller(unittest.TestCase):
         mock_analysis.name = "test"
         
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
     
     def test_custom_pipelines(self):
         """Test custom interesting pipelines."""
@@ -65,12 +65,12 @@ class TestPipelineInterestLabeller(unittest.TestCase):
         mock_analysis.name = "test"
         
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
         
         # bilby should not be interesting (not in custom list)
         mock_analysis.pipeline.__str__ = Mock(return_value="bilby")
         labels = labeller.label(mock_analysis)
-        self.assertFalse(labels["interest status"])
+        self.assertFalse(labels["interesting"])
     
     def test_case_insensitive(self):
         """Test that pipeline matching is case-insensitive."""
@@ -82,7 +82,7 @@ class TestPipelineInterestLabeller(unittest.TestCase):
         mock_analysis.name = "test"
         
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
     
     def test_substring_matching(self):
         """Test that pipeline matching works with substrings."""
@@ -95,7 +95,7 @@ class TestPipelineInterestLabeller(unittest.TestCase):
         mock_analysis.name = "test"
         
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
     
     def test_no_pipeline_attribute(self):
         """Test handling analysis without pipeline attribute."""
@@ -148,7 +148,7 @@ class TestFinishedAnalysisLabeller(unittest.TestCase):
         mock_analysis = Mock()
         
         labels = labeller.label(mock_analysis)
-        self.assertEqual(labels, {"interest status": True})
+        self.assertEqual(labels, {"interesting": True})
 
 
 class TestConditionalLabeller(unittest.TestCase):
@@ -170,7 +170,7 @@ class TestConditionalLabeller(unittest.TestCase):
         mock_analysis = Mock()
         
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
     
     def test_custom_condition_true(self):
         """Test custom condition that returns True."""
@@ -183,7 +183,7 @@ class TestConditionalLabeller(unittest.TestCase):
         mock_analysis.test_attr = "interesting"
         
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
     
     def test_custom_condition_false(self):
         """Test custom condition that returns False."""
@@ -196,7 +196,7 @@ class TestConditionalLabeller(unittest.TestCase):
         mock_analysis.test_attr = "boring"
         
         labels = labeller.label(mock_analysis)
-        self.assertFalse(labels["interest status"])
+        self.assertFalse(labels["interesting"])
     
     def test_condition_error_handling(self):
         """Test that errors in condition are handled gracefully."""
@@ -223,12 +223,12 @@ class TestConditionalLabeller(unittest.TestCase):
         mock_analysis = Mock()
         mock_analysis.meta = {'mass': 60}
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
         
         # Low mass analysis
         mock_analysis.meta = {'mass': 30}
         labels = labeller.label(mock_analysis)
-        self.assertFalse(labels["interest status"])
+        self.assertFalse(labels["interesting"])
 
 
 class TestFactoryFunctions(unittest.TestCase):
@@ -253,7 +253,7 @@ class TestFactoryFunctions(unittest.TestCase):
         
         mock_analysis = Mock()
         labels = labeller.label(mock_analysis)
-        self.assertTrue(labels["interest status"])
+        self.assertTrue(labels["interesting"])
     
     def test_create_conditional_labeller_default_name(self):
         """Test creating conditional labeller with default name."""

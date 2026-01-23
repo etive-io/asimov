@@ -152,7 +152,7 @@ class TestApplyLabellers(unittest.TestCase):
     
     def test_apply_single_labeller(self):
         """Test applying a single labeller."""
-        labeller = TestLabeller(labels={"interest status": True})
+        labeller = TestLabeller(labels={"interesting": True})
         register_labeller(labeller)
         
         mock_analysis = Mock()
@@ -161,8 +161,9 @@ class TestApplyLabellers(unittest.TestCase):
         
         labels = apply_labellers(mock_analysis)
         
-        self.assertEqual(labels, {"interest status": True})
-        self.assertEqual(mock_analysis.meta["interest status"], True)
+        self.assertEqual(labels, {"interesting": True})
+        self.assertIn("labels", mock_analysis.meta)
+        self.assertEqual(mock_analysis.meta["labels"]["interesting"], True)
     
     def test_apply_multiple_labellers(self):
         """Test applying multiple labellers."""
@@ -181,8 +182,8 @@ class TestApplyLabellers(unittest.TestCase):
         self.assertEqual(len(labels), 2)
         self.assertTrue(labels["label1"])
         self.assertEqual(labels["label2"], "value")
-        self.assertEqual(mock_analysis.meta["label1"], True)
-        self.assertEqual(mock_analysis.meta["label2"], "value")
+        self.assertEqual(mock_analysis.meta["labels"]["label1"], True)
+        self.assertEqual(mock_analysis.meta["labels"]["label2"], "value")
     
     def test_apply_with_context(self):
         """Test applying labellers with context."""
@@ -212,7 +213,7 @@ class TestApplyLabellers(unittest.TestCase):
         
         # Should return empty since should_label returned False
         self.assertEqual(labels, {})
-        self.assertNotIn("test_label", mock_analysis.meta)
+        self.assertNotIn("test_label", mock_analysis.meta.get("labels", {}))
     
     def test_apply_with_no_meta(self):
         """Test applying labellers when analysis has no meta attribute."""
@@ -224,9 +225,10 @@ class TestApplyLabellers(unittest.TestCase):
         
         labels = apply_labellers(mock_analysis)
         
-        # Should create meta attribute
+        # Should create meta attribute with labels
         self.assertTrue(hasattr(mock_analysis, 'meta'))
-        self.assertEqual(mock_analysis.meta["interest status"], True)
+        self.assertIn("labels", mock_analysis.meta)
+        self.assertEqual(mock_analysis.meta["labels"]["interest status"], True)
     
     def test_apply_handles_errors(self):
         """Test that errors in labellers are handled gracefully."""

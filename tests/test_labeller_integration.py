@@ -55,7 +55,7 @@ class TestLabellerMonitorIntegration(unittest.TestCase):
         
         # Verify labeller was applied
         self.assertTrue(result)
-        self.assertTrue(mock_analysis.meta.get("interest status"))
+        self.assertTrue(mock_analysis.meta.get("labels", {}).get("interesting"))
     
     def test_multiple_labellers_applied(self):
         """Test that multiple labellers are all applied."""
@@ -95,8 +95,8 @@ class TestLabellerMonitorIntegration(unittest.TestCase):
         # Verify both labellers were applied
         self.assertIn("label1", labels)
         self.assertIn("label2", labels)
-        self.assertEqual(mock_analysis.meta["label1"], "value1")
-        self.assertEqual(mock_analysis.meta["label2"], "value2")
+        self.assertEqual(mock_analysis.meta["labels"]["label1"], "value1")
+        self.assertEqual(mock_analysis.meta["labels"]["label2"], "value2")
     
     def test_labeller_with_monitor_context(self):
         """Test that labellers receive the monitor context."""
@@ -185,10 +185,10 @@ class TestLabellerMonitorIntegration(unittest.TestCase):
         labels = apply_labellers(mock_analysis)
         
         # Verify interest status was set
-        self.assertTrue(mock_analysis.meta.get("interest status"))
+        self.assertTrue(mock_analysis.meta.get("labels", {}).get("interesting"))
         
         # Simulate checking interest status in workflow
-        if mock_analysis.meta.get("interest status"):
+        if mock_analysis.meta.get("labels", {}).get("interesting"):
             # This analysis would be prioritized
             pass
         
