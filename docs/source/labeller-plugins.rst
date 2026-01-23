@@ -267,7 +267,7 @@ Once labellers have been applied, the labels are stored in the analysis metadata
 Dependency Logic
 ^^^^^^^^^^^^^^^
 
-Use interest status in dependency specifications:
+Use labels in dependency specifications:
 
 .. code-block:: yaml
 
@@ -275,11 +275,17 @@ Use interest status in dependency specifications:
       needs:
         - bilby_analysis
         - rift_analysis
-      needs settings:
-        condition: is_interesting
-        minimum: 1
+        - label: interesting>=1
 
-This will only run the combined analysis if at least 1 of the parent analyses has ``interest status`` set to True.
+This will only run the combined analysis if at least 1 of the parent analyses has the ``interesting`` label set to a truthy value.
+
+You can also use comparison operators:
+
+.. code-block:: yaml
+
+    needs:
+      - label: priority>5
+      - label: quality==high
 
 Custom Workflows
 ^^^^^^^^^^^^^^^
@@ -289,8 +295,10 @@ Access labels in your custom code:
 .. code-block:: python
 
     for analysis in ledger.project_analyses:
-        if analysis.meta.get("interest status"):
+        labels = analysis.meta.get('labels', {})
+        if labels.get('interesting'):
             print(f"Interesting analysis: {analysis.name}")
+            print(f"  Priority: {labels.get('priority', 'N/A')}")
             # Perform special handling
 
 Monitoring Output

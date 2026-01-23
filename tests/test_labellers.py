@@ -223,7 +223,7 @@ class TestApplyLabellers(unittest.TestCase):
         mock_analysis = Mock(spec=[])  # No attributes
         mock_analysis.name = "test_analysis"
         
-        labels = apply_labellers(mock_analysis)
+        apply_labellers(mock_analysis)
         
         # Should create meta attribute with labels
         self.assertTrue(hasattr(mock_analysis, 'meta'))

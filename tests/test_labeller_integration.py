@@ -182,7 +182,7 @@ class TestLabellerMonitorIntegration(unittest.TestCase):
         mock_analysis.meta = {}
         
         # Apply labellers
-        labels = apply_labellers(mock_analysis)
+        apply_labellers(mock_analysis)
         
         # Verify interest status was set
         self.assertTrue(mock_analysis.meta.get("labels", {}).get("interesting"))

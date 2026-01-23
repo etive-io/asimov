@@ -528,13 +528,13 @@ Quick Example
         def label(self, analysis, context=None):
             # Mark bilby analyses as interesting
             if hasattr(analysis, 'pipeline') and 'bilby' in str(analysis.pipeline).lower():
-                return {"interest status": True}
+                return {"interesting": True}
             return {}
     
     # Register the labeller
     register_labeller(MyLabeller())
 
-During monitoring, this labeller will automatically mark all bilby analyses as interesting by setting the ``interest status`` metadata field.
+During monitoring, this labeller will automatically mark all bilby analyses as interesting by adding an ``"interesting"`` label under ``analysis.meta['labels']``.
 
 See Also
 --------
