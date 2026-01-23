@@ -163,6 +163,7 @@ Advanced topics
    scheduler-integration
    dag-translation-examples
    monitor-state-machine
+   labeller-plugins
    monitor-api
    configuration
    test-interface

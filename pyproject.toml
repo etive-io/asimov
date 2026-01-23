@@ -123,3 +123,9 @@ projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"
 # Example: my_sink = "my_package.telemetry:MySink"
 [project.entry-points."asimov.hooks.telemetry"]
 prometheus = "asimov.telemetry:PrometheusPushgatewaySink"
+
+# Entry point group for labeller plugins
+# Labellers can automatically assign labels like "interest status" to analyses
+# during monitoring. See docs/source/labeller-plugins.rst for details.
+[project.entry-points."asimov.labellers"]
+# Example: my_labeller = "my_package.labellers:MyLabeller"
