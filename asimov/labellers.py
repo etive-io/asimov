@@ -8,7 +8,7 @@ based on analysis characteristics.
 
 from abc import ABC, abstractmethod
 import sys
-from typing import Dict, Any, Optional
+from typing import Dict
 
 from asimov import logger, LOGGER_LEVEL
 
