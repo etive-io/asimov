@@ -106,6 +106,9 @@ def make_project(
     else:
         logger.warning("No scheduler detected, defaulting to HTCondor")
     
+    # Create scheduler section and set type
+    if not config.has_section("scheduler"):
+        config.add_section("scheduler")
     config.set("scheduler", "type", scheduler_type)
 
     # Set scheduler-specific configuration
@@ -116,6 +119,9 @@ def make_project(
         else:
             config.set("condor", "user", user)
     elif scheduler_type == "slurm":
+        # Create slurm section if it doesn't exist
+        if not config.has_section("slurm"):
+            config.add_section("slurm")
         # Set the default slurm user
         if not user:
             config.set("slurm", "user", getpass.getuser())
