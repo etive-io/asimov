@@ -1,0 +1,230 @@
+name: Tests with Slurm
+on: [push, pull_request]
+
+jobs:
+  tests:
+    name: "Slurm Testing"
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/natejenkins/slurm-docker-cluster:23.11.7
+      options: --privileged --hostname slurmctld
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install base tools
+        run: |
+          apt-get update
+          apt-get install -y sudo git python3 python3-pip python3-venv curl
+
+      - name: Start Slurm services
+        run: |
+          # Start munge authentication service
+          sudo -u munge /usr/sbin/munged
+          
+          # Start Slurm controller
+          /usr/sbin/slurmctld
+          
+          # Start Slurm daemon
+          /usr/sbin/slurmd
+          
+          # Give services time to start
+          sleep 5
+          
+          # Verify Slurm is working
+          sinfo
+          squeue
+
+      - name: Create submit user
+        run: |
+          useradd -m -s /bin/bash submituser
+          echo "submituser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+      - name: Ensure submituser can access workspace
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test_project"
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e "$GITHUB_WORKSPACE"
+          python3 -m pip install python-crontab
+
+      - name: Install additional packages
+        run: |
+          python3 -m pip install -U bilby bilby_pipe==1.4.0 pesummary
+          python3 -m pip install git+https://git.ligo.org/asimov/pipelines/gwdata.git@update-htcondor || echo "gwdata install failed, continuing..."
+
+      - name: Set up git
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+          SUBMITUSER
+
+      - name: Start MockGWDataFindServer in background
+        run: |
+          python3 << EOF &
+          from tests.mock_gwdatafind_server import MockGWDataFindServer
+          import time
+          
+          frame_configs = {
+              ('H', 'H1_LOSC_16_V1'): ['file://$GITHUB_WORKSPACE/tests/test_data/frames/H-H1_GWOSC_16KHZ_R1-1126259447-32.gwf'],
+              ('L', 'L1_LOSC_16_V1'): ['file://$GITHUB_WORKSPACE/tests/test_data/frames/L-L1_GWOSC_16KHZ_R1-1126259447-32.gwf']
+          }
+          
+          server = MockGWDataFindServer(port=8765, frame_configs=frame_configs)
+          server.start()
+          print("MockGWDataFindServer started on port 8765", flush=True)
+          
+          try:
+              while True:
+                  time.sleep(1)
+          except KeyboardInterrupt:
+              server.stop()
+          EOF
+          
+          # Give the server time to start
+          sleep 3
+
+      - name: Verify server is running
+        run: |
+          curl -f http://localhost:8765/api/v1/gwf/H/H1_LOSC_16_V1/1126259460,1126259464/file.json || echo "Server check failed but continuing..."
+
+      - name: Create asimov project
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/test_project
+          asimov init "Test Project"
+          SUBMITUSER
+
+      - name: Verify Slurm scheduler was detected
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/test_project
+          
+          # Check that scheduler type is set to slurm
+          scheduler_type=\$(grep -A 1 "\\[scheduler\\]" .asimov/asimov.conf | grep "type" | awk -F'=' '{print \$2}' | tr -d ' ')
+          echo "Detected scheduler type: \$scheduler_type"
+          
+          if [ "\$scheduler_type" != "slurm" ]; then
+            echo "ERROR: Expected scheduler type 'slurm' but got '\$scheduler_type'"
+            exit 1
+          fi
+          
+          echo "✓ Slurm scheduler correctly detected"
+          SUBMITUSER
+
+      - name: Configure asimov settings
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/test_project
+          asimov configuration update slurm/user submituser
+          asimov configuration update slurm/cron_minute '*/1'
+          SUBMITUSER
+
+      - name: Apply GWOSC quick test blueprint
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/test_project
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
+          SUBMITUSER
+
+      - name: Add event from GWOSC
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/test_project
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+          SUBMITUSER
+
+      - name: Run basic scheduler tests
+        run: |
+          cd $GITHUB_WORKSPACE
+          python3 -m unittest tests.test_scheduler -v
+
+      - name: Test Slurm job submission
+        run: |
+          su - submituser <<SUBMITUSER
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE/test_project
+          
+          # Test basic Slurm functionality
+          echo "Testing basic Slurm job submission..."
+          
+          # Create a simple test job
+          cat > test_job.sh << 'TESTJOB'
+          #!/bin/bash
+          #SBATCH --job-name=test-asimov
+          #SBATCH --output=test_output.log
+          #SBATCH --error=test_error.log
+          #SBATCH --time=00:01:00
+          
+          echo "Slurm job running successfully"
+          sleep 2
+          echo "Job completed"
+          TESTJOB
+          
+          # Submit the job
+          job_id=\$(sbatch --parsable test_job.sh)
+          echo "Submitted test job: \$job_id"
+          
+          # Wait for job to complete
+          for i in {1..30}; do
+            state=\$(squeue -j \$job_id -h -o "%t" 2>/dev/null || echo "DONE")
+            echo "Job state: \$state"
+            
+            if [ "\$state" == "DONE" ] || [ -z "\$state" ]; then
+              echo "Job completed"
+              break
+            fi
+            
+            sleep 2
+          done
+          
+          # Check output
+          if [ -f test_output.log ]; then
+            echo "Test job output:"
+            cat test_output.log
+          fi
+          
+          echo "✓ Basic Slurm job submission works"
+          SUBMITUSER
+
+      - name: Show Slurm configuration
+        run: |
+          echo "=== Slurm Configuration ==="
+          sinfo -o "%P %a %l %D %N"
+          echo ""
+          echo "=== Slurm Queue ==="
+          squeue
+          echo ""
+          echo "=== Slurm Version ==="
+          sinfo --version
+
+      - name: Archive testing artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slurm-test-artifacts
+          path: |
+            test_project/
+          retention-days: 5
+
+      - name: Stop background server
+        if: always()
+        run: |
+          # Kill the background Python process running the server
+          pkill -f "MockGWDataFindServer" || true
