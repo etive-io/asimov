@@ -4,7 +4,6 @@ Tests for label-based dependency resolution.
 
 import unittest
 from unittest.mock import Mock
-from asimov.analysis import Analysis
 
 
 class TestLabelDependencies(unittest.TestCase):
@@ -12,6 +11,9 @@ class TestLabelDependencies(unittest.TestCase):
     
     def _create_test_analysis(self, labels=None):
         """Create a minimal Analysis instance for testing."""
+        # Import here to avoid module-level import issues
+        from asimov.analysis import Analysis
+        
         analysis = Mock(spec=Analysis)
         analysis.meta = {'labels': labels or {}}
         analysis.review = Mock()
