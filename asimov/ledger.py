@@ -39,7 +39,8 @@ class YAMLLedger(Ledger):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
         self.location = location
-        self.lock = FileLock(f"{self.location}.lock", timeout=10)
+        lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
+        self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
         with open(location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 

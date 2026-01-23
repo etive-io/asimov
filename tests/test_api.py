@@ -5,10 +5,8 @@ Unit tests for the REST API.
 import unittest
 import json
 import os
-import shutil
 from asimov.api.app import create_app
 from asimov.testing import AsimovTestCase
-from asimov.ledger import YAMLLedger
 from asimov.event import Event
 
 # Set testing flag to avoid RuntimeError when no API keys configured

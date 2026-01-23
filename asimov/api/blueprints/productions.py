@@ -64,7 +64,11 @@ def create_production(event_name):
         Created production data or error message.
     """
     try:
-        data = ProductionCreate(**request.json)
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+
+        data = ProductionCreate(**payload)
         ledger = get_ledger()
 
         try:
@@ -120,7 +124,11 @@ def update_production(event_name, production_name):
         Updated production data or error message.
     """
     try:
-        data = ProductionUpdate(**request.json)
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+
+        data = ProductionUpdate(**payload)
         ledger = get_ledger()
 
         try:

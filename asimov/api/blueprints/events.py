@@ -4,7 +4,7 @@ Events API blueprint.
 Provides CRUD operations for gravitational wave events.
 """
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from asimov.event import Event
 from asimov.api.utils import get_ledger
@@ -70,7 +70,10 @@ def create_event():
         Created event data or error message.
     """
     try:
-        data = EventCreate(**request.json)
+        json_data = request.get_json(silent=True)
+        if json_data is None:
+            return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+        data = EventCreate(**json_data)
         ledger = get_ledger()
 
         # Check if event already exists
@@ -118,7 +121,10 @@ def update_event(name):
         Updated event data or error message.
     """
     try:
-        data = EventUpdate(**request.json)
+        json_data = request.get_json(silent=True)
+        if json_data is None:
+            return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+        data = EventUpdate(**json_data)
         ledger = get_ledger()
 
         try:

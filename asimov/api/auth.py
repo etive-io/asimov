@@ -10,6 +10,7 @@ from flask import request, jsonify, g
 from asimov import config
 import yaml
 import os
+import secrets
 
 
 def load_api_keys():
@@ -55,7 +56,9 @@ def load_api_keys():
                 keys = data.get('api_keys', {})
                 if keys:
                     return keys
-        except Exception:
+        except (OSError, IOError, yaml.YAMLError):
+            # Ignore expected file and YAML parsing errors and fall back to
+            # other configuration mechanisms.
             pass
 
     # Try single API key from environment variable
@@ -98,7 +101,7 @@ def get_api_keys():
 
 def verify_token(token):
     """
-    Verify API token.
+    Verify API token using constant-time comparison.
 
     Parameters
     ----------
@@ -111,8 +114,10 @@ def verify_token(token):
         Username if token is valid, None otherwise.
     """
     keys = get_api_keys()
-    if token in keys:
-        return keys[token]  # Returns username/identifier
+    # Use constant-time comparison to prevent timing attacks
+    for valid_token, username in keys.items():
+        if secrets.compare_digest(token, valid_token):
+            return username
     return None
 
 
