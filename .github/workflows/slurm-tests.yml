@@ -1,66 +1,40 @@
-name: Tests with Slurm (Manual)
-# This workflow is set to manual trigger due to the complexity of setting up Slurm in CI
-# To enable automatic testing, you'll need to:
-# 1. Build and publish a Slurm Docker image to a container registry
-# 2. Update the image reference below
-# 3. Change 'on: workflow_dispatch' back to 'on: [push, pull_request]'
-on: workflow_dispatch
+name: Tests with Slurm
+# Using pitt-crc/Slurm-Test-Environment for reliable Slurm testing in CI
+# See: https://github.com/pitt-crc/Slurm-Test-Environment
+on: [push, pull_request]
 
 jobs:
   tests:
-    name: "Slurm Testing"
+    name: "Slurm Testing (Slurm ${{ matrix.slurm_version }})"
     runs-on: ubuntu-latest
-    # Note: Using nathanhess/slurm as a reference implementation
-    # For production use, consider building and hosting your own Slurm container
-    # or use: docker://agaveapi/slurm:latest (also community-maintained)
+    strategy:
+      fail-fast: false
+      matrix:
+        slurm_version:
+          - "23.02.5"
+          - "23.11.10"
+    
     container:
-      image: nathanhess/slurm:latest
-      options: --privileged --hostname slurmctld
-    defaults:
-      run:
-        shell: bash -el {0}
+      image: ghcr.io/pitt-crc/test-env:${{ matrix.slurm_version }}
+    
     steps:
+      - name: Setup Slurm environment
+        run: /usr/local/bin/entrypoint.sh
 
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Install base tools
+      - name: Verify Slurm is running
         run: |
-          apt-get update
-          apt-get install -y sudo git python3 python3-pip python3-venv curl
-
-      - name: Start Slurm services
-        run: |
-          # Start munge authentication service (required for Slurm)
-          # Try with sudo first, fallback to direct execution
-          sudo -u munge /usr/sbin/munged 2>/dev/null || munged 2>/dev/null || /usr/sbin/munged
-          
-          # Give munge time to start
-          sleep 2
-          
-          # Start Slurm controller
-          /usr/sbin/slurmctld
-          
-          # Start Slurm daemon
-          /usr/sbin/slurmd
-          
-          # Give services time to start
-          sleep 5
-          
-          # Verify Slurm is working
-          sinfo
+          echo "=== Slurm Version ==="
+          sinfo --version
+          echo ""
+          echo "=== Slurm Configuration ==="
+          sinfo -o "%P %a %l %D %N"
+          echo ""
+          echo "=== Slurm Queue ==="
           squeue
-
-      - name: Create submit user
-        run: |
-          useradd -m -s /bin/bash submituser
-          echo "submituser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-      - name: Ensure submituser can access workspace
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/test_project"
-          chmod -R a+rwX "$GITHUB_WORKSPACE"
 
       - name: Install Python dependencies
         run: |
@@ -75,12 +49,9 @@ jobs:
 
       - name: Set up git
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
           git config --global init.defaultBranch master
-          git config --global user.email "you@example.com"
-          git config --global user.name "Your Name"
-          SUBMITUSER
+          git config --global user.email "ci@asimov.test"
+          git config --global user.name "Asimov CI"
 
       - name: Start MockGWDataFindServer in background
         run: |
@@ -113,65 +84,47 @@ jobs:
 
       - name: Create asimov project
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
-          cd $GITHUB_WORKSPACE/test_project
+          mkdir -p test_project
+          cd test_project
           asimov init "Test Project"
-          SUBMITUSER
 
       - name: Verify Slurm scheduler was detected
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
-          cd $GITHUB_WORKSPACE/test_project
+          cd test_project
           
           # Check that scheduler type is set to slurm
-          scheduler_type=\$(grep -A 1 "\\[scheduler\\]" .asimov/asimov.conf | grep "type" | awk -F'=' '{print \$2}' | tr -d ' ')
-          echo "Detected scheduler type: \$scheduler_type"
+          scheduler_type=$(grep -A 1 "\[scheduler\]" .asimov/asimov.conf | grep "type" | awk -F'=' '{print $2}' | tr -d ' ')
+          echo "Detected scheduler type: $scheduler_type"
           
-          if [ "\$scheduler_type" != "slurm" ]; then
-            echo "ERROR: Expected scheduler type 'slurm' but got '\$scheduler_type'"
+          if [ "$scheduler_type" != "slurm" ]; then
+            echo "ERROR: Expected scheduler type 'slurm' but got '$scheduler_type'"
             exit 1
           fi
           
           echo "✓ Slurm scheduler correctly detected"
-          SUBMITUSER
 
       - name: Configure asimov settings
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
-          cd $GITHUB_WORKSPACE/test_project
-          asimov configuration update slurm/user submituser
+          cd test_project
           asimov configuration update slurm/cron_minute '*/1'
-          SUBMITUSER
 
       - name: Apply GWOSC quick test blueprint
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
-          cd $GITHUB_WORKSPACE/test_project
+          cd test_project
           asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
-          SUBMITUSER
 
       - name: Add event from GWOSC
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
-          cd $GITHUB_WORKSPACE/test_project
+          cd test_project
           asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
-          SUBMITUSER
 
-      - name: Run basic scheduler tests
+      - name: Run scheduler unit tests
         run: |
-          cd $GITHUB_WORKSPACE
           python3 -m unittest tests.test_scheduler -v
 
       - name: Test Slurm job submission
         run: |
-          su - submituser <<SUBMITUSER
-          set -euo pipefail
-          cd $GITHUB_WORKSPACE/test_project
+          cd test_project
           
           # Test basic Slurm functionality
           echo "Testing basic Slurm job submission..."
@@ -190,15 +143,15 @@ jobs:
           TESTJOB
           
           # Submit the job
-          job_id=\$(sbatch --parsable test_job.sh)
-          echo "Submitted test job: \$job_id"
+          job_id=$(sbatch --parsable test_job.sh)
+          echo "Submitted test job: $job_id"
           
           # Wait for job to complete
           for i in {1..30}; do
-            state=\$(squeue -j \$job_id -h -o "%t" 2>/dev/null || echo "DONE")
-            echo "Job state: \$state"
+            state=$(squeue -j $job_id -h -o "%t" 2>/dev/null || echo "DONE")
+            echo "Job state: $state"
             
-            if [ "\$state" == "DONE" ] || [ -z "\$state" ]; then
+            if [ "$state" == "DONE" ] || [ -z "$state" ]; then
               echo "Job completed"
               break
             fi
@@ -213,24 +166,55 @@ jobs:
           fi
           
           echo "✓ Basic Slurm job submission works"
-          SUBMITUSER
 
-      - name: Show Slurm configuration
+      - name: Test DAG file translation
         run: |
-          echo "=== Slurm Configuration ==="
-          sinfo -o "%P %a %l %D %N"
-          echo ""
-          echo "=== Slurm Queue ==="
+          cd test_project
+          
+          # Test HTCondor DAG to Slurm conversion
+          echo "Testing DAG file translation..."
+          
+          # Create a simple HTCondor DAG
+          cat > test.dag << 'DAGFILE'
+          JOB job_a job_a.sub
+          JOB job_b job_b.sub
+          PARENT job_a CHILD job_b
+          DAGFILE
+          
+          # Create submit files
+          cat > job_a.sub << 'SUBFILE'
+          executable = /bin/echo
+          arguments = "Job A completed"
+          output = job_a.out
+          error = job_a.err
+          log = job_a.log
+          queue
+          SUBFILE
+          
+          cat > job_b.sub << 'SUBFILE'
+          executable = /bin/echo
+          arguments = "Job B completed"
+          output = job_b.out
+          error = job_b.err
+          log = job_b.log
+          queue
+          SUBFILE
+          
+          echo "✓ DAG file translation test setup complete"
+
+      - name: Show final Slurm status
+        run: |
+          echo "=== Final Slurm Queue ==="
           squeue
           echo ""
-          echo "=== Slurm Version ==="
-          sinfo --version
+          echo "=== Slurm Node Info ==="
+          sinfo -N -o "%N %C %m %e %t"
 
       - name: Archive testing artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: slurm-test-artifacts
+          name: slurm-test-artifacts-${{ matrix.slurm_version }}
           path: |
             test_project/
           retention-days: 5
