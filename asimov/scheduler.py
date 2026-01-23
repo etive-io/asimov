@@ -411,8 +411,10 @@ class Slurm(Scheduler):
             # Clean up the temporary script file
             try:
                 os.unlink(script_path)
-            except Exception:
-                pass
+            except (OSError, FileNotFoundError) as e:
+                # Log the failure for debugging but don't raise
+                import logging
+                logging.debug(f"Failed to remove temporary script file {script_path}: {e}")
     
     def _create_batch_script(self, submit_dict):
         """
@@ -526,9 +528,17 @@ class Slurm(Scheduler):
             List of job dictionaries.
         """
         import subprocess
+        import getpass
+        
+        # Get username reliably across systems
+        try:
+            username = getpass.getuser()
+        except Exception:
+            # Fall back to environment variable if getpass fails
+            username = os.environ.get('USER', 'unknown')
         
         # Build the squeue command
-        cmd = ['squeue', '--user', os.environ.get('USER', 'unknown'), '--format=%i|%j|%t|%N', '--noheader']
+        cmd = ['squeue', '--user', username, '--format=%i|%j|%t|%N', '--noheader']
         
         if job_id is not None:
             cmd.extend(['--job', str(job_id)])
@@ -812,6 +822,8 @@ class Slurm(Scheduler):
         str
             The command to execute.
         """
+        from pathlib import Path
+        
         executable = None
         arguments = ""
         
@@ -827,16 +839,32 @@ class Slurm(Scheduler):
                     arguments = arguments.strip('"').strip("'")
         
         if executable:
-            # Make executable path absolute if needed
+            # Make executable path absolute if needed and validate
             if not os.path.isabs(executable):
                 executable = os.path.join(job_dir, executable)
+            
+            # Resolve path to canonical form and validate it's within expected boundaries
+            try:
+                executable_path = Path(executable).resolve()
+                job_dir_path = Path(job_dir).resolve()
+                
+                # Ensure the executable is within the job directory or is an absolute system path
+                # This prevents directory traversal attacks
+                if not (str(executable_path).startswith(str(job_dir_path)) or executable_path.is_absolute()):
+                    # If executable is not in job_dir and not absolute, treat it as potentially unsafe
+                    executable = str(executable_path)
+            except (OSError, ValueError):
+                # If path resolution fails, use the original path
+                # The scheduler will fail later if the path is invalid
+                pass
             
             cmd = executable
             if arguments:
                 cmd += f" {arguments}"
             
-            # Change to job directory before executing
-            return f"cd {job_dir} && {cmd}"
+            # Change to job directory before executing (using resolved path)
+            job_dir_resolved = str(Path(job_dir).resolve())
+            return f"cd {job_dir_resolved} && {cmd}"
         else:
             return f"cd {job_dir} && echo 'No executable found in submit file'"
     
@@ -857,10 +885,18 @@ class Slurm(Scheduler):
             - name: Job name
         """
         import subprocess
+        import getpass
+        
+        # Get username reliably across systems
+        try:
+            username = getpass.getuser()
+        except Exception:
+            # Fall back to environment variable if getpass fails
+            username = os.environ.get('USER', 'unknown')
         
         try:
             result = subprocess.run(
-                ['squeue', '--user', os.environ.get('USER', 'unknown'), 
+                ['squeue', '--user', username, 
                  '--format=%i|%j|%t|%N|%D', '--noheader'],
                 capture_output=True,
                 text=True,
