@@ -21,10 +21,11 @@ _labellers_initialized = False
 
 def initialize_labellers(ledger):
     """
-    Initialize labellers from ledger configuration.
+    Initialize labellers from ledger configuration and entry points.
     
-    This should be called once at the start of monitoring to load
-    any labellers configured in the ledger.
+    This should be called once at the start of monitoring to:
+    1. Discover and register labellers from entry points
+    2. Load any labellers configured in the ledger
     
     Parameters
     ----------
@@ -33,6 +34,10 @@ def initialize_labellers(ledger):
     """
     global _labellers_initialized
     if not _labellers_initialized:
+        from asimov.labellers import discover_labellers
+        # First discover entry point labellers
+        discover_labellers()
+        # Then load ledger-configured labellers
         load_labellers_from_ledger(ledger)
         _labellers_initialized = True
 

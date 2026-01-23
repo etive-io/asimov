@@ -406,7 +406,3 @@ def get_labellers():
         Dictionary mapping labeller names to labeller instances.
     """
     return LABELLER_REGISTRY.copy()
-
-
-# Discover and register labellers on module import
-discover_labellers()
