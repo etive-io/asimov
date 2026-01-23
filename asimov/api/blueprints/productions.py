@@ -4,13 +4,16 @@ Productions API blueprint.
 Provides CRUD operations for analysis productions.
 """
 
+import logging
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from asimov.api.utils import get_ledger
 from asimov.api.auth import require_auth
 from asimov.api.models import ProductionCreate, ProductionUpdate
+from asimov.event import Production
 
 bp = Blueprint('productions', __name__)
+logger = logging.getLogger(__name__)
 
 
 @bp.route('/<event_name>/<production_name>', methods=['GET'])
@@ -42,7 +45,7 @@ def get_production(event_name, production_name):
     if not production:
         return jsonify({'error': 'Production not found'}), 404
 
-    return jsonify({'production': production.to_dict()})
+    return jsonify({'production': production.to_dict(event=False)})
 
 
 @bp.route('/<event_name>', methods=['POST'])
@@ -82,24 +85,44 @@ def create_production(event_name):
         if any(p.name == data.name for p in event.productions):
             return jsonify({'error': 'Production already exists'}), 409
 
-        # Add production using event method
-        event.add_production(
-            name=data.name,
-            pipeline=data.pipeline,
-            comment=data.comment,
-            dependencies=data.dependencies
-        )
+        # Workaround for deepcopy issue: temporarily remove ledger from event.meta
+        # This prevents FileLock pickling errors when Production.__init__ and to_dict() 
+        # do deepcopy(event.meta)
+        ledger_backup = event.meta.pop('ledger', None)
+        
+        try:
+            # Create production object
+            production = Production(
+                subject=event,
+                name=data.name,
+                pipeline=data.pipeline,
+                comment=data.comment or '',
+            )
+            
+            # Set dependencies if provided
+            if data.dependencies:
+                production.dependencies = data.dependencies
+            
+            # Update metadata if provided
+            if data.meta:
+                production.meta.update(data.meta)
 
-        # Update metadata if provided
-        production = next(p for p in event.productions if p.name == data.name)
-        production.meta.update(data.meta)
-
-        ledger.update_event(event)
-        return jsonify({'production': production.to_dict()}), 201
+            # Add production to event
+            event.add_production(production)
+            
+            # Update ledger before restoring ledger reference
+            ledger.update_event(event)
+            
+            return jsonify({'production': production.to_dict(event=False)}), 201
+        finally:
+            # Restore ledger to event.meta
+            if ledger_backup is not None:
+                event.meta['ledger'] = ledger_backup
 
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logger.exception("Unexpected error creating production")
         return jsonify({'error': str(e)}), 500
 
 
@@ -142,19 +165,28 @@ def update_production(event_name, production_name):
         if not production:
             return jsonify({'error': 'Production not found'}), 404
 
-        if data.status:
-            production.status = data.status
-        if data.comment:
-            production.comment = data.comment
-        if data.meta:
-            production.meta.update(data.meta)
+        # Workaround for deepcopy issue: temporarily remove ledger from event.meta
+        ledger_backup = event.meta.pop('ledger', None)
+        
+        try:
+            if data.status:
+                production.status = data.status
+            if data.comment:
+                production.comment = data.comment
+            if data.meta:
+                production.meta.update(data.meta)
 
-        ledger.update_event(event)
-        return jsonify({'production': production.to_dict()})
+            ledger.update_event(event)
+            return jsonify({'production': production.to_dict(event=False)})
+        finally:
+            # Restore ledger to event.meta
+            if ledger_backup is not None:
+                event.meta['ledger'] = ledger_backup
 
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logger.exception("Unexpected error updating production")
         return jsonify({'error': str(e)}), 500
 
 

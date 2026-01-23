@@ -125,6 +125,105 @@ class APIEventsTestCase(AsimovTestCase):
         response = self.client.get('/api/v1/events/NonExistent/productions')
         self.assertEqual(response.status_code, 404)
 
+    def test_create_event_success(self):
+        """Test creating event successfully."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({
+                'name': 'GW150914',
+                'repository': 'https://git.ligo.org/test/repo.git',
+                'working_directory': '/tmp/test',
+                'meta': {'test': True}
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 201)
+        data = json.loads(response.data)
+        self.assertIn('event', data)
+        self.assertEqual(data['event']['name'], 'GW150914')
+
+    def test_update_event_success(self):
+        """Test updating event successfully."""
+        # Create event first
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Update event
+        response = self.client.put(
+            '/api/v1/events/GW150914',
+            data=json.dumps({
+                'repository': 'https://git.ligo.org/updated/repo.git',
+                'meta': {'updated': True}
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('event', data)
+        self.assertEqual(data['event']['name'], 'GW150914')
+
+    def test_delete_event_success(self):
+        """Test deleting event successfully."""
+        # Create event first
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Delete event
+        response = self.client.delete(
+            '/api/v1/events/GW150914',
+            headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 204)
+
+        # Verify it's deleted
+        response = self.client.get('/api/v1/events/GW150914')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_event_success(self):
+        """Test getting event successfully."""
+        # Create event first
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Get event
+        response = self.client.get('/api/v1/events/GW150914')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('event', data)
+        self.assertEqual(data['event']['name'], 'GW150914')
+
+    def test_list_events_with_data(self):
+        """Test listing events when events exist."""
+        # Create event
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # List events
+        response = self.client.get('/api/v1/events/')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('events', data)
+        self.assertEqual(len(data['events']), 1)
+        self.assertEqual(data['events'][0]['name'], 'GW150914')
+
 
 class APIProductionsTestCase(AsimovTestCase):
     """Tests for Productions API endpoints."""
@@ -421,16 +520,22 @@ class APICORSTestCase(unittest.TestCase):
     """Tests for CORS headers."""
 
     def setUp(self):
-        """Set up test client."""
+        """Set up test client with CORS enabled."""
+        # Need to configure CORS origins for the test
+        from asimov import config
+        if not config.has_section('api'):
+            config.add_section('api')
+        config.set('api', 'cors_origins', '*')
+        
         self.app = create_app()
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
 
     def test_cors_headers_present(self):
-        """Test CORS headers are present in responses."""
+        """Test CORS headers are present in responses when configured."""
         response = self.client.get('/api/v1/health')
         self.assertEqual(response.status_code, 200)
-        # Flask-CORS should add CORS headers
+        # Flask-CORS should add CORS headers when configured
         self.assertIn('Access-Control-Allow-Origin', response.headers)
 
 
@@ -439,9 +544,18 @@ class APIErrorHandlingTestCase(unittest.TestCase):
 
     def setUp(self):
         """Set up test client."""
+        # Set up API keys for authentication
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = {'test-token': 'test-user'}
+        
         self.app = create_app()
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
+
+    def tearDown(self):
+        """Clean up after tests."""
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = None
 
     def test_404_not_found(self):
         """Test 404 error handling."""

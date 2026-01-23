@@ -4,6 +4,7 @@ Events API blueprint.
 Provides CRUD operations for gravitational wave events.
 """
 
+import logging
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from asimov.event import Event
@@ -12,6 +13,7 @@ from asimov.api.auth import require_auth
 from asimov.api.models import EventCreate, EventUpdate
 
 bp = Blueprint('events', __name__)
+logger = logging.getLogger(__name__)
 
 
 @bp.route('/', methods=['GET'])
@@ -99,6 +101,7 @@ def create_event():
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logger.exception("Unexpected error creating event")
         return jsonify({'error': str(e)}), 500
 
 
@@ -147,6 +150,7 @@ def update_event(name):
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logger.exception("Unexpected error updating event")
         return jsonify({'error': str(e)}), 500
 
 
