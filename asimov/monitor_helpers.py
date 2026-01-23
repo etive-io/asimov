@@ -11,6 +11,7 @@ from asimov.cli import ACTIVE_STATES
 from asimov.monitor_states import get_state_handler
 from asimov.monitor_context import MonitorContext
 from asimov.telemetry import emit_event
+from asimov.labellers import apply_labellers
 
 logger = logger.getChild("monitor_helpers")
 logger.setLevel(LOGGER_LEVEL)
@@ -71,6 +72,16 @@ def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=No
         dry_run=dry_run,
         analysis_path=analysis_path
     )
+    
+    # Apply labellers to the analysis
+    # This allows plugins to automatically label analyses (e.g., as "interesting")
+    # during the monitoring process
+    try:
+        labels = apply_labellers(analysis, context)
+        if labels:
+            logger.debug(f"Applied labels to {analysis_path}: {labels}")
+    except Exception as e:
+        logger.warning(f"Error applying labellers to {analysis_path}: {e}")
     
     # Get the appropriate state handler (pipeline-specific if available)
     pipeline = getattr(analysis, 'pipeline', None)
