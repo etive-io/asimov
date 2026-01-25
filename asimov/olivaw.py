@@ -115,6 +115,13 @@ def serve(host, port, debug):
     app = create_app()
     click.echo(f"Starting API server on {host}:{port}")
     click.echo(f"Health check: http://{host}:{port}/api/v1/health")
+    if not debug:
+        click.echo(
+            "Warning: You are running the Flask development server with debug disabled. "
+            "This server is not suitable for production. Use a production WSGI server "
+            "such as Gunicorn to run this application in production.",
+            err=True,
+        )
     app.run(host=host, port=port, debug=debug)
 
 
