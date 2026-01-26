@@ -178,27 +178,17 @@ Developers' Guide
    :maxdepth: 1
    :caption: Development Guide
 
-   contributing.rst
-   code-of-conduct.rst
-
-   
-   asimov-repository
-	     
-   ledger   
-   pipelines-dev
-   hooks
-
+   contributing
+   code-of-conduct
+   style-guide
    building-docs
-   
    asimov-repository
 
    code-overview
 
-   ledger
+   ledger   
    pipelines-dev
    hooks
-
-   building-docs
 
 Tutorials
 ---------
