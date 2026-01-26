@@ -8,10 +8,6 @@ Asimov Documentation Style Guide
 :Last Updated: 2026-01-26
 :Status: Official
 
-.. contents:: Table of Contents
-   :depth: 3
-   :local:
-
 Introduction
 ============
 
