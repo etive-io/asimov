@@ -124,6 +124,8 @@ Users' guide
 
    getting-started
    installation
+   architecture
+   glossary
    user-guide/projects
    user-guide/events
    user-guide/productions
@@ -159,10 +161,13 @@ Advanced topics
 
    analyses
    build-process
+   cli-reference
    scheduler-integration
    monitor-state-machine
    monitor-api
    configuration
+   troubleshooting
+   faq
    test-interface
    clusters
 
@@ -173,27 +178,17 @@ Developers' Guide
    :maxdepth: 1
    :caption: Development Guide
 
-   contributing.rst
-   code-of-conduct.rst
-
-   
-   asimov-repository
-	     
-   ledger   
-   pipelines-dev
-   hooks
-
+   contributing
+   code-of-conduct
+   style-guide
    building-docs
-   
    asimov-repository
 
    code-overview
 
-   ledger
+   ledger   
    pipelines-dev
    hooks
-
-   building-docs
 
 Tutorials
 ---------

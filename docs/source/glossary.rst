@@ -1,0 +1,612 @@
+.. _glossary:
+
+======================
+Core Concepts Glossary
+======================
+
+This glossary defines key asimov-specific terminology to help you understand the documentation and codebase.
+
+Analysis Types
+==============
+
+Analysis
+--------
+
+A computational task that processes data or results to produce scientific outputs. In asimov, there are three types of analyses based on their scope:
+
+- **SimpleAnalysis** (formerly "Production"): Analyzes a single event
+- **SubjectAnalysis** (also "Event Analysis"): Combines results from multiple analyses on one event  
+- **ProjectAnalysis**: Analyzes results across multiple events
+
+See :ref:`architecture` for detailed information on each type.
+
+Production
+----------
+
+.. deprecated:: 0.4.0
+   The term "Production" has been replaced by "SimpleAnalysis" to better reflect the analysis hierarchy.
+
+In versions prior to 0.4, "Production" referred to what is now called a ``SimpleAnalysis`` - an analysis that operates on a single event.
+
+**Legacy usage:**
+
+You may still see "Production" used in:
+
+- Older configuration files and blueprints
+- Ledger YAML under the ``productions:`` key
+- Code variable names (for backwards compatibility)
+- Historical documentation and tutorials
+
+**Current equivalents:**
+
+- Old: "Add a production to the event"
+- New: "Add an analysis to the event"
+
+When reading older documentation, treat "Production" and "SimpleAnalysis" as synonymous.
+
+SimpleAnalysis
+--------------
+
+An analysis that operates on a single event. This is the most common type of analysis in asimov.
+
+**Examples:**
+
+- Parameter estimation with bilby
+- PSD estimation with bayeswave
+- Glitch characterization
+
+**Key features:**
+
+- Has access to one event's data
+- Can depend on other simple analyses for the same event
+- Results stored in event directory
+
+SubjectAnalysis
+---------------
+
+An analysis that combines or compares results from multiple ``SimpleAnalysis`` instances for a single event. Sometimes called an "Event Analysis."
+
+**Examples:**
+
+- Combining posterior samples from multiple parameter estimation runs
+- Comparing results from different waveform approximants
+- Creating event summary reports
+
+**Key features:**
+
+- Has access to results from multiple simple analyses
+- Operates on a single event
+- Can aggregate data across analyses
+
+ProjectAnalysis
+---------------
+
+An analysis that operates on results from multiple events. This is the most general analysis type.
+
+**Examples:**
+
+- Population studies
+- Catalog analyses  
+- Multi-event rate calculations
+
+**Key features:**
+
+- Has access to all events and their analyses
+- Suitable for cross-event studies
+- Results stored at project level
+
+GravitationalWaveTransient
+--------------------------
+
+A specialized subclass of ``SimpleAnalysis`` that includes gravitational wave-specific features:
+
+- Interferometer configuration
+- Calibration envelope handling
+- GPS time and trigger information
+- Data quality flag integration
+
+Data Organization
+=================
+
+Event
+-----
+
+A physical occurrence that needs to be analyzed. In gravitational wave astronomy, this is typically a compact binary coalescence (CBC) detection.
+
+**Components:**
+
+- Name (e.g., "GW150914_095045")
+- GPS time
+- Detector configuration (H1, L1, V1, etc.)
+- Calibration files
+- PSDs
+- Data quality information
+- Associated analyses
+
+**Event vs Subject:**
+
+In asimov, "Event" and "Subject" are often used interchangeably. More precisely:
+
+- **Event**: The object in the ledger representing the occurrence
+- **Subject**: The target of a ``SubjectAnalysis`` (which is always an event)
+
+Project
+-------
+
+A collection of events and their analyses, along with project-wide settings and defaults.
+
+**Components:**
+
+- Ledger (database of all events and analyses)
+- Default configuration values
+- Event repositories
+- Results storage
+- Project-wide analyses (``ProjectAnalysis`` instances)
+
+**Project directory structure:**
+
+.. code-block:: text
+
+   my-project/
+   ├── .asimov/
+   │   ├── ledger.yml          # Main ledger file
+   │   └── config.ini          # Project configuration
+   ├── checkouts/              # Event repositories
+   │   └── GW150914_095045/
+   ├── results/                # Completed analyses
+   └── store/                  # Read-only result archive
+
+Storage Concepts
+================
+
+Ledger
+------
+
+The central database that stores all information about a project's events and analyses. The ledger maintains:
+
+- Project defaults
+- Event metadata  
+- Analysis specifications
+- Job status
+- Review information
+- Dependency relationships
+
+**Ledger hierarchy:**
+
+Settings cascade from project → event → analysis, with lower levels overriding higher levels.
+
+**Storage backends:**
+
+- YAML files (default)
+- GitLab issues
+- TinyDB
+- MongoDB
+
+See :ref:`ledger` for complete documentation.
+
+Repository
+----------
+
+A git repository containing event-specific data and configuration files. Managed by the ``EventRepo`` class.
+
+**Contents:**
+
+- Configuration files generated by pipelines
+- PSDs
+- Calibration envelopes  
+- Analysis-specific data
+- Version history
+
+**Location:**
+
+Repositories are cloned into the project's ``checkouts/`` directory and kept synchronized with a remote git server.
+
+**Repository vs Ledger:**
+
+- **Repository**: Version-controlled files for an event
+- **Ledger**: Database of metadata and status
+
+Store
+-----
+
+A read-only archive for completed analysis results. Managed by the ``Store`` class.
+
+**Contents:**
+
+- Final posterior samples
+- Plots and figures
+- Configuration files (archived)
+- Log files
+- Summary statistics
+- Manifest with file hashes
+
+**Key features:**
+
+- Immutable (read-only after creation)
+- Hash verification for integrity
+- UUID tracking for provenance
+- Organized by event and analysis name
+
+**Store vs Repository:**
+
+- **Repository**: Mutable workspace during analysis
+- **Store**: Immutable archive after completion
+
+Configuration and Templating
+=============================
+
+Blueprint
+---------
+
+A YAML document that defines events, analyses, or defaults to be applied to the ledger. Blueprints support Liquid templating for dynamic content.
+
+**Blueprint kinds:**
+
+- ``event``: Defines or updates an event
+- ``analysis``: Adds an analysis to an event
+- ``defaults``: Sets project or pipeline defaults
+
+**Example:**
+
+.. code-block:: yaml
+
+   kind: analysis
+   name: Prod0
+   pipeline: bilby
+   approximant: IMRPhenomXPHM
+   status: ready
+
+**Features:**
+
+- Variable substitution
+- Conditional logic
+- Template inheritance
+- Remote loading (URLs)
+
+See :ref:`blueprints` for detailed documentation.
+
+Category
+--------
+
+A label used to organize related data, typically by calibration version or analysis campaign.
+
+**Common categories:**
+
+- ``C01_offline``: Calibration version 01
+- ``C02_offline``: Calibration version 02  
+- ``O3a``: Observing run 3a data
+- ``Caron``: Specific analysis campaign
+
+**Usage:**
+
+Categories appear in file paths and are used to:
+
+- Locate calibration files: ``{category}/calibration/H1.dat``
+- Find PSDs: ``{category}/psds/1024/H1-psd.dat``
+- Organize data quality segments
+- Group related analyses
+
+**Setting categories:**
+
+Categories are typically set at the event level and inherited by analyses:
+
+.. code-block:: yaml
+
+   events:
+     - name: GW150914_095045
+       category: C01_offline
+
+Pipeline and Job Management
+===========================
+
+Pipeline
+--------
+
+An interface class that bridges asimov with external analysis software. Each pipeline implementation handles:
+
+- Configuration file generation
+- DAG file creation
+- Job submission
+- Progress monitoring  
+- Completion detection
+- Result collection
+
+**Currently supported pipelines:**
+
+- ``bilby``: Bayesian inference library
+- ``bayeswave``: Glitch characterization and PSD estimation
+- ``RIFT``: Rapid parameter estimation
+- ``lalinference``: Legacy LIGO PE (deprecated v0.7)
+
+**Pipeline registration:**
+
+Pipelines are registered via entry points in ``pyproject.toml``:
+
+.. code-block:: toml
+
+   [project.entry_points."asimov.pipelines"]
+   bilby = "asimov.pipelines.bilby:Bilby"
+
+See :ref:`pipelines-dev` for creating custom pipelines.
+
+DAG
+---
+
+Directed Acyclic Graph - HTCondor's job workflow specification format. Pipelines generate DAG files that define:
+
+- Jobs to be executed
+- Job dependencies
+- Resource requirements
+- Retry logic
+
+Condor / HTCondor
+-----------------
+
+High Throughput Computing software that manages job execution on computing clusters. Asimov uses HTCondor for:
+
+- Job submission
+- Resource allocation
+- Job monitoring
+- Queue management
+
+Status
+------
+
+The current state of an analysis. Status values include:
+
+**Waiting states:**
+
+- ``wait``: Not ready to run
+- ``ready``: Ready to be submitted
+
+**Active states:**
+
+- ``running``: Executing on cluster
+- ``processing``: Post-processing in progress
+
+**Completion states:**
+
+- ``finished``: Completed, results not uploaded
+- ``uploaded``: Results archived
+
+**Error states:**
+
+- ``stuck``: Job held or failing
+- ``stopped``: Manually stopped
+- ``cancelled``: Cancelled by user
+
+**Manual state:**
+
+- ``manual``: Requires manual intervention
+
+See :ref:`architecture` for the complete status lifecycle.
+
+Review and Quality Assurance
+=============================
+
+Review
+------
+
+A quality assessment attached to an analysis result. Reviews track:
+
+- Approval status
+- Comments and feedback
+- Timestamps
+- Reviewer identity
+
+**Review states:**
+
+- ``APPROVED``: Results validated and approved
+- ``PREFERRED``: Recommended over other analyses
+- ``DEPRECATED``: Superseded by newer analysis
+- ``REJECTED``: Results not suitable for use
+
+**Review workflow:**
+
+Reviews can be added via:
+
+- Command-line interface
+- API calls
+- Integration with issue trackers
+
+Metadata
+========
+
+Metadata refers to configuration data that describes how an analysis should be conducted. Metadata is stored in the ledger and includes:
+
+**Event metadata:**
+
+- Interferometers: ``[H1, L1, V1]``
+- Event time (GPS)
+- Calibration files
+- PSDs
+- Data quality segments
+
+**Analysis metadata:**
+
+- Pipeline: ``bilby``
+- Waveform approximant: ``IMRPhenomXPHM``
+- Sampler settings
+- Prior distributions
+- Likelihood configuration
+
+**Scheduler metadata:**
+
+- Accounting group
+- Resource requests (CPUs, memory)
+- Queue selection
+
+**Metadata hierarchy:**
+
+Metadata cascades from project → pipeline defaults → event → analysis, with each level able to override or extend settings from above.
+
+Default Metadata System
+-----------------------
+
+Asimov supports specifying default values at multiple levels:
+
+1. **Project defaults**: Apply to all events and analyses
+2. **Pipeline defaults**: Apply to all analyses using that pipeline
+3. **Event defaults**: Apply to all analyses for that event
+
+**Example:**
+
+.. code-block:: yaml
+
+   # Project-level defaults
+   defaults:
+     sampler:
+       nlive: 2000
+   
+   # Pipeline-specific defaults  
+   pipelines:
+     bilby:
+       sampler:
+         nlive: 4000  # Overrides project default
+   
+   # Event-level
+   events:
+     - name: GW150914_095045
+       # Inherits bilby default (nlive: 4000)
+       productions:
+         - Prod0:
+             sampler:
+               nlive: 8000  # Overrides all defaults
+
+Dependencies and Execution
+==========================
+
+Dependency
+----------
+
+An analysis can depend on the completion of other analyses. Dependencies are specified via the ``needs`` field.
+
+**Example:**
+
+.. code-block:: yaml
+
+   productions:
+     - PSD_Generation:
+         pipeline: bayeswave
+         status: ready
+     
+     - Parameter_Estimation:
+         pipeline: bilby
+         needs:
+           - PSD_Generation
+         status: wait  # Won't run until PSD_Generation finishes
+
+**Dependency types:**
+
+- Simple name reference: ``needs: [Prod0]``
+- Attribute query: ``needs: [{pipeline: bayeswave}]``
+
+**Circular dependencies:**
+
+Asimov detects circular dependencies and will raise an error if they exist.
+
+Hooks
+-----
+
+Lifecycle hooks are callback functions that execute at specific points in the analysis workflow:
+
+**Available hooks:**
+
+- ``before_config``: Before configuration generation
+- ``before_submit``: Before job submission
+- ``after_completion``: After job completes
+- ``after_upload``: After results uploaded
+
+Hooks allow customization without modifying pipeline code.
+
+See :ref:`hooks` for detailed documentation.
+
+Integration and Tools
+=====================
+
+GraceDB
+-------
+
+Gravitational-Wave Candidate Event Database - LIGO's system for tracking gravitational wave candidates. Asimov can:
+
+- Fetch event data from GraceDB
+- Retrieve trigger information
+- Download calibration files
+- Synchronize event status
+
+PESummary
+---------
+
+Parameter Estimation Summary toolkit - generates summary pages and plots for parameter estimation results. Asimov can:
+
+- Automatically trigger PESummary after analysis completion
+- Configure PESummary settings
+- Integrate PESummary outputs into storage
+
+Mattermost
+----------
+
+Team communication platform. Asimov can send notifications about:
+
+- Job completion
+- Analysis failures
+- Review updates
+
+Authentication
+--------------
+
+Asimov handles authentication for:
+
+- HTCondor job submission (via SciTokens)
+- Grid data access (via kinit)
+- Remote storage (via credentials)
+
+The ``auth`` module manages token refresh and credential validation.
+
+Command-Line Interface
+======================
+
+The main asimov commands are:
+
+**Project setup:**
+
+- ``asimov init``: Create a new project
+- ``asimov apply``: Apply blueprints to ledger
+
+**Job management:**
+
+- ``asimov manage build``: Generate configuration files
+- ``asimov manage submit``: Submit jobs to cluster
+- ``asimov manage stop``: Stop running jobs
+- ``asimov manage cancel``: Cancel jobs
+
+**Monitoring:**
+
+- ``asimov monitor``: Check job status and progress
+- ``asimov start``: Start automatic monitoring daemon
+- ``asimov stop``: Stop monitoring daemon
+
+**Reporting:**
+
+- ``asimov report status``: Show analysis status
+- ``asimov report``: Generate HTML report
+
+Common Abbreviations
+====================
+
+- **CBC**: Compact Binary Coalescence
+- **DAG**: Directed Acyclic Graph
+- **GW**: Gravitational Wave
+- **IFO**: Interferometer
+- **INI**: Initialization file (configuration format)
+- **PE**: Parameter Estimation
+- **PSD**: Power Spectral Density
+- **ROQ**: Reduced Order Quadrature
+
+Further Reading
+===============
+
+- :ref:`architecture`: Detailed architecture documentation
+- :ref:`getting-started`: Tutorial for new users
+- :ref:`ledger`: Complete ledger format reference
+- :ref:`pipelines`: Pipeline-specific documentation

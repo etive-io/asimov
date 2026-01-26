@@ -21,6 +21,18 @@ project = 'Asimov'
 copyright = '2020-2024, Daniel Williams'
 author = 'Daniel Williams'
 
+# Mock imports that need to happen before importing asimov
+import sys
+from unittest.mock import MagicMock
+
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return MagicMock()
+
+MOCK_MODULES = ['htcondor', 'git']
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+
 import kentigern
 import asimov
 # The full version, including alpha/beta/rc tags
