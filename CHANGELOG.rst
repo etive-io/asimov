@@ -1,4 +1,4 @@
-0.7.0-alpha1
+0.7.0-alpha2
 ============
 
 This is a major feature release that represents a significant evolution of asimov's architecture and capabilities. This alpha release introduces powerful new workflow management features, a modernized monitoring system, and enhanced programmatic control.
@@ -94,6 +94,7 @@ GitHub Pull Requests
 + `github#75 <https://github.com/etive-io/asimov/pull/75>`_: Add strategy expansion for creating multiple analyses from parameter matrices
 + `github#76 <https://github.com/etive-io/asimov/pull/76>`_: Allow additional plugin flexibility
 + `github#83 <https://github.com/etive-io/asimov/pull/83>`_: Refactor file logging setup to ensure thread safety with a shared lock
++ `github#97 <https://github.com/etive-io/asimov/pull/97>`_: Fix issue with git init in project creation
 
 0.6.1
 =====
