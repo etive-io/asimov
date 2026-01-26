@@ -68,17 +68,14 @@ class ProjectAwareGroup(click.Group):
 
 @click.version_option(asimov.__version__)
 @click.group(cls=ProjectAwareGroup)
-def olivaw():
+@click.pass_context
+def olivaw(ctx):
     """
     This is the main program which runs the DAGs for each event issue.
     """
 
-    # Check that we're running in an actual asimov project
-    if not os.path.exists(".asimov") and ctx.invoked_subcommand not in {"init", "blueprint"}:
-        # This isn't the root of an asimov project, let's fail.
-        click.secho("This isn't an asimov project", fg="white", bg="red")
-        sys.exit(1)
-    pass
+    # Project presence is enforced in ProjectAwareGroup.invoke; no extra work needed here.
+    return ctx
 
 
 # Project initialisation
