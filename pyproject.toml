@@ -53,6 +53,8 @@ dependencies = [
 	     "tinydb",
 	     "pillow>=10.2.0",
 	     "pydantic>=2.0.0",
+	     "sqlalchemy>=2.0.0",
+	     "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]
