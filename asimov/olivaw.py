@@ -103,6 +103,29 @@ olivaw.add_command(production.production)
 olivaw.add_command(review.review)
 olivaw.add_command(application.apply)
 
+
+@click.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=5000, type=int, help="Port to bind to")
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+def serve(host, port, debug):
+    """Start the REST API server."""
+    from asimov.api.app import create_app
+
+    app = create_app()
+    click.echo(f"Starting API server on {host}:{port}")
+    click.echo(f"Health check: http://{host}:{port}/api/v1/health")
+    if not debug:
+        click.echo(
+            "Warning: You are running the Flask development server with debug disabled. "
+            "This server is not suitable for production. Use a production WSGI server "
+            "such as Gunicorn to run this application in production.",
+            err=True,
+        )
+    app.run(host=host, port=port, debug=debug)
+
+
+olivaw.add_command(serve)
 # Auto-discover plugin commands
 
 discovered_commands = entry_points(group="asimov.commands")

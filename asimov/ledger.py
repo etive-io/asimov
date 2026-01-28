@@ -14,6 +14,7 @@ from asimov import config
 from asimov.analysis import ProjectAnalysis
 from asimov.event import Event, Production
 from asimov.utils import update, set_directory
+from filelock import FileLock
 
 
 class Ledger:
@@ -37,8 +38,10 @@ class YAMLLedger(Ledger):
     def __init__(self, location=None):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
-        self.location = os.path.abspath(location)
-        with open(self.location, "r") as ledger_file:
+        self.location = location
+        lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
+        self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
+        with open(location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 
         self.data["events"] = [
@@ -51,6 +54,25 @@ class YAMLLedger(Ledger):
             Event(**self.events[event], ledger=self) for event in self.events.keys()
         ]
         self.data.pop("events")
+
+    def __getstate__(self):
+        """
+        Custom pickle support to exclude the FileLock object.
+        FileLock contains thread-local state that cannot be pickled.
+        """
+        state = self.__dict__.copy()
+        # Remove the unpicklable FileLock object
+        state.pop('lock', None)
+        return state
+
+    def __setstate__(self, state):
+        """
+        Custom unpickle support to recreate the FileLock object.
+        """
+        self.__dict__.update(state)
+        # Recreate the FileLock with the same configuration
+        lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
+        self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
 
     @classmethod
     def create(cls, name, location=None):
@@ -112,15 +134,16 @@ class YAMLLedger(Ledger):
 
 
         """
-        self.data["events"] = list(self.events.values())
-        with set_directory(config.get("project", "root")):
-            # First produce a backup of the ledger
-            shutil.copy(self.location, self.location + ".bak")
-            with open(self.location + "_tmp", "w") as ledger_file:
-                ledger_file.write(yaml.dump(self.data, default_flow_style=False))
-                ledger_file.flush()
-                # os.fsync(ledger_file.fileno())
-            os.replace(self.location + "_tmp", self.location)
+        with self.lock:  # Acquire exclusive lock for thread-safe saving
+            self.data["events"] = list(self.events.values())
+            with set_directory(config.get("project", "root")):
+                # First produce a backup of the ledger
+                shutil.copy(self.location, self.location + ".bak")
+                with open(self.location + "_tmp", "w") as ledger_file:
+                    ledger_file.write(yaml.dump(self.data, default_flow_style=False))
+                    ledger_file.flush()
+                    # os.fsync(ledger_file.fileno())
+                os.replace(self.location + "_tmp", self.location)
 
     def add_subject(self, subject):
         """Add a new subject to the ledger."""
