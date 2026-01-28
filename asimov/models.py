@@ -53,10 +53,8 @@ class EventModel(Base):
         # Merge meta fields
         if self.meta:
             data.update(self.meta)
-        # Add productions
-        data["productions"] = [
-            {prod.name: prod.to_dict()} for prod in self.productions
-        ]
+        # Note: productions relationship is not included by default to avoid
+        # lazy loading issues. Use query_productions to get productions separately.
         return data
 
 

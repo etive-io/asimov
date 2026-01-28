@@ -227,6 +227,9 @@ class AsimovSQLDatabase(AsimovDatabase):
             session.add(event)
             session.flush()
             session.refresh(event)
+            # Eagerly load attributes before session closes
+            _ = event.id, event.name, event.repository, event.working_directory, event.meta
+            session.expunge(event)
             return event
 
     def insert_production(self, data: Dict[str, Any]) -> ProductionModel:
@@ -259,6 +262,10 @@ class AsimovSQLDatabase(AsimovDatabase):
             session.add(production)
             session.flush()
             session.refresh(production)
+            # Eagerly load attributes before session closes
+            _ = production.id, production.name, production.event_name, production.pipeline
+            _ = production.status, production.comment, production.meta
+            session.expunge(production)
             return production
 
     def insert_project_analysis(self, data: Dict[str, Any]) -> ProjectAnalysisModel:
@@ -290,6 +297,10 @@ class AsimovSQLDatabase(AsimovDatabase):
             session.add(analysis)
             session.flush()
             session.refresh(analysis)
+            # Eagerly load attributes before session closes
+            _ = analysis.id, analysis.name, analysis.pipeline, analysis.status
+            _ = analysis.comment, analysis.meta
+            session.expunge(analysis)
             return analysis
 
     def insert(self, table: str, data: Dict[str, Any]) -> Any:
@@ -346,7 +357,11 @@ class AsimovSQLDatabase(AsimovDatabase):
                     elif hasattr(EventModel, key):
                         query = query.filter(getattr(EventModel, key) == value)
             
-            return query.all()
+            results = query.all()
+            # Expunge objects so they can be used outside the session
+            for event in results:
+                session.expunge(event)
+            return results
 
     def query_productions(
         self, filters: Optional[Dict[str, Any]] = None
@@ -375,7 +390,11 @@ class AsimovSQLDatabase(AsimovDatabase):
                     elif hasattr(ProductionModel, key):
                         query = query.filter(getattr(ProductionModel, key) == value)
             
-            return query.all()
+            results = query.all()
+            # Expunge objects so they can be used outside the session
+            for prod in results:
+                session.expunge(prod)
+            return results
 
     def query_project_analyses(
         self, filters: Optional[Dict[str, Any]] = None
@@ -401,7 +420,11 @@ class AsimovSQLDatabase(AsimovDatabase):
                     if hasattr(ProjectAnalysisModel, key):
                         query = query.filter(getattr(ProjectAnalysisModel, key) == value)
             
-            return query.all()
+            results = query.all()
+            # Expunge objects so they can be used outside the session
+            for analysis in results:
+                session.expunge(analysis)
+            return results
 
     def query(
         self, table: str, parameter: Optional[str] = None, value: Optional[Any] = None
