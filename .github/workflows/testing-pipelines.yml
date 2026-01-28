@@ -74,6 +74,11 @@ jobs:
         with:
           script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_data/testing_pe.yaml"
 
+      - name: Apply labeller configuration
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/test_labeller_config.yaml"
+
       - name: Add test event
         uses: ./.github/actions/run-asimov-command
         with:
@@ -157,3 +162,8 @@ jobs:
           script: |
             asimov monitor
             echo "All testing pipelines completed successfully!"
+
+      - name: Verify labeller functionality
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: python "$GITHUB_WORKSPACE/tests/verify_labels.py"

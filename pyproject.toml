@@ -93,3 +93,9 @@ packages = [
 simpletestpipeline = "asimov.pipelines.testing:SimpleTestPipeline"
 subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"
 projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"
+
+# Entry point group for labeller plugins
+# Labellers can automatically assign labels like "interest status" to analyses
+# during monitoring. See docs/source/labeller-plugins.rst for details.
+[project.entry-points."asimov.labellers"]
+# Example: my_labeller = "my_package.labellers:MyLabeller"

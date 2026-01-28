@@ -162,6 +162,10 @@ def monitor(ctx, event, update, dry_run, chain):
         return False
 
     logger.info("Running asimov monitor")
+    
+    # Initialize labellers from ledger configuration
+    from asimov.monitor_helpers import initialize_labellers
+    initialize_labellers(ledger)
 
     if chain:
         logger.info("Running in chain mode")
