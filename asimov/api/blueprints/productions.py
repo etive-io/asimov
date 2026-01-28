@@ -86,8 +86,10 @@ def create_production(event_name):
             return jsonify({'error': 'Production already exists'}), 409
 
         # Workaround for deepcopy issue: temporarily remove ledger from event.meta
-        # This prevents FileLock pickling errors when Production.__init__ and to_dict() 
+        # This prevents FileLock pickling errors when Production.__init__ and to_dict()
         # do deepcopy(event.meta)
+        # NOTE: This may be redundant now that YAMLLedger implements __getstate__/__setstate__,
+        # but kept for safety until thoroughly tested.
         ledger_backup = event.meta.pop('ledger', None)
         
         try:
@@ -166,6 +168,8 @@ def update_production(event_name, production_name):
             return jsonify({'error': 'Production not found'}), 404
 
         # Workaround for deepcopy issue: temporarily remove ledger from event.meta
+        # NOTE: This may be redundant now that YAMLLedger implements __getstate__/__setstate__,
+        # but kept for safety until thoroughly tested.
         ledger_backup = event.meta.pop('ledger', None)
         
         try:

@@ -55,6 +55,25 @@ class YAMLLedger(Ledger):
         ]
         self.data.pop("events")
 
+    def __getstate__(self):
+        """
+        Custom pickle support to exclude the FileLock object.
+        FileLock contains thread-local state that cannot be pickled.
+        """
+        state = self.__dict__.copy()
+        # Remove the unpicklable FileLock object
+        state.pop('lock', None)
+        return state
+
+    def __setstate__(self, state):
+        """
+        Custom unpickle support to recreate the FileLock object.
+        """
+        self.__dict__.update(state)
+        # Recreate the FileLock with the same configuration
+        lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
+        self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
+
     @classmethod
     def create(cls, name, location=None):
         if not location:
