@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 .. _ledger:
 
-=======
->>>>>>> v0.4-release
 The Asimov Ledger
 =================
 
@@ -12,6 +9,174 @@ Data in the ledger is hierarchical, so settings can be specified on a per-projec
 In addition defaults can be set for each pipeline.
 
 In this documentation we'll represent the ledger in ``yaml`` format, however a number of other storage methods for the ledger are also supported by asimov.
+
+Ledger Storage Backends
+-----------------------
+
+Asimov supports multiple storage backends for the ledger, each with different characteristics:
+
+YAML File Backend
+~~~~~~~~~~~~~~~~~
+
+The YAML file backend stores the ledger as a human-readable YAML file. This is the default backend and is suitable for single-user scenarios or small projects.
+
+**Configuration:**
+
+.. code-block:: ini
+
+   [ledger]
+   engine = yamlfile
+   location = .asimov/ledger.yml
+
+**Advantages:**
+- Human-readable and easy to edit
+- No external dependencies
+- Simple backup and version control
+
+**Limitations:**
+- Limited concurrency support (uses file locking)
+- Performance degrades with large ledgers
+- Not suitable for multi-user concurrent access
+
+Database Backend (SQLAlchemy)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The database backend uses SQLAlchemy to provide robust, transactional storage with support for concurrent access. This is recommended for production environments and multi-user scenarios.
+
+**Configuration:**
+
+.. code-block:: ini
+
+   [ledger]
+   engine = sqlalchemy
+   location = /path/to/ledger.db
+
+**Supported Databases:**
+- SQLite (default, no additional setup required)
+- PostgreSQL (for production deployments)
+- MySQL/MariaDB (for production deployments)
+
+**Advantages:**
+- **ACID transactions** ensure data integrity
+- **Thread-safe** operations with proper locking
+- **Concurrent access** support for multi-user environments
+- **Advanced querying** capabilities with filters and sorting
+- **Scalable** to large numbers of events and analyses
+- **Race condition protection** for parallel workflows
+
+**Configuration Examples:**
+
+SQLite (local file):
+
+.. code-block:: ini
+
+   [ledger]
+   engine = sqlalchemy
+   location = .asimov/ledger.db
+
+PostgreSQL (production server):
+
+.. code-block:: ini
+
+   [ledger]
+   engine = sqlalchemy
+   location = postgresql://user:password@localhost/asimov_ledger
+
+MySQL:
+
+.. code-block:: ini
+
+   [ledger]
+   engine = sqlalchemy
+   location = mysql+pymysql://user:password@localhost/asimov_ledger
+
+Database Schema
+^^^^^^^^^^^^^^^
+
+The database backend uses the following tables:
+
+**events**
+  Stores event information including name, repository, working directory, and metadata.
+  
+**productions**
+  Stores production/analysis information linked to events via foreign key relationship.
+  Includes name, pipeline, status, and metadata.
+  
+**project_analyses**
+  Stores project-level analyses that span multiple events.
+
+All metadata is stored as JSON, preserving flexibility for pipeline-specific settings.
+
+Querying the Database
+^^^^^^^^^^^^^^^^^^^^^
+
+The database backend supports advanced querying:
+
+.. code-block:: python
+
+   from asimov.ledger import DatabaseLedger
+   
+   # Initialize ledger
+   ledger = DatabaseLedger(engine="sqlalchemy")
+   
+   # Query events
+   events = ledger.get_event()  # All events
+   event = ledger.get_event("GW150914")  # Specific event
+   
+   # Query productions with filters
+   prods = ledger.get_productions(
+       event="GW150914",
+       filters={"status": "ready", "pipeline": "bilby"}
+   )
+   
+   # Get all ready bilby productions across all events
+   ready_bilby = ledger.get_productions(
+       filters={"status": "ready", "pipeline": "bilby"}
+   )
+
+Migration from YAML to Database
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To migrate an existing YAML ledger to a database:
+
+.. code-block:: python
+
+   from asimov.ledger import YAMLLedger, DatabaseLedger
+   
+   # Load existing YAML ledger
+   yaml_ledger = YAMLLedger(".asimov/ledger.yml")
+   
+   # Create new database ledger
+   db_ledger = DatabaseLedger.create(engine="sqlalchemy")
+   
+   # Migrate events
+   for event in yaml_ledger.get_event():
+       db_ledger.add_event(event)
+   
+   # Migrate project analyses
+   for analysis in yaml_ledger.project_analyses:
+       db_ledger.add_analysis(analysis)
+
+Transaction Safety
+^^^^^^^^^^^^^^^^^^
+
+All database operations are wrapped in transactions, ensuring:
+- **Atomicity**: Operations either complete fully or are rolled back
+- **Consistency**: Database constraints are enforced
+- **Isolation**: Concurrent operations don't interfere
+- **Durability**: Committed changes are persistent
+
+Example of safe concurrent updates:
+
+.. code-block:: python
+
+   # Thread 1 updates event A
+   ledger.update_event(event_a)
+   
+   # Thread 2 updates event B (happens safely in parallel)
+   ledger.update_event(event_b)
+   
+   # Both updates are guaranteed to succeed without corruption
 
 The ledger hierarchy
 --------------------
