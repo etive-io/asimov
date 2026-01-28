@@ -39,9 +39,9 @@ def create_app():
         allowed_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
         CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
     else:
-        # If no explicit CORS configuration is provided, only enable permissive CORS in development.
+        # If no explicit CORS configuration is provided, only enable permissive CORS in development/testing.
         # In production, CORS must be explicitly configured via the 'api.cors_origins' setting.
-        if app.config.get("ENV") == "development" or app.debug:
+        if app.config.get("ENV") == "development" or app.debug or app.config.get("TESTING"):
             CORS(app, resources={r"/api/*": {"origins": "*"}})
 
     # Register blueprints
