@@ -26,10 +26,13 @@ Thumbs.db
 
 # Asimov specific
 .asimov/
+
 # Test temporary files
 tests/tmp/
-# Asimov specific
-.asimov/
 
-# Test artifacts
-tests/tmp/
+# Database files (should not be committed)
+*.db
+*.sqlite
+*.sqlite3
+ledger.yaml
+ledger.yml
