@@ -64,12 +64,14 @@ docs = [
 	"sphinxcontrib-httpdomain",
 	"sphinxcontrib-httpexample",
 	"sphinx-jsonschema",
-	"sphinx-multiversion"
+	"sphinx-multiversion",
+	"sphinxcontrib.autodoc_pydantic",
 ]
 bilby = [
 	"bilby_pipe",
 	"bilby",
 ]
+testing = []
 
 [project.scripts]
 olivaw = "asimov.olivaw:olivaw"
@@ -84,6 +86,7 @@ include-package-data = true
 packages = [
 	"asimov",
 	"asimov.pipelines",
+	"asimov.pipelines.testing",
 	"asimov.cli",
 	"asimov.configs",
 	"asimov.api",

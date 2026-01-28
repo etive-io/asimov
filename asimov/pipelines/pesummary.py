@@ -46,6 +46,14 @@ class PESummary(Pipeline):
         """
         # Call parent constructor
         super().__init__(production, category)
+        # Resolve executable, prefer explicit [pesummary] executable if provided
+        try:
+            pes_exec = config.get("pesummary", "executable")
+            if pes_exec:
+                self.executable = pes_exec
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            # Fall back to pipelines environment path
+            pass
         
         self.analysis = production
         
@@ -78,6 +86,59 @@ class PESummary(Pipeline):
                 self.meta = {}
         else:
             self.meta = production.meta
+
+    def collect_assets(self):
+        """
+        Gather all of the results assets for this job.
+
+        For PESummary SubjectAnalysis jobs, this returns the combined results.
+        For PESummary post-processing jobs, this returns the samples and config.
+
+        Returns
+        -------
+        dict
+            A dictionary of assets with keys like 'samples', 'config', etc.
+        """
+        # For PESummary as a SubjectAnalysis, return the combined samples
+        webroot = config.get("general", "webroot")
+        if not os.path.isabs(webroot):
+            webroot = os.path.join(config.get("project", "root"), webroot)
+
+        # Path to the combined posterior samples file
+        samples_file = os.path.join(
+            webroot,
+            self.subject.name,
+            self.production.name,
+            "pesummary",
+            "samples",
+            "posterior_samples.h5"
+        )
+
+        assets = {}
+
+        # Add samples if they exist
+        if os.path.exists(samples_file):
+            assets["samples"] = samples_file
+
+        # For post-processing mode, also include the config
+        from asimov.analysis import SubjectAnalysis
+        if not isinstance(self.production, SubjectAnalysis):
+            try:
+                config_file = self.event.repository.find_prods(
+                    self.production.name, self.category
+                )[0]
+                assets["config"] = config_file
+            except (AttributeError, IndexError):
+                # If the event or repository is missing, or no production config
+                # is found, skip adding a config asset but continue without error.
+                logger.debug(
+                    "PESummary.collect_assets: no config found for production %s "
+                    "in category %s",
+                    getattr(self.production, "name", "<unknown>"),
+                    getattr(self, "category", "<none>"),
+                )
+
+        return assets
 
     def results(self):
         """
@@ -153,6 +214,16 @@ class PESummary(Pipeline):
                 raise PipelineException(
                     "Could not find PESummary configuration file."
                 )
+
+        # Prefer assets from the current production; fall back to dependency assets
+        current_assets = {}
+        if not is_subject_analysis:
+            try:
+                current_assets = self.production.pipeline.collect_assets()
+            except (AttributeError, PipelineException):
+                # If the production has no pipeline or the pipeline fails in an
+                # expected way, fall back to using no current assets.
+                current_assets = {}
         
         # Determine labels and samples for PESummary
         if is_subject_analysis:
@@ -165,10 +236,11 @@ class PESummary(Pipeline):
             f_refs = []
             
             # Get the analyses that are dependencies
-            if hasattr(self.production, 'productions') and self.production.productions:
-                source_analyses = self.production.productions
-            elif hasattr(self.production, 'analyses') and self.production.analyses:
+            # Prefer the current analyses list; fall back to productions if needed
+            if hasattr(self.production, 'analyses') and self.production.analyses:
                 source_analyses = self.production.analyses
+            elif hasattr(self.production, 'productions') and self.production.productions:
+                source_analyses = self.production.productions
             else:
                 raise PipelineException(
                     "SubjectAnalysis PESummary has no source analyses to process."
@@ -231,6 +303,14 @@ class PESummary(Pipeline):
                     "No samples found from any dependency analyses."
                 )
             
+            # Persist resolved dependencies so we can detect staleness later
+            try:
+                self.production.resolved_dependencies = labels
+                self.logger.info(f"Stored resolved dependencies: {labels}")
+            except Exception as e:
+                self.logger.error(f"Failed to store resolved_dependencies: {e}")
+                raise PipelineException(f"Could not store resolved dependencies: {e}") from e
+
             # Ensure that the run directory exists (race-free)
             os.makedirs(self.production.rundir, exist_ok=True)
 
@@ -241,7 +321,10 @@ class PESummary(Pipeline):
         else:
             # Single analysis mode (post-processing)
             labels = [self.production.name]
-            samples_list = [self.production._previous_assets().get("samples", {})]
+            if "samples" in current_assets and current_assets["samples"]:
+                samples_list = [current_assets["samples"]]
+            else:
+                samples_list = [self.production._previous_assets().get("samples", {})]
             waveform_meta = self.production.meta.get("waveform", {})
             quality_meta = self.production.meta.get("quality", {})
 
@@ -421,11 +504,11 @@ class PESummary(Pipeline):
             else:
                 raise PipelineException("No config file available for PESummary")
 
-        # PSDs - get from first analysis in SubjectAnalysis mode
+        # PSDs - get from first analysis in SubjectAnalysis mode or from this production
         if is_subject_analysis and source_analyses:
             psds = source_analyses[0].pipeline.collect_assets().get("psds", {})
         else:
-            psds = self.production._previous_assets().get("psds", {})
+            psds = current_assets.get("psds", {}) or self.production._previous_assets().get("psds", {})
         
         psds = {
             ifo: os.path.abspath(psd)
@@ -436,11 +519,11 @@ class PESummary(Pipeline):
             for key, value in psds.items():
                 command += [f"{key}:{value}"]
 
-        # Calibration envelopes - get from first analysis in SubjectAnalysis mode
+        # Calibration envelopes - get from first analysis in SubjectAnalysis mode or from this production
         if is_subject_analysis and source_analyses:
             cals = source_analyses[0].pipeline.collect_assets().get("calibration", {})
         else:
-            cals = self.production._previous_assets().get("calibration", {})
+            cals = current_assets.get("calibration", {}) or self.production._previous_assets().get("calibration", {})
         
         cals = {
             ifo: os.path.abspath(cal)
@@ -458,9 +541,7 @@ class PESummary(Pipeline):
         self.logger.info(
             f"PE summary command: {self.executable} {' '.join(command)}",
         )
-
-        print(command)
-
+        
         if dryrun:
             print("PESUMMARY COMMAND")
             print("-----------------")

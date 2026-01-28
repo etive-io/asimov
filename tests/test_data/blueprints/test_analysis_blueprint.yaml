@@ -1,0 +1,6 @@
+kind: analysis
+name: Test Analysis Blueprint
+comment: This is a test analysis blueprint for unit testing.
+
+likelihood:
+  sample rate: 4096

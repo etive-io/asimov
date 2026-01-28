@@ -4,7 +4,8 @@ Events API blueprint.
 Provides CRUD operations for gravitational wave events.
 """
 
-from flask import Blueprint, request, jsonify, g
+import logging
+from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from asimov.event import Event
 from asimov.api.utils import get_ledger
@@ -12,6 +13,7 @@ from asimov.api.auth import require_auth
 from asimov.api.models import EventCreate, EventUpdate
 
 bp = Blueprint('events', __name__)
+logger = logging.getLogger(__name__)
 
 
 @bp.route('/', methods=['GET'])
@@ -70,7 +72,10 @@ def create_event():
         Created event data or error message.
     """
     try:
-        data = EventCreate(**request.json)
+        json_data = request.get_json(silent=True)
+        if json_data is None:
+            return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+        data = EventCreate(**json_data)
         ledger = get_ledger()
 
         # Check if event already exists
@@ -96,6 +101,7 @@ def create_event():
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logger.exception("Unexpected error creating event")
         return jsonify({'error': str(e)}), 500
 
 
@@ -118,7 +124,10 @@ def update_event(name):
         Updated event data or error message.
     """
     try:
-        data = EventUpdate(**request.json)
+        json_data = request.get_json(silent=True)
+        if json_data is None:
+            return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+        data = EventUpdate(**json_data)
         ledger = get_ledger()
 
         try:
@@ -141,6 +150,7 @@ def update_event(name):
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
     except Exception as e:
+        logger.exception("Unexpected error updating event")
         return jsonify({'error': str(e)}), 500
 
 
