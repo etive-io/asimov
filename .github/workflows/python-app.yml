@@ -41,6 +41,7 @@ jobs:
 
     - name: Run unittests
       run: |
+        export ASIMOV_TESTING=1
         python -m unittest discover tests/
 
   publish:
