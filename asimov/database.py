@@ -227,7 +227,8 @@ class AsimovSQLDatabase(AsimovDatabase):
             session.add(event)
             session.flush()
             session.refresh(event)
-            # Eagerly load attributes before session closes
+            # Eagerly load all attributes before expunging from session
+            # This prevents DetachedInstanceError when accessing attributes later
             _ = event.id, event.name, event.repository, event.working_directory, event.meta
             session.expunge(event)
             return event
@@ -262,7 +263,8 @@ class AsimovSQLDatabase(AsimovDatabase):
             session.add(production)
             session.flush()
             session.refresh(production)
-            # Eagerly load attributes before session closes
+            # Eagerly load all attributes before expunging from session
+            # This prevents DetachedInstanceError when accessing attributes later
             _ = production.id, production.name, production.event_name, production.pipeline
             _ = production.status, production.comment, production.meta
             session.expunge(production)
@@ -297,7 +299,8 @@ class AsimovSQLDatabase(AsimovDatabase):
             session.add(analysis)
             session.flush()
             session.refresh(analysis)
-            # Eagerly load attributes before session closes
+            # Eagerly load all attributes before expunging from session
+            # This prevents DetachedInstanceError when accessing attributes later
             _ = analysis.id, analysis.name, analysis.pipeline, analysis.status
             _ = analysis.comment, analysis.meta
             session.expunge(analysis)
