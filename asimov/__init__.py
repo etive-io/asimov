@@ -174,7 +174,10 @@ def setup_file_logging(logfile=None):
 
 
 try:
-    if config.get("ledger", "engine") == "yamlfile":
+    # Skip ledger initialization in test mode unless explicitly required
+    if os.environ.get('ASIMOV_TESTING') and not os.environ.get('ASIMOV_LOAD_LEDGER'):
+        current_ledger = None
+    elif config.get("ledger", "engine") == "yamlfile":
         from .ledger import YAMLLedger
 
         current_ledger = YAMLLedger(config.get("ledger", "location"))
