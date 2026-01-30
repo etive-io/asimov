@@ -48,6 +48,15 @@ def get_configured_scheduler():
                 "No specific Condor scheduler configured; using default schedd. (%s)",
                 exc,
             )
+    elif scheduler_type == "slurm":
+        try:
+            partition = config.get("slurm", "partition")
+            kwargs["partition"] = partition
+        except (configparser.NoOptionError, configparser.NoSectionError, KeyError) as exc:
+            logger.debug(
+                "No specific Slurm partition configured; using default partition. (%s)",
+                exc,
+            )
     
     return get_scheduler(scheduler_type, **kwargs)
 

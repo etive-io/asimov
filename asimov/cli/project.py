@@ -94,11 +94,39 @@ def make_project(
     except Exception:
         pass
 
-    # Set the default condor user
-    if not user:
-        config.set("condor", "user", getpass.getuser())
+    # Auto-detect scheduler type
+    # Check for Slurm first, then fall back to HTCondor
+    scheduler_type = "htcondor"  # default
+    if shutil.which("sbatch") and shutil.which("squeue"):
+        scheduler_type = "slurm"
+        logger.info("Detected Slurm scheduler")
+    elif shutil.which("condor_submit") and shutil.which("condor_q"):
+        scheduler_type = "htcondor"
+        logger.info("Detected HTCondor scheduler")
     else:
-        config.set("condor", "user", user)
+        logger.warning("No scheduler detected, defaulting to HTCondor")
+    
+    # Create scheduler section and set type
+    if not config.has_section("scheduler"):
+        config.add_section("scheduler")
+    config.set("scheduler", "type", scheduler_type)
+
+    # Set scheduler-specific configuration
+    if scheduler_type == "htcondor":
+        # Set the default condor user
+        if not user:
+            config.set("condor", "user", getpass.getuser())
+        else:
+            config.set("condor", "user", user)
+    elif scheduler_type == "slurm":
+        # Create slurm section if it doesn't exist
+        if not config.has_section("slurm"):
+            config.add_section("slurm")
+        # Set the default slurm user
+        if not user:
+            config.set("slurm", "user", getpass.getuser())
+        else:
+            config.set("slurm", "user", user)
 
     Ledger.create(
         engine="yamlfile",

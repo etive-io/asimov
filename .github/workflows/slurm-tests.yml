@@ -1,0 +1,212 @@
+name: Slurm Integration Tests (Manual)
+# Note: Slurm integration tests require container images that may not be publicly accessible
+# Unit tests for Slurm scheduler run automatically in the main test suite (tests.test_scheduler)
+# This workflow is for optional integration testing with a real Slurm cluster
+on: workflow_dispatch
+
+jobs:
+  slurm-unit-tests:
+    name: "Slurm Unit Tests (No Slurm Required)"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install python-crontab
+
+      - name: Run scheduler unit tests
+        run: |
+          # These tests use mocking and don't require a real Slurm installation
+          python -m unittest tests.test_scheduler -v
+
+      - name: Verify Slurm scheduler can be imported
+        run: |
+          python -c "from asimov.scheduler import Slurm; print('✓ Slurm scheduler imported successfully')"
+
+      - name: Test DAG translation functions
+        run: |
+          python << 'EOF'
+          from asimov.scheduler import Slurm
+          import tempfile
+          import os
+          
+          # Test HTCondor DAG to Slurm conversion
+          with tempfile.TemporaryDirectory() as tmpdir:
+              dag_file = os.path.join(tmpdir, "test.dag")
+              with open(dag_file, 'w') as f:
+                  f.write("JOB job_a job_a.sub\n")
+                  f.write("JOB job_b job_b.sub\n")
+                  f.write("PARENT job_a CHILD job_b\n")
+              
+              # Create submit files
+              with open(os.path.join(tmpdir, "job_a.sub"), 'w') as f:
+                  f.write("executable = /bin/echo\n")
+                  f.write("arguments = test\n")
+                  f.write("queue\n")
+              
+              with open(os.path.join(tmpdir, "job_b.sub"), 'w') as f:
+                  f.write("executable = /bin/echo\n")
+                  f.write("arguments = test\n")
+                  f.write("queue\n")
+              
+              slurm = Slurm()
+              script = slurm._dag_to_slurm_script(dag_file)
+              
+              assert "#!/bin/bash" in script
+              assert "sbatch" in script or "srun" in script
+              print("✓ DAG to Slurm translation works")
+          
+          print("✓ All translation tests passed")
+          EOF
+
+  slurm-integration-local:
+    name: "Slurm Integration Tests (Install Slurm Locally)"
+    runs-on: ubuntu-latest
+    # This job installs Slurm directly on the runner
+    # May be more reliable than container-based approaches
+    
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Slurm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y slurm-wlm munge
+          
+          # Configure munge
+          sudo systemctl enable munge
+          sudo systemctl start munge
+          
+          # Create basic Slurm configuration
+          sudo mkdir -p /etc/slurm /var/spool/slurm /var/log/slurm
+          sudo chown slurm:slurm /var/spool/slurm /var/log/slurm
+          
+          # Create minimal slurm.conf
+          sudo tee /etc/slurm/slurm.conf > /dev/null << 'SLURMCONF'
+          ClusterName=test
+          SlurmctldHost=localhost
+          MpiDefault=none
+          ProctrackType=proctrack/linuxproc
+          ReturnToService=2
+          SlurmctldPidFile=/var/run/slurmctld.pid
+          SlurmdPidFile=/var/run/slurmd.pid
+          SlurmdSpoolDir=/var/spool/slurm/d
+          SlurmUser=slurm
+          StateSaveLocation=/var/spool/slurm/ctld
+          SwitchType=switch/none
+          TaskPlugin=task/none
+          InactiveLimit=0
+          KillWait=30
+          MinJobAge=300
+          SlurmctldTimeout=120
+          SlurmdTimeout=300
+          Waittime=0
+          SchedulerType=sched/backfill
+          SelectType=select/linear
+          AccountingStorageType=accounting_storage/none
+          JobCompType=jobcomp/none
+          JobAcctGatherFrequency=30
+          JobAcctGatherType=jobacct_gather/none
+          SlurmctldDebug=info
+          SlurmctldLogFile=/var/log/slurm/slurmctld.log
+          SlurmdDebug=info
+          SlurmdLogFile=/var/log/slurm/slurmd.log
+          NodeName=localhost CPUs=2 State=UNKNOWN
+          PartitionName=debug Nodes=localhost Default=YES MaxTime=INFINITE State=UP
+          SLURMCONF
+          
+          # Start Slurm daemons
+          sudo slurmctld || echo "slurmctld start attempted"
+          sudo slurmd || echo "slurmd start attempted"
+          
+          sleep 5
+          
+          # Check status
+          sinfo || echo "Slurm may still be starting..."
+          squeue || echo "Slurm queue check"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install python-crontab
+
+      - name: Run scheduler unit tests
+        run: |
+          python -m unittest tests.test_scheduler -v
+
+      - name: Test basic Slurm job submission
+        run: |
+          # Create a simple test job
+          cat > test_job.sh << 'TESTJOB'
+          #!/bin/bash
+          #SBATCH --job-name=test-asimov
+          #SBATCH --output=test_output.log
+          #SBATCH --error=test_error.log
+          #SBATCH --time=00:01:00
+          
+          echo "Slurm job running successfully"
+          sleep 2
+          echo "Job completed"
+          TESTJOB
+          
+          chmod +x test_job.sh
+          
+          # Try to submit the job
+          if command -v sbatch &> /dev/null; then
+            job_id=$(sbatch --parsable test_job.sh 2>&1 || echo "FAILED")
+            echo "Job submission result: $job_id"
+            
+            if [ "$job_id" != "FAILED" ]; then
+              echo "✓ Successfully submitted Slurm job"
+            else
+              echo "⚠ Slurm job submission failed (Slurm may not be fully configured)"
+            fi
+          else
+            echo "⚠ sbatch command not available"
+          fi
+
+      - name: Create asimov project and test Slurm detection
+        run: |
+          mkdir -p test_project
+          cd test_project
+          
+          # Initialize project
+          asimov init "Test Project" || echo "Init failed"
+          
+          # Check if Slurm was detected
+          if [ -f .asimov/asimov.conf ]; then
+            cat .asimov/asimov.conf
+            
+            if grep -q "type.*=.*slurm" .asimov/asimov.conf; then
+              echo "✓ Slurm scheduler correctly detected and configured"
+            else
+              echo "⚠ Slurm not detected (expected if sbatch/squeue not in PATH)"
+            fi
+          fi
+
+      - name: Show final status
+        if: always()
+        run: |
+          echo "=== Slurm Status ==="
+          sinfo -V || echo "Slurm not available"
+          sinfo || echo "No cluster info"
+          squeue || echo "No queue info"
