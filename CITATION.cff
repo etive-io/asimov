@@ -1,0 +1,72 @@
+cff-version: 1.2.0
+message: "If you use Asimov in your research, please cite the JOSS paper (preferred-citation below). For specific software versions, also cite the Zenodo release DOI."
+type: software
+title: "Asimov: A framework for coordinating parameter estimation workflows"
+abstract: "Asimov is a general-purpose workflow orchestration platform for automating complex scientific analyses on high-throughput computing clusters. It provides pipeline-agnostic architecture, automated job management, and version-controlled configuration for reproducible computational workflows. Battle-tested in production for gravitational wave parameter estimation by LIGO, Virgo, and KAGRA collaborations, with extensible design supporting diverse scientific domains."
+authors:
+  - family-names: "Williams"
+    given-names: "Daniel"
+    orcid: "https://orcid.org/0000-0003-3772-198X"
+  - family-names: "Veitch"
+    given-names: "John"
+  - family-names: "Chiofalo"
+    given-names: "Maria"
+  - family-names: "Schmidt"
+    given-names: "Patricia"
+  - family-names: "Udall"
+    given-names: "Rhiannon"
+  - family-names: "Vajpeyi"
+    given-names: "Avi"
+  - family-names: "Hoy"
+    given-names: "Charlie"
+repository-code: "https://git.ligo.org/asimov/asimov"
+url: "https://asimov.docs.ligo.org/asimov"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.4024432"
+    description: "Zenodo archive (all versions)"
+keywords:
+  - workflow-orchestration
+  - workflow-management
+  - scientific-computing
+  - high-performance-computing
+  - hpc
+  - automation
+  - pipeline-management
+  - cluster-computing
+  - reproducibility
+  - python
+  - gravitational-waves
+  - parameter-estimation
+  - bayesian-inference
+  - ligo
+  - htcondor
+  - slurm
+license: MIT
+version: 0.6.0
+date-released: "2024-01-01"
+preferred-citation:
+  type: article
+  title: "Asimov: A framework for coordinating parameter estimation workflows"
+  authors:
+    - family-names: "Williams"
+      given-names: "Daniel"
+    - family-names: "Veitch"
+      given-names: "John"
+    - family-names: "Chiofalo"
+      given-names: "Maria"
+    - family-names: "Schmidt"
+      given-names: "Patricia"
+    - family-names: "Udall"
+      given-names: "Rhiannon"
+    - family-names: "Vajpeyi"
+      given-names: "Avi"
+    - family-names: "Hoy"
+      given-names: "Charlie"
+  journal: "Journal of Open Source Software"
+  volume: 8
+  number: 84
+  year: 2023
+  month: 4
+  start: 4170
+  doi: "10.21105/joss.04170"
