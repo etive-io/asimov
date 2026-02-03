@@ -67,7 +67,7 @@ def make_project(
 
     # Make the log directory
     pathlib.Path(logs).mkdir(parents=True, exist_ok=True)
-    config.set("logging", "directory", logs)
+    config.set("logging", "location", logs)
 
     # Make the results store
     storage.Store.create(root=results, name=f"{project_name} storage")
@@ -79,7 +79,13 @@ def make_project(
     config.set("ledger", "location", os.path.join(".asimov", "ledger.yml"))
 
     # Set the default environment
-    python_loc = shutil.which("python").split("/")[:-2]
+    if (python_loc := shutil.which("python")) is not None:
+        python_loc = python_loc.split("/")[:-2]
+    elif (python_loc := shutil.which("python3")) is not None:
+        python_loc = python_loc.split("/")[:-2]
+    else:
+        raise RuntimeError("Unable to find python executable in PATH")
+    
     config.set("pipelines", "environment", os.path.join("/", *python_loc))
     config.set("rift", "environment", os.path.join("/", *python_loc))
 
@@ -138,9 +144,29 @@ def init(
     """
     Roll-out a new project.
     """
+    from asimov import setup_file_logging
     make_project(name, root, working=working, checkouts=checkouts, results=results)
     click.echo(click.style("●", fg="green") + " New project created successfully!")
-    logger.info(f"A new project was created in {os.getcwd()}")
+    
+    # Log the project creation message
+    message = f"A new project was created in {os.getcwd()}"
+    logger.info(message)
+    
+    # Set up logging after project is created, passing the log directory directly
+    # to avoid config reload issues in test environments
+    try:
+        setup_file_logging(logfile=os.path.join("logs", "asimov.log"))
+        # Log again so that, if file logging is now configured, the message is written to the log file
+        logger.info(message)
+    except Exception as exc:
+        # Ensure failures to configure file logging are visible to the user
+        logger.error("Failed to set up file logging for new project: %s", exc)
+        click.echo(
+            click.style(
+                "⚠ Failed to set up file logging. See console output for details.",
+                fg="yellow",
+            )
+        )
 
 
 @click.command()

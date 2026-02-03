@@ -1,0 +1,11 @@
+# Test blueprint with a single-parameter strategy
+kind: analysis
+name: bilby-{waveform.approximant}
+event: S000000
+pipeline: bilby
+comment: PE job testing multiple waveforms
+strategy:
+  waveform.approximant:
+    - IMRPhenomXPHM
+    - SEOBNRv4PHM
+    - IMRPhenomD

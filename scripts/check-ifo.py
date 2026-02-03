@@ -330,12 +330,12 @@ def calibration(event):
             for ifo, envelope in calibrations.items():
                 description = f"Added calibration {envelope} for {ifo}."
                 try:
-                    event.event_object.repository.add_file(os.path.join(f"/home/cal/public_html/uncertainty/O3C01/{ifo}", envelope), f"C01_offline/calibration/{ifo}.dat", 
+                    event.event_object.repository.add_file(os.path.join(f"/home/cal/public_html/uncertainty/O3C01/{ifo}", envelope), f"analyses/calibration/{ifo}.dat", 
                                                        commit_message=description)
                 except GitCommandError as e:
                     if "nothing to commit," in e.stderr:
                         pass
-                calibrations[ifo] = f"C01_offline/calibration/{ifo}.dat"
+                calibrations[ifo] = f"analyses/calibration/{ifo}.dat"
             envelopes = yaml.dump({"calibration": calibrations})
             event.add_note(CALIBRATION_NOTE.format(envelopes))
 

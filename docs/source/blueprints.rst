@@ -161,7 +161,12 @@ Defining analysis requirements
 
 Asimov will determine the required computation order of analyses in a project automatically, but in order to do this it needs to be given details of which analyses require the results of a previous analysis. It will then compute a directed acyclic graph (DAG) of all the analyses.
 
-Requirements can be specified in the ``needs`` setting of an analysis. For example, in order to define a job which uses the ``bilby`` pipeline, but requires results from an analysis using the ``bayeswave`` pipeline you should specify the name of the ``bayeswave`` analysis in the ``needs`` section of the ``bilby`` analysis. For example::
+Requirements can be specified in the ``needs`` setting of an analysis using a flexible syntax that supports complex dependency conditions.
+
+Simple name-based dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The simplest form of dependency is to specify the name of a required analysis::
 
     kind: analysis
     name: generate-psds
@@ -173,7 +178,223 @@ Requirements can be specified in the ``needs`` setting of an analysis. For examp
     needs:
       - generate-psds
 
-In asimov 0.5 you need to explicitly specify the ``name`` of analyses which provide job dependencies, but in future versions this will be made more flexible so that results can be automatically gathered based, for example, on the pipeline which generated them.
+Property-based dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Dependencies can also be specified using properties of analyses. Any property can be used, including nested properties accessed with dot notation::
+
+    kind: analysis
+    name: parameter-estimation
+    pipeline: bilby
+    needs:
+      - pipeline: bayeswave
+      - waveform.approximant: IMRPhenomXPHM
+
+This will match all analyses that use the ``bayeswave`` pipeline OR have ``IMRPhenomXPHM`` as their waveform approximant.
+
+Review status dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The review status is a commonly used dependency criterion::
+
+    kind: analysis
+    name: combiner
+    pipeline: bilby
+    needs:
+      - review.status: approved
+
+Negated dependencies
+^^^^^^^^^^^^^^^^^^^^
+
+You can specify that an analysis should depend on analyses that do NOT match a criterion by prefixing the value with ``!``::
+
+    kind: analysis
+    name: non-bayeswave-analyses
+    pipeline: bilby
+    needs:
+      - pipeline: "!bayeswave"
+
+This will match all analyses except those using the bayeswave pipeline.
+
+OR logic (multiple dependencies)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default, multiple items in the ``needs`` list are combined with OR logic. An analysis will depend on any analysis matching ANY of the conditions::
+
+    kind: analysis
+    name: combiner
+    pipeline: bilby
+    needs:
+      - waveform.approximant: IMRPhenomXPHM
+      - waveform.approximant: SEOBNRv5PHM
+
+This will match analyses using either ``IMRPhenomXPHM`` OR ``SEOBNRv5PHM``.
+
+AND logic (all conditions must match)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To specify that ALL conditions must match (AND logic), use a nested list::
+
+    kind: analysis
+    name: specific-analysis
+    pipeline: bilby
+    needs:
+      - - review.status: approved
+        - waveform.approximant: IMRPhenomXPHM
+
+This will only match analyses that are both approved AND use IMRPhenomXPHM.
+
+Complex dependency specifications
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can combine AND and OR logic for complex dependency specifications::
+
+    kind: analysis
+    name: complex-combiner
+    pipeline: bilby
+    needs:
+      - - review.status: approved
+        - pipeline: bayeswave
+      - waveform.approximant: IMRPhenomXPHM
+
+This will match analyses that are (approved AND use bayeswave) OR use IMRPhenomXPHM.
+
+Dependency tracking and staleness
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When an analysis runs, asimov records which analyses were its dependencies at that time. If the set of matching analyses changes later (for example, if new analyses are added that match the dependency criteria), the original analysis is marked as **stale**.
+
+Stale analyses are indicated in the HTML report. You can mark an analysis as **refreshable** to indicate it should be automatically re-run when it becomes stale::
+
+    kind: analysis
+    name: auto-refresh-analysis
+    pipeline: bilby
+    refreshable: true
+    needs:
+      - review.status: approved
+
+The resolved dependencies (those that were actually used when the analysis ran) are stored in the ledger and displayed in the HTML report alongside the current matching dependencies.
+
+Strategies
+==========
+
+Strategies allow you to create multiple similar analyses with parameter variations from a single blueprint. This is similar to GitHub Actions matrix strategies and is useful for:
+
+- Testing multiple waveform approximants
+- Comparing different samplers
+- Running parameter-parameter (p-p) tests
+- Performing systematic studies
+
+Basic Strategy Syntax
+---------------------
+
+A strategy is defined using the ``strategy`` keyword in an analysis blueprint. The strategy specifies parameters and the values they should take::
+
+    kind: analysis
+    name: bilby-{waveform.approximant}
+    event: GW150914
+    pipeline: bilby
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+        - IMRPhenomD
+
+This will create three separate analyses:
+- ``bilby-IMRPhenomXPHM`` with ``waveform.approximant: IMRPhenomXPHM``
+- ``bilby-SEOBNRv4PHM`` with ``waveform.approximant: SEOBNRv4PHM``
+- ``bilby-IMRPhenomD`` with ``waveform.approximant: IMRPhenomD``
+
+Name Templates
+--------------
+
+The ``name`` field can include placeholders in curly braces (``{}``) that will be replaced with strategy parameter values. The placeholder name should match the full parameter path::
+
+    kind: analysis
+    name: bilby-{waveform.approximant}-analysis
+    pipeline: bilby
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+
+This creates:
+- ``bilby-IMRPhenomXPHM-analysis``
+- ``bilby-SEOBNRv4PHM-analysis``
+
+If no placeholder is used, all generated analyses will have the same name, which may cause conflicts.
+
+Matrix Strategies (Multiple Parameters)
+----------------------------------------
+
+You can specify multiple parameters in a strategy to create all combinations (cross-product)::
+
+    kind: analysis
+    name: bilby-{waveform.approximant}-{sampler.sampler}
+    event: GW150914
+    pipeline: bilby
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+      sampler.sampler:
+        - dynesty
+        - emcee
+
+This creates 4 analyses (2 × 2 combinations):
+- ``bilby-IMRPhenomXPHM-dynesty``
+- ``bilby-IMRPhenomXPHM-emcee``
+- ``bilby-SEOBNRv4PHM-dynesty``
+- ``bilby-SEOBNRv4PHM-emcee``
+
+Nested Parameters
+-----------------
+
+Strategy parameters can use dot notation to set deeply nested values::
+
+    kind: analysis
+    name: bilby-margdist-{likelihood.marginalisation.distance}
+    pipeline: bilby
+    strategy:
+      likelihood.marginalisation.distance:
+        - true
+        - false
+
+This sets ``likelihood.marginalisation.distance`` in the generated analyses.
+
+.. note::
+
+   Special value handling:
+   
+   - Boolean values (``True``/``False``) are converted to lowercase strings (``true``/``false``) when used in name templates to match YAML conventions.
+   - Each strategy parameter must be a list with at least one value.
+   - Strategy parameters cannot be empty lists or non-list values.
+
+Complete Strategy Example
+-------------------------
+
+Here's a complete example combining multiple features::
+
+    kind: analysis
+    name: pe-{waveform.approximant}-{sampler.sampler}
+    event: GW150914
+    pipeline: bilby
+    comment: Systematic waveform and sampler comparison
+    needs:
+      - generate-psd
+    likelihood:
+      sample rate: 4096
+      psd length: 4
+    strategy:
+      waveform.approximant:
+        - IMRPhenomXPHM
+        - SEOBNRv4PHM
+        - IMRPhenomD
+      sampler.sampler:
+        - dynesty
+        - emcee
+
+This creates 6 analyses (3 waveforms × 2 samplers), each inheriting the ``needs``, ``likelihood``, and ``comment`` settings while varying the waveform and sampler.
 
 Waveform
 ========
@@ -278,13 +499,13 @@ General likelihood settings
      - See individual pipeline documentation.
      - The likelihood function to use.
    * - ``likelihood:kwargs``
-     -
-     -
+     - ``dict``
+     -  Additional keyword arguments to be passed to the likelihood function.
    * - ``likelihood:frequency domain source model``
      - See individual pipeline documentation.
      -
    * - ``likelihood:time domain source model``
-     -
+     - See individual pipeline documentation.
      -
 
 Calibration settings

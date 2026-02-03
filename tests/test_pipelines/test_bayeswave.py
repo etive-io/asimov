@@ -40,7 +40,7 @@ class BayeswaveTests(unittest.TestCase):
         cls.cwd = os.getcwd()
         repo = git.Repo.init(cls.cwd+"/tests/test_data/s000000xx/")
         os.chdir(cls.cwd+"/tests/test_data/s000000xx/")
-        os.system("git add C01_offline/Prod1_test.ini C01_offline/s000000xx_gpsTime.txt")
+        os.system("git add analyses/Prod0_test.ini analyses/s000000xx_gpsTime.txt")
         os.system("git commit -m 'test'")
 
     def setUp(self):
@@ -193,5 +193,5 @@ class BayeswaveTests(unittest.TestCase):
 
     def test_dag(self):
         """Check that a DAG is actually produced."""
-        print(f"{self.cwd}/tests/tmp/s000000xx/C01_offline/Prod1/lalinference_1248617392-1248617397.dag")
-        self.assertEqual(os.path.exists(f"{self.cwd}/tests/tmp/s000000xx/C01_offline/Prod1/lalinference_1248617392-1248617397.dag"), 1)
+        print(f"{self.cwd}/tests/tmp/s000000xx/analyses/Prod1/lalinference_1248617392-1248617397.dag")
+        self.assertEqual(os.path.exists(f"{self.cwd}/tests/tmp/s000000xx/analyses/Prod1/lalinference_1248617392-1248617397.dag"), 1)

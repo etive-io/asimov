@@ -1,3 +1,101 @@
+0.7.0-alpha2
+============
+
+This is a major feature release that represents a significant evolution of asimov's architecture and capabilities. This alpha release introduces powerful new workflow management features, a modernized monitoring system, and enhanced programmatic control.
+
+Major New Features
+------------------
+
+**State Machine Architecture**
+  The monitor loop has been completely refactored into a state machine pattern, providing better control flow, plugin support, and pipeline-specific handlers. This enables more sophisticated workflow management and better extensibility.
+
+**Advanced Dependency System**
+  Implements a flexible dependency specification system with property-based filtering, AND/OR/negation logic, staleness tracking, and workflow graph integration. This allows complex relationships between analyses to be expressed naturally.
+
+**Strategy Expansion**
+  New strategy expansion feature enables creating multiple analyses from parameter matrices, making it easy to run parameter studies and systematic variations.
+
+**Python API**
+  Comprehensive Python API for project creation and management, including context manager support for programmatic control of asimov workflows.
+
+**Enhanced HTML Reports**
+  HTML reports now include graph-based workflow visualization with interactive modal popups, advanced filtering, and improved styling for better workflow monitoring.
+
+**Blueprint Validator**
+  Introduces validation for blueprint files to catch configuration errors early and ensure consistent project setup.
+
+**Modern Prior Handling**
+  Refactored prior handling with pydantic validation and pipeline-specific interfaces, providing better type safety and clearer error messages.
+
+Changes
+-------
+
+**Thread-Safe Logging**
+  File logging setup has been refactored to ensure thread safety with shared locks, and logging is now lazy-loaded to prevent log file creation for read-only commands.
+
+**PESummary Modernization**
+  PESummary has been converted to a SubjectAnalysis with optional dependency support, enabling more flexible post-processing workflows.
+
+**Improved Testing Infrastructure**
+  Added minimal testing pipelines for SimpleAnalysis, SubjectAnalysis, and ProjectAnalysis. Comprehensive GitHub Actions workflows for HTCondor and LALInference end-to-end testing with concurrent execution.
+
+**Build System Migration**
+  Migrated from setup.py to pyproject.toml for modern Python packaging standards.
+
+**Plugin Flexibility**
+  Enhanced plugin system with additional flexibility for extending asimov's capabilities.
+
+**Scheduler Improvements**
+  Scheduler refresh implementation for better job management.
+
+**Removed Legacy Assumptions**
+  Removed calibration categories and fixed hardcoded git branch assumptions for greater flexibility in deployment environments.
+
+Breaking Changes
+----------------
+
+This release introduces significant architectural changes. While efforts have been made to maintain backward compatibility where possible, some changes in behavior are expected, particularly in:
+
+- Monitor loop behavior due to state machine refactoring
+- Dependency specification syntax (old syntax may need updating)
+- Prior specification format (now uses pydantic models)
+
+GitHub Pull Requests
+--------------------
+
++ `github#3 <https://github.com/etive-io/asimov/pull/3>`_: Scheduler refresh
++ `github#7 <https://github.com/etive-io/asimov/pull/7>`_: Introduce a blueprint validator
++ `github#14 <https://github.com/etive-io/asimov/pull/14>`_: Update licence to MIT
++ `github#15 <https://github.com/etive-io/asimov/pull/15>`_: CI improvements
++ `github#16 <https://github.com/etive-io/asimov/pull/16>`_: Update licence
++ `github#17 <https://github.com/etive-io/asimov/pull/17>`_: Fix interest dict
++ `github#20 <https://github.com/etive-io/asimov/pull/20>`_: Remove pkg-resources
++ `github#21 <https://github.com/etive-io/asimov/pull/21>`_: Workflow to actions
++ `github#23 <https://github.com/etive-io/asimov/pull/23>`_: Update bilby final
++ `github#27 <https://github.com/etive-io/asimov/pull/27>`_: Bug hunt
++ `github#29 <https://github.com/etive-io/asimov/pull/29>`_: Update the PESummary interface
++ `github#36 <https://github.com/etive-io/asimov/pull/36>`_: Refactor prior handling with pydantic validation and pipeline interfaces
++ `github#38 <https://github.com/etive-io/asimov/pull/38>`_: Add GitHub Actions workflow for building and deploying documentation
++ `github#39 <https://github.com/etive-io/asimov/pull/39>`_: Add Python API for project creation and management
++ `github#40 <https://github.com/etive-io/asimov/pull/40>`_: Add LALInference end-to-end testing to HTCondor workflow with concurrent execution
++ `github#43 <https://github.com/etive-io/asimov/pull/43>`_: Make logging lazy and prevent log file creation for read-only commands
++ `github#48 <https://github.com/etive-io/asimov/pull/48>`_: Add minimal testing pipelines for SimpleAnalysis, SubjectAnalysis, and ProjectAnalysis
++ `github#50 <https://github.com/etive-io/asimov/pull/50>`_: Enhance HTML reports with graph-based workflow visualization, modal popups, and advanced filtering
++ `github#52 <https://github.com/etive-io/asimov/pull/52>`_: Implement flexible dependency specification with property-based filtering, AND/OR logic, staleness tracking, and workflow graph integration
++ `github#55 <https://github.com/etive-io/asimov/pull/55>`_: Add review information display to HTML reports and fix review command
++ `github#56 <https://github.com/etive-io/asimov/pull/56>`_: Fix frames in workflow
++ `github#58 <https://github.com/etive-io/asimov/pull/58>`_: Fix bilby priors
++ `github#60 <https://github.com/etive-io/asimov/pull/60>`_: Convert PESummary to SubjectAnalysis with optional dependency support
++ `github#61 <https://github.com/etive-io/asimov/pull/61>`_: Fix bilby tests
++ `github#63 <https://github.com/etive-io/asimov/pull/63>`_: Remove calibration categories and fix hardcoded git branch assumptions
++ `github#65 <https://github.com/etive-io/asimov/pull/65>`_: Fix dependency resolution, graph visualization, and ledger persistence bugs
++ `github#71 <https://github.com/etive-io/asimov/pull/71>`_: Fix SubjectAnalysis dependency resolution bugs
++ `github#72 <https://github.com/etive-io/asimov/pull/72>`_: Refactor monitor loop to state machine pattern with plugin support, programmatic API, and pipeline-specific handlers
++ `github#75 <https://github.com/etive-io/asimov/pull/75>`_: Add strategy expansion for creating multiple analyses from parameter matrices
++ `github#76 <https://github.com/etive-io/asimov/pull/76>`_: Allow additional plugin flexibility
++ `github#83 <https://github.com/etive-io/asimov/pull/83>`_: Refactor file logging setup to ensure thread safety with a shared lock
++ `github#97 <https://github.com/etive-io/asimov/pull/97>`_: Fix issue with git init in project creation
+
 0.6.1
 =====
 
