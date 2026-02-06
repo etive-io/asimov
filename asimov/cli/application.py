@@ -78,18 +78,18 @@ def apply_page(file, event=None, ledger=None, update_page=False):
         if document["kind"] == "event":
             logger.info("Found an event")
             document.pop("kind")
-            event = asimov.event.Event.from_yaml(yaml.dump(document))
+            event_obj = asimov.event.Event.from_yaml(yaml.dump(document))
 
             # Check if the event is in the ledger already
             # ledger.events is a dict with event names as keys
-            event_exists = event.name in ledger.events
+            event_exists = event_obj.name in ledger.events
 
             if event_exists and update_page is True:
-                old_event = deepcopy(ledger.events[event.name])
+                old_event = deepcopy(ledger.events[event_obj.name])
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
                 analyses = []
-                for prod in ledger.events[event.name].get("productions", []):
+                for prod in ledger.events[event_obj.name].get("productions", []):
                     prod_name = None
                     prod_data = None
 
@@ -115,37 +115,37 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                 # Add the old version to the history
                 if "history" not in ledger.data:
                     ledger.data["history"] = {}
-                history = ledger.data["history"].get(event.name, {})
+                history = ledger.data["history"].get(event_obj.name, {})
                 version = f"version-{len(history)+1}"
                 history[version] = old_event
                 history[version]["date changed"] = datetime.now()
 
-                ledger.data["history"][event.name] = history
+                ledger.data["history"][event_obj.name] = history
                 ledger.save()
-                update(ledger.events[event.name], event.meta)
-                ledger.events[event.name]["productions"] = analyses
-                ledger.events[event.name].pop("ledger", None)
+                update(ledger.events[event_obj.name], event_obj.meta)
+                ledger.events[event_obj.name]["productions"] = analyses
+                ledger.events[event_obj.name].pop("ledger", None)
 
                 click.echo(
-                    click.style("●", fg="green") + f" Successfully updated {event.name}"
+                    click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
                 )
 
             elif not event_exists and update_page is False:
-                ledger.update_event(event)
+                ledger.update_event(event_obj)
                 click.echo(
-                    click.style("●", fg="green") + f" Successfully added {event.name}"
+                    click.style("●", fg="green") + f" Successfully added {event_obj.name}"
                 )
-                logger.info(f"Added {event.name} to project")
+                logger.info(f"Added {event_obj.name} to project")
 
             elif not event_exists and update_page is True:
                 click.echo(
                     click.style("●", fg="red")
-                    + f" {event.name} cannot be updated as there is no record of it in the project."
+                    + f" {event_obj.name} cannot be updated as there is no record of it in the project."
                 )
             else:
                 click.echo(
                     click.style("●", fg="red")
-                    + f" {event.name} already exists in this project."
+                    + f" {event_obj.name} already exists in this project."
                 )
 
         elif document["kind"] == "analysis":
