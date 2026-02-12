@@ -1,6 +1,13 @@
 Bilby Analyses
 ==============
 
+.. important::
+   These examples require bilby_pipe to be installed::
+
+       pip install asimov[gw]
+
+   Starting with asimov 0.7, bilby support is provided via the bilby_pipe plugin package.
+
 This section of the cookbook provides several examples which you can adapt for setting up analyses using the `bilby` pipeline.
 
 Because asimov is configured to always expect that noise estimation is handled by a different pipeline, `bayeswave`, it's probably sensible to have a look at its section in the cookbook first.

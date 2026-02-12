@@ -1,6 +1,13 @@
 Bayeswave Analyses
 ==================
 
+.. important::
+   These examples require asimov-bayeswave to be installed::
+
+       pip install asimov[gw]
+
+   Starting with asimov 0.7, BayesWave support is provided via the asimov-bayeswave plugin package.
+
 `Bayeswave <https://docs.ligo.org/lscsoft/bayeswave/>`_ is a tool developed by the LIGO Scientific Collaboration to distinguish gravitational wave signals from background noise.
 In many gravitational wave analysis workflows we start by running bayeswave to remove the signal from the data, leaving only the background noise.
 This allows us to produce a robust estimate of the amount of noise in the data.

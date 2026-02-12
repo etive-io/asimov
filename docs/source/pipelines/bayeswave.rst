@@ -1,16 +1,56 @@
 .. _bayeswave-pipelines:
 
-BayesWave pipelines
-===================
+BayesWave Pipeline
+==================
 
-The BayesWave interface allows asimov to configure and monitor analyses using BayesWave.
+.. note::
+   Starting with asimov 0.7, BayesWave support is provided via the asimov-bayeswave plugin.
+   Install with: ``pip install asimov[gw]`` or ``pip install asimov-bayeswave``
+
+The BayesWave pipeline interface allows asimov to configure and monitor analyses using BayesWave.
 BayesWave is frequently used as the first analysis of an event in order to generate the on-source PSD estimates for subsequent analyses.
+
+Installation
+------------
+
+To use BayesWave with asimov 0.7+::
+
+    pip install asimov[gw]
+
+Or install asimov-bayeswave directly::
+
+    pip install asimov-bayeswave
+
+The plugin is automatically discovered through Python entry points once asimov-bayeswave is installed.
 
 Review Status
 -------------
 
 .. note::
-   The current integration with BayesWave is fully reviewed and is suitable for use with all collaboration analyses.
+   The asimov-bayeswave plugin integration is fully reviewed and suitable for use with all collaboration analyses.
+
+Migration from asimov <0.7
+--------------------------
+
+If upgrading from asimov <0.7:
+
+1. Install asimov-bayeswave: ``pip install asimov[gw]``
+2. No changes needed to ledger files
+3. All features work as before
+
+Usage
+-----
+
+Once installed, use BayesWave in your ledger as before:
+
+.. code-block:: yaml
+
+   - Prod0:
+       pipeline: bayeswave
+       status: ready
+
+Configuration options and examples remain unchanged from previous versions.
+See the :ref:`ligo-cookbook-bayeswave` for detailed examples.
 
 Examples
 --------
@@ -30,7 +70,7 @@ This was the default analysis setup for the O3 catalog runs which were used in t
 Ledger Options
 --------------
 
-The Bayeswave pipeline interface looks for the the sections and values listed below in addition to the information which is required for analysing *all* gravitational wave events such as the locations of calibration envelopes and data.
+The BayesWave pipeline interface looks for the sections and values listed below in addition to the information which is required for analysing *all* gravitational wave events such as the locations of calibration envelopes and data.
 
 
 ``quality``
@@ -64,3 +104,8 @@ These settings relate specifically to the accounting and scheduling of the job.
 
 ``accounting group``
   The group to use for accounting.
+
+Additional Resources
+--------------------
+
+For full asimov-bayeswave documentation, including advanced configuration options and troubleshooting, see the `asimov-bayeswave documentation <https://asimov-bayeswave.readthedocs.io/>`_.

@@ -4,7 +4,7 @@ Analysing GW150914 with asimov
 This tutorial will show you how to analyse data from GW150914, the first gravitational wave to be detected, using asimov and some of the analysis pipelines it's designed to work with.
 
 .. note::
-   This tutorial was prepared using ``asimov 0.5.8`` and assumes that you already have asimov installed in a conda environment, and have access to a computing environment which runs the ``htcondor`` scheduler.
+   This tutorial was updated for ``asimov 0.7`` and assumes that you already have asimov installed in a conda or virtual environment, and have access to a computing environment which runs the ``htcondor`` scheduler.
 
    We're working to make these analyses work on a wider range of computing infrastructure, but the standard analyses which are performed by gravitational wave researchers are generally very computationally intensive. As new developments come along we'll try to keep asimov and these tutorials up-to-date to make analysis more accessible.
 
@@ -13,11 +13,19 @@ Prerequisites
 
 In order to use asimov to analyse GW150914 we'll need to ensure that we have the analysis software installed. We'll make use of two "pipelines" in this tutorial: ``bayeswave``, which will estimate the amount of noise present in the gravitational wave strain data, and ``bilby`` which will analyse the signal in the data in order to determine the properties of the astrophysical system which generated in. We'll also need a third pipeline called `asimov-gwdata <https://asimov.docs.ligo.org/pipelines/gwdata/>`_; this doesn't actually perform any analysis, but it allows asimov to add a step into its workflow to fetch various bits of data we'll need.
 
-We can install these pipelines into our conda environment with this command:
+**For asimov 0.7+**, you can install gravitational wave pipelines (including bilby) with:
 
 .. code-block:: bash
 
-   $ conda install conda-forge::bilby conda-forge::bayeswave conda-forge::asimov-gwdata
+   $ pip install asimov[gw]
+
+This will install ``bilby_pipe`` which provides the bilby pipeline plugin.
+
+**Alternatively**, if using conda, you can install the pipelines individually:
+
+.. code-block:: bash
+
+   $ conda install conda-forge::bilby_pipe conda-forge::bayeswave conda-forge::asimov-gwdata
 
 From here, setting everything up should be quite straight forward!
 

@@ -52,11 +52,33 @@ You'll need to run this activation step each time you open a new terminal when y
 You can then install asimov using ``pip``.
 
 .. code-block:: console
-   
+
 		$ pip install asimov
 
+Optional Dependencies
+~~~~~~~~~~~~~~~~~~~~~
 
-		
+Asimov provides optional dependency groups for specific use cases:
+
+**Gravitational Wave Pipelines** (``[gw]``)
+
+For gravitational wave analysis tools including bilby, BayesWave, LALInference, and PESummary pipelines::
+
+    $ pip install asimov[gw]
+
+This will install ``bilby_pipe``, ``asimov-bayeswave``, ``asimov-lalinference``, and ``asimov-pesummary`` with asimov plugin support.
+
+**Documentation Building** (``[docs]``)
+
+For building the asimov documentation::
+
+    $ pip install asimov[docs]
+
+You can install multiple optional dependency groups by combining them::
+
+    $ pip install asimov[gw,docs]
+
+
 Installation from source
 ------------------------
 

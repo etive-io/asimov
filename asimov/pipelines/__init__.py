@@ -5,20 +5,13 @@ if sys.version_info < (3, 10):
 else:
     from importlib.metadata import entry_points
 
-from asimov.pipelines.bayeswave import BayesWave
-from asimov.pipelines.lalinference import LALInference
 from asimov.pipelines.rift import Rift
-
-from asimov.pipelines.pesummary import PESummary
 
 discovered_pipelines = entry_points(group="asimov.pipelines")
 
 
 known_pipelines = {
-    "bayeswave": BayesWave,
     "rift": Rift,
-    "lalinference": LALInference,
-    "pesummary": PESummary,
 }
 
 
