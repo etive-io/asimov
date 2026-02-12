@@ -158,6 +158,7 @@ Advanced topics
    :caption: Advanced topics
 
    analyses
+   environment-reproducibility
    build-process
    scheduler-integration
    monitor-state-machine
