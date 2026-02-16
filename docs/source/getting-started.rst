@@ -1,3 +1,5 @@
+.. _Getting Started:
+
 Getting started with asimov
 ===========================
 
@@ -14,13 +16,13 @@ You'll need to have asimov installed first; you can find information about doing
    .. code-block:: console
 
 		   $ mkdir new-project
-		   $ cd new-project 
+		   $ cd new-project
 		   $ asimov init "my first project"
 
 		   ● New project created successfully!
 
    You'll see that asimov creates some new directories and data files in this directory, which are used for storing results, ongoing analyses, and analysis configurations.
-		   
+
 2. **Download analysis defaults**
    When the project is created asimov doesn't know anything about how to construct a gravitational wave analysis, but we can fetch a sensible set of defaults which have been used in previous analyses.
 
@@ -31,11 +33,11 @@ You'll need to have asimov installed first; you can find information about doing
    We'll use the settings which are curated for "production" parameter estimation by the LIGO Compact Binaries group.
 
    .. code-block:: console
-   
+
 		   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml
 
 		   ● Successfully applied a configuration update
-		   
+
    The analyses which we'll use in this quick start guide are all Bayesian analyses, or analyses which are built on Bayesian principles.
    This means that we also need to have a set of default priors which can be applied to all events.
    Again we can download a set of these which are curated for production analyses.
@@ -90,7 +92,7 @@ You'll need to have asimov installed first; you can find information about doing
 
 		   ● Successfully applied Prod0 to GW150914_095045
 		   ● Successfully applied Prod1 to GW150914_095045
-		   
+
    Again, it is also possible to set up an analysis from scratch, or to alter the settings for a given analysis before it's started.
    Details on how you can do this can be found in the :ref:`analysis guide<analysis-guide>`.
 
@@ -108,7 +110,7 @@ You'll need to have asimov installed first; you can find information about doing
 		   Prod0
 
    Notice how the ``bilby`` analysis is listed as "waiting", as it requires the ``bayeswave`` job to complete before it can be allowed to run.
-		    
+
 5. **Building the pipeline and submitting to the cluster**
    The final steps in getting your analysis are, you'll probably be pleased to learn, almost entirely automatic.
    There are two steps which ``asimov`` needs to complete to do this (though as we'll see later they can be combined into a single step).
@@ -118,7 +120,7 @@ You'll need to have asimov installed first; you can find information about doing
    .. code-block:: console
 
 		   $ asimov manage build
-		   
+
 		   ● Working on GW150914_095045
 		      Working on production Prod0
 		   Production config Prod0 created.
@@ -130,13 +132,13 @@ You'll need to have asimov installed first; you can find information about doing
    This step also creates all of the files which are required to submit the analysis to an ``htcondor``-based computing scheduler.
    You can find these files inside the ``working`` directory of the current project.
    The exact files produced will vary depending on the pipeline which you're creating.
-   
+
    The final step to get everything running is the ``submit`` step, which communicates with the scheduling system and submits the pipeline to it.
    You can run this with the ``asimov manage submit`` command.
-   
+
    .. code-block:: console
 
-		   $ asimov manage submit 
+		   $ asimov manage submit
 
 		   ● Submitted GW150914_095045/Prod0
 
@@ -183,7 +185,7 @@ You'll need to have asimov installed first; you can find information about doing
 
 And that's it! We now have a working analysis on GW150914.
 chances are if you're looking at asimov you'll want to do something a little more complicated, so let's look at some next steps.
-   
+
 What's next?
 ------------
 

@@ -1,7 +1,7 @@
 :page_template: homepage.html
 
 .. raw:: html
-	 
+
 	 <div class="px-4 py-5 my-5 text-center">
 	 <h1 class="display-5 fw-bold">
 	 Manage and automate analyses with <code>asimov</code>.
@@ -26,7 +26,7 @@
 	 <i class="bi bi-book"></i><span>  </span><span style="padding-left: 1rem;">Documentation</span>
 	 </a>
 	 </div>
-	 
+
 `Asimov` is a python package to help with setting-up, automating, and monitoring scientific data analysis.
 It is designed to make organising a scientific project, simplifying your workflow, and making your analysis easier to reproduce.
 
@@ -64,14 +64,14 @@ Asimov provides an API layer which allows a single configuration to be deployed 
 Current gravitational wave pipelines which are supported are ``lalinference``, ``bayeswave``, ``RIFT``, and ``bilby``.
 
 .. raw:: html
-	 
+
 	 </div>
 	 </div>
 
 .. raw:: html
 
 	 <div class="row g-4 py-5 row-cols-1 row-cols-lg-2">
-	 
+
 .. raw:: html
 
 	 <div class="feature col">
@@ -83,7 +83,7 @@ Centralised configuration
 Asimov records all ongoing, completed, and scheduled analyses, allowing jobs, configurations, and results to be found easily.
 
 .. raw:: html
-	 
+
 	 </div>
 
 
@@ -99,7 +99,7 @@ Reporting overview
 Asimov can provide both machine-readible and human-friendly reports of all jobs it is monitoring, while collating relevant log files and outputs.
 
 .. raw:: html
-	 
+
 	 </div>
 	 </div>
 
@@ -113,16 +113,7 @@ Citing asimov
 
 If you use asimov in a publication please consider consulting our :ref:`citation-guide`.
 
-..
-   Tutorials
-   ---------
 
-   .. toctree::
-      :maxdepth: 2
-      :caption: Tutorials
-
-      starting-project
-      starting-analysis
 
 Users' guide
 ------------
@@ -154,12 +145,11 @@ Users' guide
    :maxdepth: 1
    :caption: Pipeline Guides
 
-   pipelines
    pipelines/lalinference
    pipelines/bilby
    pipelines/rift
    pipelines/bayeswave
-   
+
 Advanced topics
 ---------------
 
@@ -169,7 +159,7 @@ Advanced topics
 
    analyses
    build-process
-   
+
    configuration
    test-interface
    clusters
@@ -178,6 +168,7 @@ Developers' Guide
 -----------------
 
 .. toctree::
+   :maxdepth: 1
    :caption: Development Guide
 
    contributing.rst
@@ -197,13 +188,25 @@ Developers' Guide
    asimov-repository
 
    code-overview
-	     
-   ledger   
+
+   ledger
    pipelines-dev
    hooks
 
    building-docs
+
+Tutorials
+---------
+
+.. toctree::
+   :maxdepth: 1
+   :Caption: Tutorials
+
+   tutorials/analysing-gw150914
+   tutorials/adding-a-pipeline
+   tutorials/remixing-analyses
    
+
 Python API
 ----------
 
@@ -235,7 +238,7 @@ LIGO Analysis Cookbook
    ligo-cookbook/bayeswave
    ligo-cookbook/bilby
    ligo-cookbook/working-with-gwosc
-   
+
 Indices and tables
 ------------------
 

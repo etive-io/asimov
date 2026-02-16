@@ -38,4 +38,4 @@ These should be cited, where relevant, in addition to the paper above, in the fo
 
 Daniel Williams, Duncan Macleod, Avi Vajpeyi, James Clark, & Richard O'Shaughnessy. (2024). transientlunatic/asimov: v0.5.8 (v0.5.8). Zenodo. https://doi.org/10.5281/zenodo.13992299
 
-(See `this page<https://doi.org/10.5281/zenodo.4024432>`_ for the latest version, and links to previous versions' DOIs, where links to BibTeX snippets for relevant versions are also available).
+(See `this page <https://doi.org/10.5281/zenodo.4024432>`_ for the latest version, and links to previous versions' DOIs, where links to BibTeX snippets for relevant versions are also available).
