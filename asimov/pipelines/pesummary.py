@@ -1,5 +1,6 @@
 """Defines the interface with generic analysis pipelines."""
 
+import configparser
 import os
 import warnings
 
@@ -207,16 +208,17 @@ class PESummary(Pipeline):
             hostname_job = htcondor.Submit(submit_description)
 
             try:
-                # There should really be a specified submit node, and if there is, use it.
                 schedulers = htcondor.Collector().locate(
                     htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
                 )
-                schedd = htcondor.Schedd(schedulers)
-            except:  # NoQA
-                # If you can't find a specified scheduler, use the first one you find
-                schedd = htcondor.Schedd()
-            with schedd.transaction() as txn:
-                cluster_id = hostname_job.queue(txn)
+            except (configparser.NoOptionError, configparser.NoSectionError):
+                schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+
+            schedd = htcondor.Schedd(schedulers)
+            
+            result = schedd.submit(hostname_job)
+            cluster_id = result.cluster()
+            self.logger.info(f"Submitted {cluster_id} to htcondor job queue.")
 
         else:
             cluster_id = 0
