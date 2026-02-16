@@ -215,7 +215,7 @@ class PESummary(Pipeline):
                 schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
 
             schedd = htcondor.Schedd(schedulers)
-            
+
             result = schedd.submit(hostname_job)
             cluster_id = result.cluster()
             self.logger.info(f"Submitted {cluster_id} to htcondor job queue.")

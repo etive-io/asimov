@@ -513,7 +513,7 @@ class PESummaryPipeline(PostPipeline):
                 # If you can't find a specified scheduler, use the first one you find
                 schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
                 schedd = htcondor.Schedd(schedulers)
-            
+
             result = schedd.submit(hostname_job)
             cluster_id = result.cluster()
 
