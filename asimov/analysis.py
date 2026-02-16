@@ -1673,6 +1673,37 @@ class GravitationalWaveTransient(SimpleAnalysis):
         """
 
         self.category = config.get("general", "calibration_directory")
+        
+        # Early validation: Check for minimum frequency in wrong locations (v0.7)
+        # We need to check both the subject (event) metadata and the kwargs
+        # First, build the effective metadata as it will be in super().__init__
+        temp_meta = deepcopy(self.meta_defaults)
+        
+        # Add pipeline defaults if available
+        if hasattr(subject, 'ledger') and subject.ledger and "pipelines" in subject.ledger.data:
+            if pipeline in subject.ledger.data["pipelines"]:
+                temp_meta = update(temp_meta, deepcopy(subject.ledger.data["pipelines"][pipeline]))
+        
+        # Add subject defaults
+        temp_meta = update(temp_meta, deepcopy(subject.meta))
+        
+        # Add kwargs
+        temp_meta = update(temp_meta, deepcopy(kwargs))
+        
+        # Now validate
+        if "quality" in temp_meta and "minimum frequency" in temp_meta["quality"]:
+            raise ValueError(
+                "Minimum frequency must be specified in the 'waveform' section, "
+                "not in the 'quality' section. Please update your blueprint to move "
+                "'minimum frequency' from 'quality' to 'waveform'."
+            )
+        if "likelihood" in temp_meta and "minimum frequency" in temp_meta["likelihood"]:
+            raise ValueError(
+                "Minimum frequency must be specified in the 'waveform' section, "
+                "not in the 'likelihood' section. Please update your blueprint to move "
+                "'minimum frequency' from 'likelihood' to 'waveform'."
+            )
+        
         super().__init__(subject, name, pipeline, **kwargs)
         self._checks()
 
@@ -1739,20 +1770,6 @@ class GravitationalWaveTransient(SimpleAnalysis):
             )
             ref_freq = self.meta["likelihood"].pop("reference frequency")
             self.meta["waveform"]["reference frequency"] = ref_freq
-        
-        # Check for minimum frequency in wrong locations and raise error (v0.7)
-        if "quality" in self.meta and "minimum frequency" in self.meta["quality"]:
-            raise ValueError(
-                "Minimum frequency must be specified in the 'waveform' section, "
-                "not in the 'quality' section. Please update your blueprint to move "
-                "'minimum frequency' from 'quality' to 'waveform'."
-            )
-        if "minimum frequency" in self.meta["likelihood"]:
-            raise ValueError(
-                "Minimum frequency must be specified in the 'waveform' section, "
-                "not in the 'likelihood' section. Please update your blueprint to move "
-                "'minimum frequency' from 'likelihood' to 'waveform'."
-            )
 
         # Gather the PSDs for the job
         self.psds = self._collect_psds()

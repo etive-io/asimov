@@ -288,6 +288,11 @@ class BayesWave(Pipeline):
         minimum frequency from the list of interferometer
         lower frequencies.
         """
+        if "waveform" not in self.production.meta or "minimum frequency" not in self.production.meta["waveform"]:
+            raise ValueError(
+                "Minimum frequency must be specified in the 'waveform' section. "
+                "Please update your blueprint to include 'minimum frequency' in 'waveform'."
+            )
         return min(self.production.meta["waveform"]["minimum frequency"].values())
 
     def before_submit(self):
