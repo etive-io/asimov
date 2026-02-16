@@ -1677,7 +1677,7 @@ class GravitationalWaveTransient(SimpleAnalysis):
         # Early validation: Check for minimum frequency in wrong locations (v0.7)
         # We need to check both the subject (event) metadata and the kwargs
         # First, build the effective metadata as it will be in super().__init__
-        temp_meta = deepcopy(self.meta_defaults)
+        temp_meta = deepcopy(Analysis.meta_defaults)
         
         # Add pipeline defaults if available
         if hasattr(subject, 'ledger') and subject.ledger and "pipelines" in subject.ledger.data:
