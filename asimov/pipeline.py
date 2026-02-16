@@ -8,8 +8,14 @@ import warnings
 
 import asimov.analysis
 
-warnings.filterwarnings("ignore", module="htcondor")
-import htcondor  # NoQA
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+    import classad2 as classad  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
+    import classad  # NoQA
 
 from asimov import utils  # NoQA
 from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
@@ -498,11 +504,18 @@ class PESummaryPipeline(PostPipeline):
                     htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
                 )
                 schedd = htcondor.Schedd(schedulers)
-            except:  # NoQA
+            except (
+                configparser.NoOptionError,
+                configparser.NoSectionError,
+                htcondor.HTCondorLocateError,
+                htcondor.HTCondorIOError,
+            ):
                 # If you can't find a specified scheduler, use the first one you find
-                schedd = htcondor.Schedd()
-            with schedd.transaction() as txn:
-                cluster_id = hostname_job.queue(txn)
+                schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+                schedd = htcondor.Schedd(schedulers)
+
+            result = schedd.submit(hostname_job)
+            cluster_id = result.cluster()
 
         else:
             cluster_id = 0
