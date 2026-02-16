@@ -537,7 +537,7 @@ class PESummaryPipeline(PostPipeline):
             "--approximant",
             self.production.meta["waveform"]["approximant"],
             "--f_low",
-            str(min(self.production.meta["quality"]["minimum frequency"].values())),
+            str(min(self.production.meta["waveform"]["minimum frequency"].values())),
             "--f_ref",
             str(self.production.meta["waveform"]["reference frequency"]),
         ]

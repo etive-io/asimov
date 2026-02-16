@@ -268,9 +268,9 @@ class PESummary(Pipeline):
                         if "reference frequency" in dep_analysis.meta["waveform"]:
                             f_refs.append(str(dep_analysis.meta["waveform"]["reference frequency"]))
                     
-                    if "quality" in dep_analysis.meta:
-                        if "minimum frequency" in dep_analysis.meta["quality"]:
-                            f_lows.append(str(min(dep_analysis.meta["quality"]["minimum frequency"].values())))
+                    if "waveform" in dep_analysis.meta:
+                        if "minimum frequency" in dep_analysis.meta["waveform"]:
+                            f_lows.append(str(min(dep_analysis.meta["waveform"]["minimum frequency"].values())))
                     
                     # Config file should be added for each analysis that has samples
                     if dep_config:
@@ -359,10 +359,10 @@ class PESummary(Pipeline):
             # If we have per-analysis f_low values, use them
             command += ["--f_low"]
             command.extend(f_lows)
-        elif "minimum frequency" in quality_meta:
+        elif "minimum frequency" in waveform_meta:
             command += [
                 "--f_low",
-                str(min(quality_meta["minimum frequency"].values())),
+                str(min(waveform_meta["minimum frequency"].values())),
             ]
         
         # f_ref - use per-analysis values if available, otherwise use global

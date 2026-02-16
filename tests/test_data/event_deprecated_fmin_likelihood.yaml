@@ -1,0 +1,20 @@
+# This event is designed for testing that an error is raised when
+# minimum frequency is in the likelihood section instead of waveform.
+kind: event
+name: Deprecated fmin in likelihood
+quality:
+  state vector:
+    L1: L1:DCS-CALIB_STATE_VECTOR_C01
+    H1: H1:DCS-CALIB_STATE_VECTOR_C01
+    V1: V1:DQ_ANALYSIS_STATE_VECTOR
+likelihood:
+  sample rate: 4000
+  minimum frequency:
+    H1: 20
+    L1: 20
+    V1: 20
+interferometers:
+  - H1
+  - L1
+  - V1
+event time: 1126259462.0

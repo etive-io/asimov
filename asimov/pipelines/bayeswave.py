@@ -288,7 +288,7 @@ class BayesWave(Pipeline):
         minimum frequency from the list of interferometer
         lower frequencies.
         """
-        return min(self.production.meta["quality"]["minimum frequency"].values())
+        return min(self.production.meta["waveform"]["minimum frequency"].values())
 
     def before_submit(self):
         """
