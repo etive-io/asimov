@@ -10,7 +10,15 @@ In order to improve performance the code caches results from the query to the sc
 import os
 import datetime
 from dateutil import tz
-import htcondor
+
+import warnings
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
+
 import yaml
 
 from asimov import config, logger, LOGGER_LEVEL

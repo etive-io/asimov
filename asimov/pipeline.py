@@ -8,8 +8,14 @@ import warnings
 
 import asimov.analysis
 
-warnings.filterwarnings("ignore", module="htcondor")
-import htcondor  # NoQA
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+    import classad2 as classad  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
+    import classad  # NoQA
 
 from asimov import utils  # NoQA
 from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
