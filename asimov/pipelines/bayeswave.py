@@ -51,7 +51,7 @@ class BayesWave(Pipeline):
             self.logger.info("Assuming analyses directory.")
 
         if not production.meta.get("quality", {}).get("lowest minimum frequency", None):
-            production.meta["quality"]["lowest minimum frequency"] = self.flow
+            production.meta.setdefault("quality", {})["lowest minimum frequency"] = self.flow
 
     def build_dag(self, user=None, dryrun=False):
         """
