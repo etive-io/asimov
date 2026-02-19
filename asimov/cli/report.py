@@ -1056,6 +1056,38 @@ def html(event, webdir):
             } else {
                 document.getElementById('modal-results-section').style.display = 'none';
             }
+
+            // Handle profiling/resource usage data
+            var runtime = analysisData.dataset.profilingRuntime;
+            var cpus = analysisData.dataset.profilingCpus;
+            var gpus = analysisData.dataset.profilingGpus;
+            var profilingEnd = analysisData.dataset.profilingEnd;
+            if (runtime || cpus || gpus || profilingEnd) {
+                function fmtSeconds(s) {
+                    s = parseFloat(s);
+                    if (isNaN(s)) return '-';
+                    var h = Math.floor(s / 3600);
+                    var m = Math.floor((s % 3600) / 60);
+                    var sec = Math.floor(s % 60);
+                    return h + 'h ' + m + 'm ' + sec + 's';
+                }
+                document.getElementById('modal-profiling-runtime').textContent = runtime ? fmtSeconds(runtime) : '-';
+                if (runtime && cpus) {
+                    document.getElementById('modal-profiling-cpu-time').textContent = fmtSeconds(parseFloat(runtime) * parseFloat(cpus));
+                } else {
+                    document.getElementById('modal-profiling-cpu-time').textContent = '-';
+                }
+                if (runtime && gpus && parseFloat(gpus) > 0) {
+                    document.getElementById('modal-profiling-gpu-time').textContent = fmtSeconds(parseFloat(runtime) * parseFloat(gpus));
+                    document.getElementById('modal-profiling-gpu-row').style.display = '';
+                } else {
+                    document.getElementById('modal-profiling-gpu-row').style.display = 'none';
+                }
+                document.getElementById('modal-profiling-end').textContent = profilingEnd || '-';
+                document.getElementById('modal-profiling-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-profiling-section').style.display = 'none';
+            }
             
             modal.classList.add('show');
             backdrop.classList.add('show');
@@ -1490,6 +1522,29 @@ def html(event, webdir):
         <div class="modal-section" id="modal-dependencies-section">
             <h5>Dependencies</h5>
             <p id="modal-analysis-dependencies">-</p>
+        </div>
+        <div class="modal-section" id="modal-profiling-section" style="display:none;">
+            <h5>Resource Usage</h5>
+            <table style="width:100%; border-collapse: collapse;">
+                <tbody>
+                    <tr id="modal-profiling-runtime-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">Wall time</td>
+                        <td id="modal-profiling-runtime">-</td>
+                    </tr>
+                    <tr id="modal-profiling-cpu-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">CPU time</td>
+                        <td id="modal-profiling-cpu-time">-</td>
+                    </tr>
+                    <tr id="modal-profiling-gpu-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">GPU time</td>
+                        <td id="modal-profiling-gpu-time">-</td>
+                    </tr>
+                    <tr id="modal-profiling-end-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">Completed</td>
+                        <td id="modal-profiling-end">-</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
         <div class="modal-section" id="modal-results-section" style="display:none;">
             <h5>Results</h5>
