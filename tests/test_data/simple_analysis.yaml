@@ -1,0 +1,5 @@
+kind: analysis
+name: test-analysis-deprecated-fmin
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM

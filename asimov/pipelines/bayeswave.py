@@ -51,7 +51,7 @@ class BayesWave(Pipeline):
             self.logger.info("Assuming analyses directory.")
 
         if not production.meta.get("quality", {}).get("lowest minimum frequency", None):
-            production.meta["quality"]["lowest minimum frequency"] = self.flow
+            production.meta.setdefault("quality", {})["lowest minimum frequency"] = self.flow
 
     def build_dag(self, user=None, dryrun=False):
         """
@@ -288,7 +288,20 @@ class BayesWave(Pipeline):
         minimum frequency from the list of interferometer
         lower frequencies.
         """
-        return min(self.production.meta["quality"]["minimum frequency"].values())
+        if "waveform" not in self.production.meta or "minimum frequency" not in self.production.meta["waveform"]:
+            raise ValueError(
+                "Minimum frequency must be specified in the 'waveform' section. "
+                "Please update your blueprint to include 'minimum frequency' in 'waveform'."
+            )
+        
+        min_freq = self.production.meta["waveform"]["minimum frequency"]
+        if not isinstance(min_freq, dict) or not min_freq:
+            raise ValueError(
+                "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                "mapping interferometer names to frequency values."
+            )
+        
+        return min(min_freq.values())
 
     def before_submit(self):
         """

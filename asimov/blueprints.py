@@ -89,6 +89,11 @@ class Waveform(Blueprint):
         description="The mode array to use in the waveform model.",
         default=None,
     )
+    minimum_frequency: dict[str, float] | None = pydantic.Field(
+        alias="minimum frequency",
+        description="The minimum frequency for the waveform model, given as a dictionary of values per interferometer.",
+        default=None,
+    )
 
 
     model_config = ConfigDict(extra='forbid')

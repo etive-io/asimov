@@ -33,7 +33,7 @@ priors:
   mass ratio:
     maximum: 1.0
     minimum: 0.05
-quality:
+waveform:
   minimum frequency:
     H1: 20
     L1: 20
@@ -73,7 +73,7 @@ priors:
   mass ratio:
     maximum: 1.0
     minimum: 0.05
-quality:
+waveform:
   minimum frequency:
     H1: 20
     L1: 20
@@ -116,7 +116,7 @@ priors:
   mass ratio:
     maximum: 1.0
     minimum: 0.05
-quality:
+waveform:
   minimum frequency:
     H1: 20
     L1: 20

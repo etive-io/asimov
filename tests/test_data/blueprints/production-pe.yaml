@@ -1,0 +1,81 @@
+#
+# This is a local copy of the production-pe.yaml defaults, updated to match
+# the v0.7 requirement that minimum frequency must be in the 'waveform' section.
+# Original source: https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml
+#
+
+kind: configuration
+data:
+  channels:
+    H1: H1:DCS-CALIB_STRAIN_CLEAN_AR01
+    L1: L1:DCS-CALIB_STRAIN_CLEAN_AR01
+    V1: V1:Hrec_hoftRepro1AR_16384Hz
+  frame types:
+    H1: H1_HOFT_AR01
+    L1: L1_HOFT_AR01
+    V1: HoftAR1U02
+likelihood:
+  roll off time: 1.0
+pipelines:
+  bilby:
+    sampler:
+      sampler: dynesty
+      sampler kwargs:
+        nlive: 1000
+        naccept: 60
+        sample: acceptance-walk
+        check_point_plot: True
+        maxmcmc: 100000
+      parallel jobs: 3
+    scheduler:
+      accounting group: ligo.prod.o4.cbc.pe.bilby
+      request cpus: 16
+    likelihood:
+      roll off time: 1
+      marginalization:
+        time: False
+        distance: True
+    cosmology: Planck15_lal
+  bayeswave:
+    scheduler:
+      accounting group: ligo.prod.o4.cbc.pe.bilby
+      request memory: 4096 MB
+      request post memory: 16384 MB
+    likelihood:
+      roll off time: 1
+      iterations: 250000
+      chains: 16
+      threads: 4
+  rift:
+    scheduler:
+      accounting group: ligo.prod.o4.cbc.pe.rift
+      request memory: 1024
+    sampler:
+      cip:
+        fitting method: rf
+        explode jobs auto: True
+      ile:
+        n eff: 10
+        jobs per worker: 100
+      use aligned phase coordinates: True
+postprocessing:
+  pesummary:
+    accounting group: ligo.prod.o4.cbc.pe.bilby
+    cosmology: Planck15_lal
+    evolve spins: forwards
+    multiprocess: 4
+    redshift: exact
+    skymap samples: 2000
+quality:
+  state vector:
+    L1: L1:GDS-CALIB_STATE_VECTOR_AR01
+    H1: H1:GDS-CALIB_STATE_VECTOR_AR01
+    V1: V1:DQ_ANALYSIS_STATE_VECTOR
+# minimum frequency has been moved to the waveform section (v0.7 requirement)
+waveform:
+  minimum frequency:
+    H1: 20
+    L1: 20
+    V1: 20
+    G1: 20
+    K1: 20
