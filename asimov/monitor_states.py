@@ -6,10 +6,9 @@ hard-coded if-elif chains in the monitor loop.
 """
 
 from abc import ABC, abstractmethod
-import configparser
 import sys
 import click
-from asimov import logger, LOGGER_LEVEL, config, condor
+from asimov import logger, LOGGER_LEVEL, condor
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points
@@ -178,17 +177,11 @@ class RunningState(MonitorState):
             job_id = context.job_id
             if job_id:
                 try:
-                    config.get("condor", "scheduler")
                     analysis.meta["profiling"] = condor.collect_history(job_id)
                     context.clear_job_id()
                     context.update_ledger()
-                except (configparser.NoOptionError, configparser.NoSectionError):
-                    logger.warning(
-                        "Could not collect condor profiling data as no "
-                        + "scheduler was specified in the config file."
-                    )
                 except ValueError as e:
-                    logger.error("Could not collect condor profiling data.")
+                    logger.warning("Could not collect condor profiling data.")
                     logger.exception(e)
             
             analysis.status = "finished"

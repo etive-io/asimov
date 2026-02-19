@@ -191,62 +191,30 @@ def _delete_job_legacy(cluster_id):
 
 
 def collect_history(cluster_id):
+    """Collect history information for a completed condor job.
+
+    Parameters
+    ----------
+    cluster_id : int
+        The cluster ID of the completed job.
+
+    Returns
+    -------
+    dict
+        A dictionary with keys ``end``, ``cpus``, ``gpus``, and ``runtime``.
+
+    Raises
+    ------
+    ValueError
+        If no history record is found for the given cluster ID.
+    """
     try:
-        # There should really be a specified submit node, and if there is, use it.
-        schedulers = htcondor.Collector().locate(
-            htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
-        )
-        schedd = htcondor.Schedd(schedulers)
-    except Exception:  # Catch all exceptions to fall back to searching for any schedd
-        # If you can't find a specified scheduler, use the first one you find
-        collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
-        logger.info("Searching for a scheduler of any kind")
-        for collector in collectors:
-            logger.info(f"Found {collector}")
-            schedd = htcondor.Schedd(collector)
-            HISTORY_CLASSADS = [
-                "CompletionDate",
-                "CpusProvisioned",
-                "GpusProvisioned",
-                "CumulativeSuspensionTime",
-                "EnteredCurrentStatus",
-                "MaxHosts",
-                "RemoteWallClockTime",
-                "RequestCpus",
-            ]
-            try:
-                jobs = schedd.history(
-                    f"ClusterId == {cluster_id}", projection=HISTORY_CLASSADS
-                )
-                logger.info(f"Jobs found: {jobs}")
-                break
-            except htcondor.HTCondorIOError:
-                logger.info(f"{collector} cannot receive jobs")
-        if len(list(jobs)) == 0:
-            raise ValueError
-        output = {}
-        for job in jobs:
-            end = float(job["CompletionDate"]) or float(job["EnteredCurrentStatus"])
-            output["end"] = datetime_from_epoch(end).strftime("%Y-%m-%d")
-            # get cpus and gpus
-            try:
-                cpus = float(job["CpusProvisioned"])
-            except (KeyError, ValueError):
-                cpus = float(job.get("RequestCpus", 1))
-            try:
-                gpus = float(job["GpusProvisioned"])
-            except (KeyError, ValueError):
-                gpus = float(job.get("RequestGpus", 1))
-            output["cpus"] = cpus
-            output["gpus"] = gpus
-            # get total job time (seconds)
-            runtime = float(job["RemoteWallClockTime"]) - float(
-                job["CumulativeSuspensionTime"]
-            )
-            # if the job didn't get assigned a MATCH_GLIDEIN_Site,
-            # then it ran in the local pool
-            output["runtime"] = runtime
-        return output
+        schedd_name = config.get("condor", "scheduler")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        schedd_name = None
+
+    scheduler = HTCondorScheduler(schedd_name=schedd_name)
+    return scheduler.collect_history(cluster_id)
 
 
 class CondorJob(yaml.YAMLObject):

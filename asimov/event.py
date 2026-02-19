@@ -534,6 +534,22 @@ class Event:
             elif review_status == 'deprecated':
                 return '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
             return ''
+
+        def get_profiling_attrs(node):
+            """Extract profiling data attributes from a node's meta."""
+            profiling = {}
+            if hasattr(node, 'meta') and isinstance(node.meta, dict):
+                profiling = node.meta.get('profiling', {}) or {}
+            runtime = profiling.get('runtime', '')
+            cpus = profiling.get('cpus', '')
+            gpus = profiling.get('gpus', '')
+            end = profiling.get('end', '')
+            return (
+                f'data-profiling-runtime="{runtime}" '
+                f'data-profiling-cpus="{cpus}" '
+                f'data-profiling-gpus="{gpus}" '
+                f'data-profiling-end="{end}"'
+            )
         
         card = f"""
         <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
@@ -688,6 +704,9 @@ class Event:
                             # Escape review message for HTML attribute
                             review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
                             
+                            # Get profiling data attributes
+                            profiling_attrs = get_profiling_attrs(node)
+                            
                             card += f"""
                             <div id="{data_id}" style="display:none;"
                                  data-name="{node.name}"
@@ -700,7 +719,8 @@ class Event:
                                  data-dependencies="{dependencies_str}"
                                  data-review-status="{review_status}"
                                  data-review-message="{review_message_escaped}"
-                                 data-result-pages="{result_pages_str}">
+                                 data-result-pages="{result_pages_str}"
+                                 {profiling_attrs}>
                             </div>
                             """
                         
@@ -827,6 +847,9 @@ class Event:
                         # Escape review message for HTML attribute
                         review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
                         
+                        # Get profiling data attributes
+                        profiling_attrs = get_profiling_attrs(node)
+                        
                         card += f"""
                         <div id="{data_id}" style="display:none;"
                              data-name="{node.name}"
@@ -839,7 +862,8 @@ class Event:
                              data-dependencies="{dependencies_str}"
                              data-review-status="{review_status}"
                              data-review-message="{review_message_escaped}"
-                             data-result-pages="{result_pages_str}">
+                             data-result-pages="{result_pages_str}"
+                             {profiling_attrs}>
                         </div>
                         """
                     card += """</div>"""

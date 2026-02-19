@@ -13,6 +13,7 @@ import datetime
 import yaml
 import warnings
 from abc import ABC, abstractmethod
+from dateutil import tz
 
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
@@ -22,6 +23,37 @@ except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
     import classad  # NoQA
+
+UTC = tz.tzutc()
+
+_HISTORY_CLASSADS = [
+    "CompletionDate",
+    "CpusProvisioned",
+    "GpusProvisioned",
+    "CumulativeSuspensionTime",
+    "EnteredCurrentStatus",
+    "MaxHosts",
+    "RemoteWallClockTime",
+    "RequestCpus",
+    "RequestGpus",
+]
+
+
+def _datetime_from_epoch(dt, tzinfo=UTC):
+    """Return a :class:`datetime.datetime` for a given Unix epoch.
+
+    Parameters
+    ----------
+    dt : float
+        A Unix timestamp.
+    tzinfo : datetime.tzinfo, optional
+        The desired timezone for the output datetime.
+
+    Returns
+    -------
+    datetime.datetime
+    """
+    return datetime.datetime.utcfromtimestamp(dt).replace(tzinfo=tzinfo)
 
 
 class Scheduler(ABC):
@@ -114,6 +146,33 @@ class Scheduler(ABC):
             - status: Job status (integer code or string)
             - name: Job name (optional)
             - dag id: Parent DAG ID if this is a subjob (optional)
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def collect_history(self, cluster_id):
+        """
+        Collect history information for a completed job.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The cluster ID of the completed job.
+
+        Returns
+        -------
+        dict
+            A dictionary containing job history with keys:
+            - end: completion date as a ``YYYY-MM-DD`` string
+            - cpus: number of CPUs provisioned
+            - gpus: number of GPUs provisioned
+            - runtime: effective wall-clock time in seconds
+              (``RemoteWallClockTime`` minus ``CumulativeSuspensionTime``)
+
+        Raises
+        ------
+        ValueError
+            If no history is found for the given cluster ID.
         """
         raise NotImplementedError
 
@@ -333,6 +392,85 @@ class HTCondor(Scheduler):
         
         return data
 
+    def collect_history(self, cluster_id):
+        """
+        Collect history information for a completed HTCondor job.
+
+        The method first tries the configured schedd; if no history is found
+        there it searches all available schedds.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The cluster ID of the completed job.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys:
+            - ``end``: completion date as a ``YYYY-MM-DD`` string
+            - ``cpus``: number of CPUs provisioned
+            - ``gpus``: number of GPUs provisioned
+            - ``runtime``: effective wall-clock time in seconds
+
+        Raises
+        ------
+        ValueError
+            If no history record is found for *cluster_id*.
+        """
+        constraint = f"ClusterId == {cluster_id}"
+
+        # First try the configured schedd
+        try:
+            jobs = list(self.schedd.history(constraint, projection=_HISTORY_CLASSADS))
+        except Exception:
+            jobs = []
+
+        # If nothing found, search all available schedds
+        if not jobs:
+            try:
+                collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
+            except htcondor.HTCondorLocateError:
+                collectors = []
+
+            for collector in collectors:
+                try:
+                    schedd = htcondor.Schedd(collector)
+                    jobs = list(schedd.history(constraint, projection=_HISTORY_CLASSADS))
+                    if jobs:
+                        break
+                except htcondor.HTCondorIOError:
+                    continue
+
+        if not jobs:
+            raise ValueError(
+                f"No history found for cluster ID {cluster_id}"
+            )
+
+        output = {}
+        for job in jobs:
+            end = float(job.get("CompletionDate", 0)) or float(
+                job.get("EnteredCurrentStatus", 0)
+            )
+            output["end"] = _datetime_from_epoch(end).strftime("%Y-%m-%d")
+
+            try:
+                cpus = float(job["CpusProvisioned"])
+            except (KeyError, ValueError):
+                cpus = float(job.get("RequestCpus", 1))
+            try:
+                gpus = float(job["GpusProvisioned"])
+            except (KeyError, ValueError):
+                gpus = float(job.get("RequestGpus", 0))
+
+            output["cpus"] = cpus
+            output["gpus"] = gpus
+            output["runtime"] = float(
+                job.get("RemoteWallClockTime", 0)
+            ) - float(job.get("CumulativeSuspensionTime", 0))
+
+        return output
+
 
 class Slurm(Scheduler):
     """
@@ -363,6 +501,10 @@ class Slurm(Scheduler):
     
     def query_all_jobs(self):
         """Query all jobs from Slurm."""
+        raise NotImplementedError("Slurm scheduler is not yet implemented")
+
+    def collect_history(self, cluster_id):
+        """Collect history for a Slurm job."""
         raise NotImplementedError("Slurm scheduler is not yet implemented")
 
 
