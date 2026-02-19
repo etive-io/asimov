@@ -13,6 +13,13 @@ from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
 
+# Try to import crontab for Slurm cron support
+try:
+    from crontab import CronTab
+    CRONTAB_AVAILABLE = True
+except ImportError:
+    CRONTAB_AVAILABLE = False
+
 logger = logger.getChild("cli").getChild("monitor")
 logger.setLevel(LOGGER_LEVEL)
 
@@ -27,10 +34,26 @@ else:
               help="Use the new scheduler API directly (experimental)")
 @click.command()
 def start(dry_run, use_scheduler_api):
-    """Set up a cron job on condor to monitor the project."""
+    """Set up a cron job to monitor the project."""
     from asimov import setup_file_logging
     setup_file_logging()
 
+    # Get the configured scheduler type
+    try:
+        scheduler_type = config.get("scheduler", "type")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        scheduler_type = "htcondor"
+    
+    if scheduler_type == "slurm":
+        # For Slurm, use a cron job instead of scheduler-based cron
+        _start_slurm_monitor()
+    else:
+        # HTCondor implementation
+        _start_htcondor_monitor(dry_run, use_scheduler_api)
+
+
+def _start_htcondor_monitor(dry_run, use_scheduler_api):
+    """Start monitoring using HTCondor cron job."""
     try:
         minute_expression = config.get("condor", "cron_minute")
     except (configparser.NoOptionError, configparser.NoSectionError):
@@ -91,14 +114,118 @@ def start(dry_run, use_scheduler_api):
     logger.info(f"Running asimov cronjob as  {cluster}")
 
 
+def _start_slurm_monitor():
+    """Start monitoring using system cron job for Slurm."""
+    if not CRONTAB_AVAILABLE:
+        # python-crontab not available, provide manual instructions
+        _start_slurm_monitor_manual()
+        return
+    
+    try:
+        minute_expression = config.get("slurm", "cron_minute")
+    except (configparser.NoOptionError, configparser.NoSectionError):
+        minute_expression = "*/15"
+    
+    # Get the current working directory (project root)
+    project_root = os.getcwd()
+    asimov_executable = shutil.which("asimov")
+    
+    if not asimov_executable:
+        click.secho("  \t  ● Error: asimov executable not found in PATH", fg="red")
+        return
+    
+    try:
+        # Use the user's crontab
+        cron = CronTab(user=True)
+        
+        # Create a unique comment to identify this job
+        job_comment = f"asimov-monitor-{ledger.data['project']['name']}"
+        
+        # Remove any existing job with the same comment
+        cron.remove_all(comment=job_comment)
+        
+        # Create the new job
+        command = f"cd {project_root} && {asimov_executable} monitor --chain >> {os.path.join('.asimov', 'asimov_cron.out')} 2>> {os.path.join('.asimov', 'asimov_cron.err')}"
+        job = cron.new(command=command, comment=job_comment)
+        
+        # Parse the minute expression
+        # Support */N format for every N minutes
+        if minute_expression.startswith("*/"):
+            interval = int(minute_expression[2:])
+            job.minute.every(interval)
+        else:
+            job.setall(minute_expression)
+        
+        # Write the crontab
+        cron.write()
+        
+        # Save the job identifier in the ledger
+        ledger.data["cronjob"] = job_comment
+        ledger.save()
+        
+        click.secho(f"  \t  ● Asimov is running via cron ({job_comment})", fg="green")
+        logger.info(f"Running asimov cronjob via cron: {job_comment}")
+        
+    except Exception as e:
+        logger.error(f"Failed to create cron job: {e}")
+        click.secho(f"  \t  ● Error creating cron job: {e}", fg="red")
+        _start_slurm_monitor_manual()
+
+
+def _start_slurm_monitor_manual():
+    """Provide manual instructions for setting up Slurm monitoring."""
+    try:
+        minute_expression = config.get("slurm", "cron_minute")
+    except (configparser.NoOptionError, configparser.NoSectionError):
+        minute_expression = "*/15"
+    
+    project_root = os.getcwd()
+    asimov_executable = shutil.which("asimov") or "asimov"
+    
+    click.secho("  \t  ● python-crontab not installed. Setting up cron manually...", fg="yellow")
+    
+    # Create a shell script as an alternative
+    script_path = os.path.join(".asimov", "asimov_monitor.sh")
+    with open(script_path, 'w') as f:
+        f.write("#!/bin/bash\n")
+        f.write(f"cd {project_root}\n")
+        f.write(f"{asimov_executable} monitor --chain >> {os.path.join('.asimov', 'asimov_cron.out')} 2>> {os.path.join('.asimov', 'asimov_cron.err')}\n")
+    
+    os.chmod(script_path, 0o755)
+    
+    click.echo(f"\nPlease add the following line to your crontab (crontab -e):")
+    click.echo(f"{minute_expression} * * * * {script_path}")
+    
+    # Save a marker in the ledger
+    ledger.data["cronjob"] = "manual-cron"
+    ledger.save()
+
+
 @click.option("--dry-run", "-n", "dry_run", is_flag=True)
 @click.option("--use-scheduler-api", is_flag=True, default=False,
               help="Use the new scheduler API directly (experimental)")
 @click.command()
 def stop(dry_run, use_scheduler_api):
-    """Set up a cron job on condor to monitor the project."""
+    """Stop the cron job monitoring the project."""
     from asimov import setup_file_logging
     setup_file_logging()
+    
+    # Get the configured scheduler type
+    try:
+        scheduler_type = config.get("scheduler", "type")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        scheduler_type = "htcondor"
+    
+    if scheduler_type == "slurm":
+        # For Slurm, remove the cron job
+        _stop_slurm_monitor()
+    else:
+        # HTCondor implementation
+        _stop_htcondor_monitor(dry_run, use_scheduler_api)
+
+
+def _stop_htcondor_monitor(dry_run, use_scheduler_api):
+    """Stop monitoring using HTCondor."""
     cluster = ledger.data["cronjob"]
     
     # Use the new scheduler API if requested, otherwise use the legacy interface
@@ -117,6 +244,49 @@ def stop(dry_run, use_scheduler_api):
     
     click.secho("  \t  ● Asimov has been stopped", fg="red")
     logger.info(f"Stopped asimov cronjob {cluster}")
+
+
+def _stop_slurm_monitor():
+    """Stop monitoring by removing cron job for Slurm."""
+    if not CRONTAB_AVAILABLE:
+        _stop_slurm_monitor_manual()
+        return
+    
+    cronjob_id = ledger.data.get("cronjob", None)
+    
+    if not cronjob_id:
+        click.secho("  \t  ● No running monitor found", fg="yellow")
+        return
+    
+    if cronjob_id == "manual-cron":
+        _stop_slurm_monitor_manual()
+        return
+    
+    try:
+        # Use the user's crontab
+        cron = CronTab(user=True)
+        
+        # Remove the job by comment
+        removed = cron.remove_all(comment=cronjob_id)
+        
+        if removed > 0:
+            cron.write()
+            click.secho("  \t  ● Asimov has been stopped", fg="red")
+            logger.info(f"Stopped asimov cronjob: {cronjob_id}")
+        else:
+            click.secho(f"  \t  ● No cron job found with identifier: {cronjob_id}", fg="yellow")
+            
+    except Exception as e:
+        logger.error(f"Failed to remove cron job: {e}")
+        click.secho(f"  \t  ● Error removing cron job: {e}", fg="red")
+        _stop_slurm_monitor_manual()
+
+
+def _stop_slurm_monitor_manual():
+    """Provide manual instructions for removing Slurm monitoring."""
+    cronjob_id = ledger.data.get("cronjob", "asimov_monitor.sh")
+    click.secho("  \t  ● Manual cron setup detected or python-crontab not installed.", fg="yellow")
+    click.echo(f"Run 'crontab -e' and remove the line containing '{cronjob_id}'")
 
 
 @click.argument("event", default=None, required=False)

@@ -1,10 +1,93 @@
 The Schedulers module
 =====================
 
-This module contains the logic for interacting with schedulers, for example, ``HTCondor``.
+This module contains the logic for interacting with schedulers, for example, ``HTCondor`` and ``Slurm``.
 
 The scheduler module provides a unified interface for submitting and managing jobs across different scheduling systems.
-Currently supported schedulers include HTCondor, with Slurm support planned for the future.
+Currently supported schedulers include:
+
+* **HTCondor**: The High-Throughput Computing (HTC) workload manager commonly used in scientific computing
+* **Slurm**: The Simple Linux Utility for Resource Management, widely used in HPC clusters
+
+Configuration
+-------------
+
+Asimov can automatically detect which scheduler is available on your system during project initialization.
+You can also manually configure the scheduler type in your ``.asimov/asimov.conf`` file:
+
+For HTCondor::
+
+    [scheduler]
+    type = htcondor
+    
+    [condor]
+    user = your_username
+    scheduler = optional_schedd_name
+
+For Slurm::
+
+    [scheduler]
+    type = slurm
+    
+    [slurm]
+    user = your_username
+    partition = optional_partition_name
+
+Using the Scheduler API
+------------------------
+
+Pipelines can use the scheduler API through the ``self.scheduler`` property, which provides
+a scheduler-agnostic interface for job submission and management.
+
+Example::
+
+    # Submit a DAG file
+    cluster_id = self.scheduler.submit_dag(
+        dag_file="/path/to/dag.dag",
+        batch_name="my-analysis"
+    )
+    
+    # Query job status
+    jobs = self.scheduler.query_all_jobs()
+    
+    # Delete a job
+    self.scheduler.delete(cluster_id)
+
+DAG File Translation
+--------------------
+
+Asimov provides **symmetric DAG translation** between HTCondor and Slurm formats:
+
+**HTCondor to Slurm**
+
+When using Slurm, HTCondor DAG (Directed Acyclic Graph) files are automatically converted
+to equivalent Slurm batch scripts with job dependencies. This allows pipelines that generate
+HTCondor DAGs (such as bilby, bayeswave, and lalinference) to work seamlessly with Slurm.
+
+**Slurm to HTCondor**
+
+Similarly, when using HTCondor, Slurm batch scripts with job dependencies are automatically
+converted to HTCondor DAG files. This allows pipelines that generate Slurm batch scripts
+to work with HTCondor clusters.
+
+The conversion handles:
+
+* Job dependencies (PARENT-CHILD relationships in HTCondor, --dependency flags in Slurm)
+* Job submission files and commands
+* Batch names and job metadata
+
+**Format Auto-Detection**
+
+The scheduler automatically detects the input file format:
+
+* Files with ``JOB``, ``PARENT``, ``CHILD`` directives are treated as HTCondor DAGs
+* Files with ``#SBATCH`` directives or ``sbatch`` commands are treated as Slurm scripts
+
+This means you can submit either format to either scheduler, and the translation
+happens automatically.
+
+API Reference
+-------------
 
 .. automodule:: asimov.scheduler
    :members:

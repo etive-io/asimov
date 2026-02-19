@@ -160,6 +160,7 @@ Advanced topics
    analyses
    build-process
    scheduler-integration
+   dag-translation-examples
    monitor-state-machine
    monitor-api
    configuration

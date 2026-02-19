@@ -570,20 +570,27 @@ class PESummary(Pipeline):
             print(submit_description)
 
         if not dryrun:
-            job = htcondor.Submit(submit_description)
-
-            try:
-                schedulers = htcondor.Collector().locate(
-                    htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
-                )
-            except (configparser.NoOptionError, configparser.NoSectionError):
-                schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
-
-            schedd = htcondor.Schedd(schedulers)
+            # Use the scheduler API for submission
+            from asimov.scheduler import JobDescription
             
-            result = schedd.submit(job)
-            cluster_id = result.cluster()
-            self.logger.info(f"Submitted {cluster_id} to htcondor job queue.")
+            job_desc = JobDescription(
+                executable=submit_description["executable"],
+                output=submit_description["output"],
+                error=submit_description["error"],
+                log=submit_description["log"],
+                cpus=submit_description["request_cpus"],
+                memory=submit_description["request_memory"],
+                disk=submit_description["request_disk"],
+                arguments=submit_description["arguments"],
+                getenv=submit_description["getenv"] == "true",
+                batch_name=submit_description["batch_name"],
+                should_transfer_files=submit_description.get("should_transfer_files"),
+                accounting_group_user=submit_description.get("accounting_group_user"),
+                accounting_group=submit_description.get("accounting_group"),
+            )
+            
+            cluster_id = self.scheduler.submit(job_desc)
+            self.logger.info(f"Submitted {cluster_id} to scheduler job queue.")
 
         else:
             cluster_id = 0

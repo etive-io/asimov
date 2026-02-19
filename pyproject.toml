@@ -71,6 +71,9 @@ bilby = [
 	"bilby_pipe",
 	"bilby",
 ]
+slurm = [
+	"python-crontab",
+]
 testing = []
 
 [project.scripts]
