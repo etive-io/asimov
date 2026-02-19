@@ -270,7 +270,13 @@ class PESummary(Pipeline):
                     
                     if "waveform" in dep_analysis.meta:
                         if "minimum frequency" in dep_analysis.meta["waveform"]:
-                            f_lows.append(str(min(dep_analysis.meta["waveform"]["minimum frequency"].values())))
+                            min_freq = dep_analysis.meta["waveform"]["minimum frequency"]
+                            if isinstance(min_freq, dict) and min_freq:
+                                f_lows.append(str(min(min_freq.values())))
+                            else:
+                                self.logger.warning(
+                                    f"Invalid minimum frequency format in {dep_analysis.name}, skipping"
+                                )
                     
                     # Config file should be added for each analysis that has samples
                     if dep_config:
@@ -360,10 +366,17 @@ class PESummary(Pipeline):
             command += ["--f_low"]
             command.extend(f_lows)
         elif "minimum frequency" in waveform_meta:
-            command += [
-                "--f_low",
-                str(min(waveform_meta["minimum frequency"].values())),
-            ]
+            min_freq = waveform_meta["minimum frequency"]
+            if isinstance(min_freq, dict) and min_freq:
+                command += [
+                    "--f_low",
+                    str(min(min_freq.values())),
+                ]
+            else:
+                raise ValueError(
+                    "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                    "mapping interferometer names to frequency values."
+                )
         
         # f_ref - use per-analysis values if available, otherwise use global
         if is_subject_analysis and f_refs:

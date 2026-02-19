@@ -522,6 +522,15 @@ class PESummaryPipeline(PostPipeline):
         configfile = self.production.event.repository.find_prods(
             self.production.name, self.category
         )[0]
+        
+        # Validate minimum frequency format
+        min_freq = self.production.meta["waveform"]["minimum frequency"]
+        if not isinstance(min_freq, dict) or not min_freq:
+            raise ValueError(
+                "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                "mapping interferometer names to frequency values."
+            )
+        
         command = [
             "--webdir",
             os.path.join(
@@ -537,7 +546,7 @@ class PESummaryPipeline(PostPipeline):
             "--approximant",
             self.production.meta["waveform"]["approximant"],
             "--f_low",
-            str(min(self.production.meta["waveform"]["minimum frequency"].values())),
+            str(min(min_freq.values())),
             "--f_ref",
             str(self.production.meta["waveform"]["reference frequency"]),
         ]

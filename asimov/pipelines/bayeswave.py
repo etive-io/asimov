@@ -293,7 +293,15 @@ class BayesWave(Pipeline):
                 "Minimum frequency must be specified in the 'waveform' section. "
                 "Please update your blueprint to include 'minimum frequency' in 'waveform'."
             )
-        return min(self.production.meta["waveform"]["minimum frequency"].values())
+        
+        min_freq = self.production.meta["waveform"]["minimum frequency"]
+        if not isinstance(min_freq, dict) or not min_freq:
+            raise ValueError(
+                "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                "mapping interferometer names to frequency values."
+            )
+        
+        return min(min_freq.values())
 
     def before_submit(self):
         """
