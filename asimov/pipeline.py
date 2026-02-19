@@ -89,6 +89,12 @@ class Pipeline:
 
     name = "Asimov Pipeline"
 
+    available_outputs = []
+    """Data products this pipeline can produce (e.g. ``["posterior_samples", "psd"]``)."""
+
+    required_inputs = []
+    """Data products this pipeline needs to run (e.g. ``["psd", "calibration"]``)."""
+
     def __init__(self, production, category=None):
         self.production = production
 
@@ -321,6 +327,44 @@ class Pipeline:
             priors = self.production.priors
             self._prior_interface = PriorInterface(priors)
         return self._prior_interface
+
+    def get_actual_outputs(self, production):
+        """
+        Return the list of data products this specific production will generate.
+
+        By default returns :attr:`available_outputs`.  Override in a subclass
+        to add conditional outputs that depend on the production configuration.
+
+        Parameters
+        ----------
+        production : :class:`asimov.analysis.Analysis`
+            The analysis for which outputs are being queried.
+
+        Returns
+        -------
+        list of str
+            Names of data products produced by this production.
+        """
+        return list(self.available_outputs)
+
+    def get_actual_inputs(self, production):
+        """
+        Return the list of data products required by this specific production.
+
+        By default returns :attr:`required_inputs`.  Override in a subclass
+        to add conditional inputs that depend on the production configuration.
+
+        Parameters
+        ----------
+        production : :class:`asimov.analysis.Analysis`
+            The analysis for which inputs are being queried.
+
+        Returns
+        -------
+        list of str
+            Names of data products required by this production.
+        """
+        return list(self.required_inputs)
 
     def eject_job(self):
         """

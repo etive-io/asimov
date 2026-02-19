@@ -25,6 +25,7 @@ Project analyses
 
 import os
 import configparser
+import warnings
 from copy import deepcopy
 import pathlib
 
@@ -531,6 +532,37 @@ class Analysis:
     @status.setter
     def status(self, value):
         self.status_str = value.lower()
+
+    def validate_needs(self):
+        """
+        Validate that dependency productions will provide all required inputs.
+
+        Checks each data product declared as required by this analysis's
+        pipeline against the outputs advertised by every dependency listed
+        in :attr:`needs`.  Issues a :class:`UserWarning` for each
+        requirement that is not satisfied by any dependency.
+
+        This method is intended to be called at build or submission time
+        so that configuration errors are caught before compute resources
+        are consumed.
+
+        Examples
+        --------
+        >>> analysis.validate_needs()
+        UserWarning: Production requires 'psd' but no dependency provides it
+        """
+        required = self.pipeline.get_actual_inputs(self)
+        dep_names = set(self.dependencies)
+        dep_analyses = [a for a in self.event.analyses if a.name in dep_names]
+        for requirement in required:
+            satisfied = any(
+                requirement in dep.pipeline.get_actual_outputs(dep)
+                for dep in dep_analyses
+            )
+            if not satisfied:
+                warnings.warn(
+                    f"Production '{self.name}' requires '{requirement}' but no dependency provides it"
+                )
 
     def matches_filter(self, attribute, match, negate=False):
         """
