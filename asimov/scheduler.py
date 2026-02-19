@@ -5,10 +5,13 @@ Supported Schedulers are:
 
 - HTCondor
 - Slurm (planned)
+- Local (lightweight subprocess-based scheduler for short-running jobs)
 
 """
 
 import os
+import signal
+import subprocess
 import datetime
 import yaml
 import warnings
@@ -366,6 +369,180 @@ class Slurm(Scheduler):
         raise NotImplementedError("Slurm scheduler is not yet implemented")
 
 
+class LocalProcessScheduler(Scheduler):
+    """
+    A lightweight scheduler that runs jobs as local subprocesses.
+
+    This scheduler is designed for jobs that complete quickly (seconds),
+    where the overhead of submitting to a cluster scheduler (HTCondor, Slurm)
+    exceeds the actual job runtime.  Jobs are launched as background
+    subprocesses on the machine running asimov and are tracked by their
+    operating-system process ID (PID).
+    """
+
+    def __init__(self):
+        """Initialize the local process scheduler."""
+        self._processes = {}  # pid -> {"process": Popen, "command": str, "name": str}
+
+    def submit(self, job_description):
+        """
+        Run a job as a local background subprocess.
+
+        Parameters
+        ----------
+        job_description : JobDescription or dict
+            The job description to submit.  At minimum the description must
+            supply an ``executable``.  The optional keys ``arguments``,
+            ``output``, and ``error`` are also recognised.
+
+        Returns
+        -------
+        int
+            The process ID (PID) of the launched subprocess.
+
+        Raises
+        ------
+        RuntimeError
+            If the subprocess cannot be started.
+        """
+        if isinstance(job_description, JobDescription):
+            executable = job_description.executable
+            arguments = job_description.kwargs.get("arguments", "")
+            output_file = job_description.output
+            error_file = job_description.error
+            name = job_description.kwargs.get(
+                "batch_name", job_description.kwargs.get("name", "asimov job")
+            )
+        else:
+            executable = job_description.get("executable")
+            arguments = job_description.get("arguments", "")
+            output_file = job_description.get("output")
+            error_file = job_description.get("error")
+            name = job_description.get(
+                "batch_name", job_description.get("name", "asimov job")
+            )
+
+        if not executable:
+            raise RuntimeError("No executable specified in job description")
+
+        if arguments:
+            command = (
+                [executable] + arguments.split()
+                if isinstance(arguments, str)
+                else [executable] + list(arguments)
+            )
+        else:
+            command = [executable]
+
+        stdout_handle = open(output_file, "w") if output_file else subprocess.DEVNULL
+        stderr_handle = open(error_file, "w") if error_file else subprocess.DEVNULL
+
+        try:
+            proc = subprocess.Popen(command, stdout=stdout_handle, stderr=stderr_handle)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to start local process '{executable}': {exc}"
+            ) from exc
+        finally:
+            # Close parent-side handles; the child process has inherited its own
+            # file descriptors and will continue writing after these are closed.
+            if stdout_handle is not subprocess.DEVNULL:
+                stdout_handle.close()
+            if stderr_handle is not subprocess.DEVNULL:
+                stderr_handle.close()
+
+        self._processes[proc.pid] = {
+            "process": proc,
+            "command": " ".join(command),
+            "name": name,
+        }
+        return proc.pid
+
+    def delete(self, job_id):
+        """
+        Terminate a running local process.
+
+        Parameters
+        ----------
+        job_id : int
+            The PID of the process to terminate.
+        """
+        if job_id in self._processes:
+            proc = self._processes[job_id]["process"]
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            finally:
+                del self._processes[job_id]
+        else:
+            try:
+                os.kill(job_id, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    def query(self, job_id=None):
+        """
+        Query the status of one or all managed local processes.
+
+        Parameters
+        ----------
+        job_id : int, optional
+            The PID to query.  If *None*, all tracked processes are returned.
+
+        Returns
+        -------
+        list of dict
+            Each dictionary contains ``id``, ``command``, ``hosts``, and
+            ``status`` keys compatible with :class:`JobList`.
+        """
+        results = []
+        pids = [job_id] if job_id is not None else list(self._processes.keys())
+
+        for pid in pids:
+            if pid not in self._processes:
+                continue
+            proc_info = self._processes[pid]
+            poll = proc_info["process"].poll()
+            if poll is None:
+                status = "running"
+            elif poll == 0:
+                status = "completed"
+            else:
+                status = f"error (exit {poll})"
+            results.append(
+                {
+                    "id": pid,
+                    "command": proc_info["command"],
+                    "hosts": 1,
+                    "status": status,
+                    "name": proc_info.get("name", "asimov job"),
+                }
+            )
+        return results
+
+    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+        """Not supported for the local process scheduler."""
+        raise NotImplementedError(
+            "LocalProcessScheduler does not support DAG submission. "
+            "Use submit() with a shell script instead."
+        )
+
+    def query_all_jobs(self):
+        """
+        Return status information for all tracked local processes.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries with job information, compatible with
+            :class:`JobList`.
+        """
+        return self.query()
+
+
 class Job:
     """
     Scheduler-agnostic representation of a job.
@@ -598,7 +775,7 @@ def get_scheduler(scheduler_type="htcondor", **kwargs):
     Parameters
     ----------
     scheduler_type : str
-        The type of scheduler to create. Options: "htcondor", "slurm"
+        The type of scheduler to create. Options: "htcondor", "slurm", "local"
     **kwargs
         Additional keyword arguments to pass to the scheduler constructor.
         
@@ -618,6 +795,8 @@ def get_scheduler(scheduler_type="htcondor", **kwargs):
         return HTCondor(**kwargs)
     elif scheduler_type == "slurm":
         return Slurm(**kwargs)
+    elif scheduler_type == "local":
+        return LocalProcessScheduler()
     else:
         raise ValueError(f"Unknown scheduler type: {scheduler_type}")
 

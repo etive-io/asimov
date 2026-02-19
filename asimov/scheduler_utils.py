@@ -23,7 +23,9 @@ def get_configured_scheduler():
     Returns
     -------
     Scheduler
-        A configured scheduler instance (default: HTCondor)
+        A configured scheduler instance (default: HTCondor).
+        Set ``type = local`` under the ``[scheduler]`` section to use the
+        lightweight local process scheduler for short-running jobs.
         
     Examples
     --------
@@ -48,6 +50,7 @@ def get_configured_scheduler():
                 "No specific Condor scheduler configured; using default schedd. (%s)",
                 exc,
             )
+    # "local" requires no extra configuration
     
     return get_scheduler(scheduler_type, **kwargs)
 
