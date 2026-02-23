@@ -700,6 +700,14 @@ class Analysis:
 
                 template_file = str(files("asimov").joinpath(f"configs/{template}"))
 
+        # Normalise data files to always be lists, for backward compatibility
+        # with ledgers written before multi-frame support was added (where each
+        # IFO entry was a plain string rather than a list of paths).
+        data_files = self.meta.get("data", {}).get("data files", {})
+        for ifo, val in data_files.items():
+            if isinstance(val, str):
+                data_files[ifo] = [val]
+
         liq = Liquid(template_file)
         rendered = liq.render(production=self, analysis=self, config=config)
         with open(filename, "w") as output_file:
