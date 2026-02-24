@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*.log
+*.egg-info/
+dist/
+build/
+.eggs/
