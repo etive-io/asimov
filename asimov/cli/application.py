@@ -179,6 +179,7 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                       + f" Could not apply a production, couldn't find the event {event}"
                   )
                   logger.exception(e)
+                  continue
               production = asimov.event.Production.from_dict(
                   parameters=expanded_doc, subject=event_obj, ledger=ledger
               )
