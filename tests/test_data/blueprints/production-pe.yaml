@@ -41,6 +41,8 @@ pipelines:
       accounting group: ligo.prod.o4.cbc.pe.bilby
       request memory: 4096 MB
       request post memory: 16384 MB
+      copy frames: True
+      osg: True
     likelihood:
       roll off time: 1
       iterations: 250000
