@@ -14,7 +14,7 @@ import os
 import datetime
 import configparser
 from dateutil import tz
-import configparser
+
 
 import warnings
 try:
