@@ -1,0 +1,6 @@
+kind: analysis
+name: Prod0
+pipeline: bayeswave
+comment: Bayeswave on-source PSD estimation job
+scheduler:
+    accounting group: test

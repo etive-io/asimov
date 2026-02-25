@@ -118,9 +118,9 @@ class DetcharTests(AsimovTestCase):
 
         event = self.ledger.get_event("Nonstandard fmin")[0]
 
-        self.assertEqual(event.meta["quality"]["minimum frequency"]["H1"], 62)
-        self.assertEqual(event.meta["quality"]["minimum frequency"]["L1"], 92)
-        self.assertEqual(event.meta["quality"]["minimum frequency"]["V1"], 62)
+        self.assertEqual(event.meta["waveform"]["minimum frequency"]["H1"], 62)
+        self.assertEqual(event.meta["waveform"]["minimum frequency"]["L1"], 92)
+        self.assertEqual(event.meta["waveform"]["minimum frequency"]["V1"], 62)
 
     def test_event_non_standard_channels(self):
         """Check event-specific channel overwrites project default."""
@@ -159,6 +159,54 @@ class DetcharTests(AsimovTestCase):
         self.assertEqual(event.meta["data"]["frame types"]["L1"], "NonstandardFrameL1")
         self.assertEqual(event.meta["data"]["frame types"]["H1"], "NonstandardFrame")
         self.assertEqual(event.meta["data"]["frame types"]["V1"], "UnusualFrameType")
+
+    def test_minimum_frequency_in_quality_raises_error(self):
+        """Test that having minimum frequency in quality section raises an error."""
+        apply_page(
+            f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger,
+        )
+        apply_page(
+            f"{self.cwd}/tests/test_data/event_deprecated_fmin_quality.yaml",
+            event=None,
+            ledger=self.ledger,
+        )
+
+        # Creating an analysis from this event should raise a ValueError
+        with self.assertRaises(ValueError) as context:
+            apply_page(
+                f"{self.cwd}/tests/test_data/simple_analysis.yaml",
+                event="Deprecated fmin in quality",
+                ledger=self.ledger,
+            )
+        
+        self.assertIn("waveform", str(context.exception).lower())
+        self.assertIn("quality", str(context.exception).lower())
+
+    def test_minimum_frequency_in_likelihood_raises_error(self):
+        """Test that having minimum frequency in likelihood section raises an error."""
+        apply_page(
+            f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger,
+        )
+        apply_page(
+            f"{self.cwd}/tests/test_data/event_deprecated_fmin_likelihood.yaml",
+            event=None,
+            ledger=self.ledger,
+        )
+
+        # Creating an analysis from this event should raise a ValueError
+        with self.assertRaises(ValueError) as context:
+            apply_page(
+                f"{self.cwd}/tests/test_data/simple_analysis.yaml",
+                event="Deprecated fmin in likelihood",
+                ledger=self.ledger,
+            )
+        
+        self.assertIn("waveform", str(context.exception).lower())
+        self.assertIn("likelihood", str(context.exception).lower())
 
 
 class StrategyTests(AsimovTestCase):
