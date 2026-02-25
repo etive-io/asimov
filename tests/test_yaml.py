@@ -8,6 +8,7 @@ import asimov.event
 from asimov.cli.project import make_project
 from asimov.cli.application import apply_page
 from asimov.ledger import YAMLLedger
+from tests.blueprints import DEFAULTS_PE, GWTC21_EVENTS
 
 TEST_YAML = """
 name: S000000xx
@@ -74,8 +75,8 @@ class EventTests(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/project")
         make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=GWTC21_EVENTS["GW150914_095045"], event=None, ledger=self.ledger)
 
         self.event = asimov.event.Event.from_yaml(TEST_YAML.format(self.cwd), ledger=self.ledger)
 
@@ -109,8 +110,8 @@ class ProductionTests(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/project")
         make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=GWTC21_EVENTS["GW150914_095045"], event=None, ledger=self.ledger)
         self.event = asimov.event.Event("S000000xx", ledger=self.ledger)
 
     def tearDown(self):
