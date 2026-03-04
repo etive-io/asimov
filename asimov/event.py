@@ -287,6 +287,9 @@ class Event:
         for production in self.productions:
             if isinstance(production, SubjectAnalysis):
                 production.resolve_analyses()
+                # Note: We don't add graph edges for SubjectAnalysis to avoid disrupting
+                # the topological layout. Instead, they'll be manually placed in the last
+                # layer during HTML generation (see html() method below)
 
     def __repr__(self):
         return f"<Event {self.name}>"
@@ -565,12 +568,21 @@ class Event:
                 if nx.is_directed_acyclic_graph(self.graph):
                     # Get layers using topological generations
                     layers = list(nx.topological_generations(self.graph))
-                    
+
+                    # Separate SubjectAnalysis nodes for final layer
+                    from asimov.analysis import SubjectAnalysis
+                    subject_nodes = [n for layer in layers for n in layer if isinstance(n, SubjectAnalysis)]
+
+                    # Filter SubjectAnalysis from regular layers
+                    filtered_layers = [[n for n in layer if not isinstance(n, SubjectAnalysis)] for layer in layers]
+                    # Remove empty layers
+                    filtered_layers = [layer for layer in filtered_layers if layer]
+
                     card += """<div class="graph-container">"""
-                    
-                    for layer_idx, layer in enumerate(layers):
+
+                    for layer_idx, layer in enumerate(filtered_layers):
                         card += """<div class="graph-layer">"""
-                        
+
                         for node in layer:
                             # Get status and review for styling
                             status = node.status if hasattr(node, 'status') else 'unknown'
@@ -618,10 +630,18 @@ class Event:
                             
                             # For subject analyses, include source analysis names
                             source_analyses_str = ''
-                            if is_subject and hasattr(node, '_analysis_spec_names'):
+                            if is_subject:
+                                # Get source analysis names - try _analysis_spec_names first, then analyses
+                                source_names = []
+                                if hasattr(node, '_analysis_spec_names') and node._analysis_spec_names:
+                                    source_names = node._analysis_spec_names
+                                elif hasattr(node, 'analyses') and node.analyses:
+                                    # Fallback: get names from resolved analyses
+                                    source_names = [a.name for a in node.analyses if hasattr(a, 'name')]
+
                                 # Build list of source analyses with their statuses for styling
                                 source_specs = []
-                                for source_name in node._analysis_spec_names:
+                                for source_name in source_names:
                                     # Find the source analysis status
                                     source_status = 'unknown'
                                     for n in self.graph.nodes():
@@ -632,12 +652,13 @@ class Event:
                                 source_analyses_str = '|'.join(source_specs)
                             
                             card += f"""
-                            <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
+                            <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}"
                                  id="{node_id}"
                                  data-event-name="{self.name}"
-                                 data-review="{review_status}" 
+                                 data-review="{review_status}"
                                  data-status="{status}"
                                  data-node-name="{node.name}"
+                                 data-layer-index="{layer_idx}"
                                  data-predecessors="{predecessor_names}"
                                  data-successors="{successor_names}"
                                  data-source-analyses="{source_analyses_str}"
@@ -664,21 +685,28 @@ class Event:
                             
                             # Construct potential result page URLs based on pipeline
                             result_pages = []
-                            if webdir and rundir:
-                                # Extract just the directory name from the full rundir path
-                                import os
-                                rundir_name = os.path.basename(rundir.rstrip('/'))
-                                base_url = f"{webdir}/{rundir_name}"
-                                
-                                # Add common result page patterns for different pipelines
-                                if pipeline_name.lower() == 'bilby':
-                                    result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
-                                    result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
-                                elif pipeline_name.lower() == 'bayeswave':
-                                    result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
-                                elif pipeline_name.lower() == 'pesummary':
-                                    result_pages.append(f"{base_url}/home.html|PESummary Results")
-                            
+
+                            # Construct base URL using event name and analysis name
+                            import os
+                            base_url = f"{self.name}/{node.name}"
+
+                            # Add common result page patterns for different pipelines
+                            if pipeline_name.lower() == 'bilby':
+                                # Bilby uses pesummary subdirectory
+                                result_pages.append(f"{base_url}/pesummary/home.html|PESummary Home")
+                                result_pages.append(f"{base_url}/pesummary/plots/{node.name}_corner.png|Corner Plot")
+                                result_pages.append(f"{base_url}/pesummary/plots/{node.name}_psd_plot.png|PSD Plot")
+                                result_pages.append(f"{base_url}/pesummary/plots/{node.name}_waveform_time_domain.png|Waveform Plot")
+                            elif pipeline_name.lower() == 'bayeswave':
+                                result_pages.append(f"{base_url}/index.html|BayesWave Results")
+                                result_pages.append(f"{base_url}/plots/clean_whitened_residual_histograms.png|Residual Histograms")
+                            elif pipeline_name.lower() == 'pesummary':
+                                # PESummary as standalone pipeline
+                                result_pages.append(f"{base_url}/pesummary/home.html|PESummary Home")
+                                result_pages.append(f"{base_url}/pesummary/plots/corner.png|Corner Plot")
+                                result_pages.append(f"{base_url}/pesummary/plots/skymap.png|Sky Localization")
+                                result_pages.append(f"{base_url}/pesummary/plots/waveform_time_domain_H1L1.png|Waveform Plot")
+
                             result_pages_str = ';;'.join(result_pages) if result_pages else ''
                             
                             # Get current dependencies
@@ -705,13 +733,127 @@ class Event:
                             """
                         
                         card += """</div>"""
-                        
+
                         # Add arrow between layers
-                        if layer_idx < len(layers) - 1:
+                        if layer_idx < len(filtered_layers) - 1:
                             card += """<div class="graph-arrow">→</div>"""
-                    
-                    card += """</div>"""
-                    
+
+                    # Add SubjectAnalysis nodes as final layer
+                    if subject_nodes:
+                        # Add arrow before subject analysis layer
+                        if filtered_layers:
+                            card += """<div class="graph-arrow">→</div>"""
+
+                        card += """<div class="graph-layer">"""
+                        for node in subject_nodes:
+                            # Same HTML generation as regular nodes
+                            status = node.status if hasattr(node, 'status') else 'unknown'
+                            review_status, review_message = get_review_info(node)
+                            status_badge = status_map.get(status, 'secondary')
+                            pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
+
+                            predecessors = list(self.graph.predecessors(node))
+                            predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
+                            successors = list(self.graph.successors(node))
+                            successor_names = ','.join([succ.name for succ in successors]) if successors else ''
+
+                            running_indicator = '<span class="graph-running-indicator"></span>' if status in ['running', 'processing'] else ''
+                            review_indicator = get_review_indicator(review_status)
+
+                            is_subject = True  # We know these are subject analyses
+                            subject_class = ' graph-node-subject'
+
+                            is_stale = hasattr(node, 'is_stale') and node.is_stale
+                            is_refreshable = hasattr(node, 'is_refreshable') and node.is_refreshable
+                            stale_class = ' graph-node-stale' if is_stale else ''
+                            stale_indicator = '<span class="stale-badge" title="Dependencies changed - needs rerun">⟳</span>' if is_stale else ''
+
+                            node_id = f"node-{self.name}-{node.name}"
+                            data_id = f"analysis-data-{self.name}-{node.name}"
+
+                            # Get source analysis names for subject analyses
+                            source_analyses_str = ''
+                            source_names = []
+                            if hasattr(node, '_analysis_spec_names') and node._analysis_spec_names:
+                                source_names = node._analysis_spec_names
+                            elif hasattr(node, 'analyses') and node.analyses:
+                                source_names = [a.name for a in node.analyses if hasattr(a, 'name')]
+
+                            source_specs = []
+                            for source_name in source_names:
+                                source_status = 'unknown'
+                                for n in self.graph.nodes():
+                                    if n.name == source_name:
+                                        source_status = n.status if hasattr(n, 'status') else 'unknown'
+                                        break
+                                source_specs.append(f"{source_name}:{source_status}")
+                            source_analyses_str = '|'.join(source_specs)
+
+                            subject_layer_idx = len(filtered_layers)
+                            card += f"""
+                            <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}"
+                                 id="{node_id}"
+                                 data-event-name="{self.name}"
+                                 data-review="{review_status}"
+                                 data-status="{status}"
+                                 data-node-name="{node.name}"
+                                 data-layer-index="{subject_layer_idx}"
+                                 data-predecessors="{predecessor_names}"
+                                 data-successors="{successor_names}"
+                                 data-source-analyses="{source_analyses_str}"
+                                 data-is-subject="true"
+                                 data-is-stale="{str(is_stale).lower()}"
+                                 onclick="openAnalysisModal('{data_id}')">
+                                {running_indicator}
+                                {review_indicator}
+                                {stale_indicator}
+                                <div class="graph-node-title">{node.name}</div>
+                                <div class="graph-node-subtitle">{pipeline_name}</div>
+                            </div>
+                            """
+
+                            # Add hidden data container for modal
+                            comment = node.comment if hasattr(node, 'comment') and node.comment else ''
+                            rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
+                            approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
+
+                            import os
+                            base_url = f"{self.name}/{node.name}"
+
+                            result_pages = []
+                            if pipeline_name.lower() == 'pesummary':
+                                result_pages.append(f"{base_url}/pesummary/home.html|PESummary Home")
+                                result_pages.append(f"{base_url}/pesummary/plots/corner.png|Corner Plot")
+                                result_pages.append(f"{base_url}/pesummary/plots/skymap.png|Sky Localization")
+                                result_pages.append(f"{base_url}/pesummary/plots/waveform_time_domain_H1L1.png|Waveform Plot")
+
+                            result_pages_str = ';;'.join(result_pages) if result_pages else ''
+
+                            dependencies = node.dependencies if hasattr(node, 'dependencies') else []
+                            dependencies_str = ', '.join(dependencies) if dependencies else ''
+
+                            review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
+
+                            card += f"""
+                            <div id="{data_id}" style="display:none;"
+                                 data-name="{node.name}"
+                                 data-status="{status}"
+                                 data-status-badge="{status_badge}"
+                                 data-pipeline="{pipeline_name}"
+                                 data-rundir="{rundir}"
+                                 data-approximant="{approximant}"
+                                 data-comment="{comment}"
+                                 data-dependencies="{dependencies_str}"
+                                 data-review-status="{review_status}"
+                                 data-review-message="{review_message_escaped}"
+                                 data-result-pages="{result_pages_str}">
+                            </div>
+                            """
+
+                        card += """</div>"""  # Close subject analysis layer
+
+                    card += """</div>"""  # Close graph-container
+
                 else:
                     # Fallback for non-DAG: just list nodes
                     card += """<div class="graph-container">"""

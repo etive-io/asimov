@@ -4,6 +4,7 @@ Inspired by the kubectl apply approach from kubernetes.
 """
 
 import os
+import re
 import sys
 from copy import deepcopy
 from datetime import datetime
@@ -54,7 +55,47 @@ def get_ledger():
         return current_ledger
 
 
-def apply_page(file, event=None, ledger=None, update_page=False):
+def _raw_production_names(ledger, event_name):
+    """Return the set of production names for an event from raw ledger data.
+
+    Reads directly from ``ledger.events`` (a plain dict) rather than
+    constructing a full ``Event`` object, avoiding expensive git and
+    Production initialisation just to obtain a set of strings.
+    """
+    names = set()
+    for prod in ledger.events.get(event_name, {}).get("productions", []):
+        if isinstance(prod, dict) and len(prod) == 1:
+            names.add(next(iter(prod)))
+        elif isinstance(prod, dict) and "name" in prod:
+            names.add(prod["name"])
+    return names
+
+
+def next_available_name(name, existing_names):
+    """Return the next available analysis name, incrementing a numeric suffix if needed.
+
+    If ``name`` is not already taken, it is returned unchanged.  Otherwise the
+    trailing ``-N`` suffix (if present) is stripped to find the stem, and the
+    lowest integer >= 2 that produces a free name is appended.
+
+    Examples
+    --------
+    >>> next_available_name("bilby-IMRPhenomXPHM", {"bilby-IMRPhenomXPHM"})
+    'bilby-IMRPhenomXPHM-2'
+    >>> next_available_name("bilby-IMRPhenomXPHM-2", {"bilby-IMRPhenomXPHM-2"})
+    'bilby-IMRPhenomXPHM-3'
+    """
+    if name not in existing_names:
+        return name
+    match = re.match(r"^(.*)-(\d+)$", name)
+    stem, n = (match.group(1), int(match.group(2))) if match else (name, 1)
+    n += 1
+    while f"{stem}-{n}" in existing_names:
+        n += 1
+    return f"{stem}-{n}"
+
+
+def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False):
     # Get ledger if not provided
     if ledger is None:
         ledger = get_ledger()
@@ -121,10 +162,10 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                 history[version]["date changed"] = datetime.now()
 
                 ledger.data["history"][event_obj.name] = history
-                ledger.save()
                 update(ledger.events[event_obj.name], event_obj.meta)
                 ledger.events[event_obj.name]["productions"] = analyses
                 ledger.events[event_obj.name].pop("ledger", None)
+                ledger.save()
 
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
@@ -169,33 +210,46 @@ def apply_page(file, event=None, ledger=None, update_page=False):
                         prompt = "Which event should these be applied to?"
                     event_s = str(click.prompt(prompt))
                     
+            # Resolve name overrides before constructing the Event object.
+            # Reading from the raw ledger dict is cheap; get_event() is expensive
+            # (it instantiates Production objects and runs git/graph operations).
+            if name is not None or iterate:
+                existing_names = _raw_production_names(ledger, event_s)
             for expanded_doc in expanded_documents:
-                    
-              try:
-                  event_obj = ledger.get_event(event_s)[0]
-              except KeyError as e:
-                  click.echo(
-                      click.style("●", fg="red")
-                      + f" Could not apply a production, couldn't find the event {event}"
-                  )
-                  logger.exception(e)
-              production = asimov.event.Production.from_dict(
-                  parameters=expanded_doc, subject=event_obj, ledger=ledger
-              )
-              try:
-                  ledger.add_analysis(production, event=event_obj)
-                  click.echo(
-                      click.style("●", fg="green")
-                      + f" Successfully applied {production.name} to {event_obj.name}"
-                  )
-                  logger.info(f"Added {production.name} to {event_obj.name}")
-              except ValueError as e:
-                  click.echo(
-                      click.style("●", fg="red")
-                      + f" Could not apply {production.name} to {event_obj.name} as "
-                      + "an analysis already exists with this name"
-                  )
-                  logger.exception(e)
+                if name is not None:
+                    expanded_doc["name"] = name
+                elif iterate:
+                    expanded_doc["name"] = next_available_name(expanded_doc["name"], existing_names)
+                    # Keep existing_names current so consecutive iterations in a
+                    # strategy expansion don't collide with each other.
+                    existing_names.add(expanded_doc["name"])
+
+                try:
+                    event_obj = ledger.get_event(event_s)[0]
+                except KeyError as e:
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Could not apply a production, couldn't find the event {event}"
+                    )
+                    logger.exception(e)
+                    continue
+                production = asimov.event.Production.from_dict(
+                    parameters=expanded_doc, subject=event_obj, ledger=ledger
+                )
+                try:
+                    ledger.add_analysis(production, event=event_obj)
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Successfully applied {production.name} to {event_obj.name}"
+                    )
+                    logger.info(f"Added {production.name} to {event_obj.name}")
+                except ValueError as e:
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Could not apply {production.name} to {event_obj.name} as "
+                        + "an analysis already exists with this name"
+                    )
+                    logger.exception(e)
 
         elif document["kind"].lower() == "postprocessing":
             # Handle a project analysis
@@ -436,11 +490,24 @@ def apply_via_plugin(event, hookname, **kwargs):
     default=False,
     help="Update the project with this blueprint rather than adding a new record.",
 )
-def apply(file, event, plugin, update):
+@click.option(
+    "--name",
+    "-n",
+    default=None,
+    help="Override the analysis name specified in the blueprint.",
+)
+@click.option(
+    "--iterate",
+    "-I",
+    is_flag=True,
+    default=False,
+    help="Automatically increment the analysis name suffix to avoid a name conflict.",
+)
+def apply(file, event, plugin, update, name, iterate):
     from asimov import setup_file_logging
     current_ledger = get_ledger()
     setup_file_logging()
     if plugin:
         apply_via_plugin(event, hookname=plugin)
     elif file:
-        apply_page(file, event, ledger=current_ledger, update_page=update)
+        apply_page(file, event, ledger=current_ledger, update_page=update, name=name, iterate=iterate)

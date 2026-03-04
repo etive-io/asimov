@@ -401,6 +401,8 @@ def html(event, webdir):
             margin: 1rem 0;
             min-height: 200px;
             position: relative;
+            overflow-x: auto;
+            overflow-y: visible;
         }
 
         .graph-node {
@@ -566,6 +568,7 @@ def html(event, webdir):
         
         /* Subject analysis connection styling - use purple for dependencies */
         .connection-line-subject {
+            fill: none;
             stroke: #6f42c1;
             stroke-width: 3;
             opacity: 0.7;
@@ -575,27 +578,30 @@ def html(event, webdir):
         .connection-edge {
             transition: opacity 0.3s ease;
         }
-        
+
         .connection-edge:hover {
             opacity: 1 !important;
         }
-        
-        .connection-edge.connection-included .connection-line {
+
+        .connection-included {
+            fill: none;
             stroke: #28a745;
             stroke-dasharray: none;
             stroke-width: 2.5;
             opacity: 0.8;
         }
-        
-        .connection-edge.connection-pending .connection-line {
+
+        .connection-pending {
+            fill: none;
             stroke: #ffc107;
             stroke-dasharray: 5,5;
             stroke-width: 2.5;
             opacity: 0.7;
             animation: flow 0.6s linear infinite;
         }
-        
-        .connection-edge.connection-waiting .connection-line {
+
+        .connection-waiting {
+            fill: none;
             stroke: #586069;
             stroke-dasharray: 2,3;
             stroke-width: 2;
@@ -726,6 +732,80 @@ def html(event, webdir):
 
         .event-toggle:hover {
             color: #0366d6;
+        }
+
+        /* Project Analysis Styling */
+        .project-analyses-section {
+            margin-bottom: 2rem;
+        }
+
+        .project-analyses-header {
+            margin: 2rem 0 1rem 1rem;
+            color: #667eea;
+            border-bottom: 2px solid #e1e4e8;
+            padding-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .project-analysis-card {
+            background-color: #f8f9fa;
+            border-left: 4px solid #667eea !important;
+            margin-bottom: 2rem;
+        }
+
+        .project-analysis-card .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 1.25rem;
+            border-bottom: none;
+        }
+
+        .project-analysis-card .card-header h3 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .project-analysis-card .card-header .text-muted {
+            color: rgba(255, 255, 255, 0.9) !important;
+            margin: 0.5rem 0 0.5rem 0;
+        }
+
+        .project-analysis-card .card-header .badge {
+            margin-top: 0.5rem;
+        }
+
+        .project-analysis-card .card-body {
+            padding: 1.5rem;
+        }
+
+        .catalog-plot-container {
+            margin-top: 1.5rem;
+            text-align: center;
+            background-color: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #e1e4e8;
+        }
+
+        .catalog-plot-container h5 {
+            margin-bottom: 1rem;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .catalog-plot-container img {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 100%;
+            height: auto;
+        }
+
+        .catalog-plotter-section {
+            margin-top: 1rem;
+        }
+
+        .catalog-plotter-section p {
+            margin: 0.5rem 0;
         }
 
 </style>
@@ -1152,6 +1232,184 @@ def html(event, webdir):
         });
     }
 
+    // Create octilinear (tube-map style) path between two points with rounded corners
+    // Only uses horizontal, vertical, and 45-degree diagonal segments
+    // Route a skip-layer connection below the graph so it doesn't pass through
+    // intermediate nodes.  The path drops to a horizontal "bus" below all nodes,
+    // crosses the graph at that level, then rises back up to the target.
+    function createBypassPath(x1, y1, x2, y2, containerHeight) {
+        var busY = containerHeight + 24;  // 24px below the lowest node
+        var cornerRadius = 8;
+        var exitX = x1 + 20;  // short horizontal segment before dropping
+        var path = 'M ' + x1 + ' ' + y1;
+
+        // Short horizontal exit so the path leaves the node cleanly rightward
+        path += ' L ' + (exitX - cornerRadius) + ' ' + y1;
+        path += ' Q ' + exitX + ' ' + y1 + ' ' + exitX + ' ' + (y1 + cornerRadius);
+
+        // Drop down to bus level
+        path += ' L ' + exitX + ' ' + (busY - cornerRadius);
+        path += ' Q ' + exitX + ' ' + busY + ' ' + (exitX + cornerRadius) + ' ' + busY;
+
+        // Horizontal bus segment
+        path += ' L ' + (x2 - cornerRadius) + ' ' + busY;
+
+        // Rise up to target
+        path += ' Q ' + x2 + ' ' + busY + ' ' + x2 + ' ' + (busY - cornerRadius);
+        path += ' L ' + x2 + ' ' + y2;
+
+        return path;
+    }
+
+    function createOctilinearPath(x1, y1, x2, y2, verticalOffset) {
+        verticalOffset = verticalOffset || 0;
+        var yStart = y1 + verticalOffset;
+        var yEnd = y2;  // Don't apply offset to end point for cleaner convergence
+
+        var path = 'M ' + x1 + ' ' + yStart;
+        var dx = x2 - x1;
+        var dy = yEnd - yStart;
+
+        // Radius for rounded corners
+        var cornerRadius = 8;
+
+        // Minimum horizontal segment length before diagonal
+        var minHorizontal = 30;
+
+        if (Math.abs(dy) < 3) {
+            // Nearly horizontal - just draw a straight line
+            path += ' L ' + x2 + ' ' + yEnd;
+        } else if (Math.abs(dy) < 40) {
+            // Small vertical distance - use simple single diagonal path WITHOUT rounded corners
+            // to avoid kinks from imperfect bezier curves
+            var diagStart = x1 + minHorizontal;
+            path += ' L ' + diagStart + ' ' + yStart;
+
+            // Single diagonal to reach target height (no rounded corners)
+            var diagEnd = x2 - minHorizontal;
+            var diagDist = Math.min(Math.abs(dy), diagEnd - diagStart);
+
+            if (diagDist > 0) {
+                var diagonalSign = dy > 0 ? 1 : -1;
+                path += ' L ' + (diagStart + diagDist) + ' ' + (yStart + diagonalSign * diagDist);
+
+                // Final horizontal segment
+                path += ' L ' + x2 + ' ' + yEnd;
+            } else {
+                // Not enough space for diagonal, just connect directly
+                path += ' L ' + x2 + ' ' + yEnd;
+            }
+        } else {
+            // Use octilinear routing with 45-degree diagonals and rounded corners
+            var midX = x1 + dx / 2;
+
+            // Determine the diagonal distance we can cover
+            var diagonalDist = Math.min(Math.abs(dy), Math.abs(dx / 2 - minHorizontal));
+
+            if (diagonalDist > cornerRadius * 2) {
+                // First horizontal segment
+                var x1End = x1 + minHorizontal;
+                path += ' L ' + (x1End - cornerRadius) + ' ' + yStart;
+
+                // First rounded corner into diagonal
+                var diagonalSign = dy > 0 ? 1 : -1;
+                path += ' Q ' + x1End + ' ' + yStart + ' ' +
+                       (x1End + cornerRadius) + ' ' + (yStart + diagonalSign * cornerRadius);
+
+                // First diagonal (45 degrees)
+                var x1Diag = x1End + diagonalDist;
+                var y1Diag = yStart + diagonalSign * diagonalDist;
+                path += ' L ' + (x1Diag - cornerRadius) + ' ' + (y1Diag - diagonalSign * cornerRadius);
+
+                // Check if we need a second diagonal or can go straight to target
+                var remainingDy = dy - diagonalSign * diagonalDist;
+
+                if (Math.abs(remainingDy) > cornerRadius * 2 + 10) {
+                    // Check whether there is enough horizontal room for a proper middle
+                    // segment between the two diagonals.  When dx is small relative to dy
+                    // the middle segment degenerates to a few pixels, producing a kinked
+                    // path that looks like it doubles back on itself.
+                    var x2Start = x2 - minHorizontal - Math.abs(remainingDy);
+                    var middleLength = x2Start - x1Diag;
+
+                    if (middleLength >= cornerRadius * 3) {
+                        // Enough room: use the standard two-diagonal routing.
+                        // Rounded corner out of first diagonal
+                        path += ' Q ' + x1Diag + ' ' + y1Diag + ' ' +
+                               (x1Diag + cornerRadius) + ' ' + y1Diag;
+
+                        // Middle horizontal segment
+                        path += ' L ' + (x2Start - cornerRadius) + ' ' + y1Diag;
+
+                        // Rounded corner into second diagonal
+                        path += ' Q ' + x2Start + ' ' + y1Diag + ' ' +
+                               (x2Start + cornerRadius) + ' ' + (y1Diag + diagonalSign * cornerRadius);
+
+                        // Second diagonal
+                        var x2Diag = x2 - minHorizontal;
+                        path += ' L ' + (x2Diag - cornerRadius) + ' ' + (yEnd - diagonalSign * cornerRadius);
+
+                        // Rounded corner out of second diagonal
+                        path += ' Q ' + x2Diag + ' ' + yEnd + ' ' +
+                               (x2Diag + cornerRadius) + ' ' + yEnd;
+
+                        // Final horizontal segment
+                        path += ' L ' + x2 + ' ' + yEnd;
+                    } else {
+                        // Not enough room for two diagonals — use a single diagonal
+                        // that covers the full dy.  Rebuild the path from scratch to
+                        // discard the partial first diagonal already accumulated.
+                        var fullDiagDist = Math.min(Math.abs(dy), x2 - x1 - 2 * minHorizontal);
+                        path = 'M ' + x1 + ' ' + yStart;
+                        path += ' L ' + (x1End - cornerRadius) + ' ' + yStart;
+                        path += ' Q ' + x1End + ' ' + yStart + ' ' +
+                               (x1End + cornerRadius) + ' ' + (yStart + diagonalSign * cornerRadius);
+                        var xDiagEnd = x1End + fullDiagDist;
+                        var yDiagEnd = yStart + diagonalSign * fullDiagDist;
+                        path += ' L ' + (xDiagEnd - cornerRadius) + ' ' + (yDiagEnd - diagonalSign * cornerRadius);
+                        path += ' Q ' + xDiagEnd + ' ' + yDiagEnd + ' ' +
+                               (xDiagEnd + cornerRadius) + ' ' + yDiagEnd;
+                        path += ' L ' + x2 + ' ' + yEnd;
+                    }
+                } else {
+                    // Rounded corner out of diagonal, then to target
+                    path += ' Q ' + x1Diag + ' ' + y1Diag + ' ' +
+                           (x1Diag + cornerRadius) + ' ' + y1Diag;
+
+                    if (Math.abs(remainingDy) > cornerRadius) {
+                        // There is a small vertical offset still to cover (cornerRadius <
+                        // |remainingDy| < cornerRadius*2+10).  The corner-based approach
+                        // breaks here because the first Q already overshoots the "stop
+                        // cornerRadius before yEnd" point.  Use a cubic bezier instead for
+                        // a smooth, kink-free final approach to the target.
+                        path += ' L ' + (x2 - cornerRadius * 3) + ' ' + y1Diag;
+                        path += ' C ' + (x2 - cornerRadius) + ' ' + y1Diag + ' ' +
+                               x2 + ' ' + (y1Diag + diagonalSign * Math.abs(remainingDy)) + ' ' +
+                               x2 + ' ' + yEnd;
+                    } else {
+                        path += ' L ' + x2 + ' ' + yEnd;
+                    }
+                }
+            } else {
+                // Not enough space for proper diagonals, use simpler orthogonal path with rounded corners
+                path += ' L ' + (midX - cornerRadius) + ' ' + yStart;
+
+                var verticalSign = dy > 0 ? 1 : -1;
+                path += ' Q ' + midX + ' ' + yStart + ' ' +
+                       midX + ' ' + (yStart + verticalSign * cornerRadius);
+
+                path += ' L ' + midX + ' ' + (yEnd - verticalSign * cornerRadius);
+
+                path += ' Q ' + midX + ' ' + yEnd + ' ' +
+                       (midX + cornerRadius) + ' ' + yEnd;
+
+                path += ' L ' + x2 + ' ' + yEnd;
+            }
+        }
+
+        return path;
+    }
+
     // Draw SVG connections between graph layers
     function drawGraphConnections() {
         document.querySelectorAll('.workflow-graph').forEach(function(graphContainer) {
@@ -1160,21 +1418,22 @@ def html(event, webdir):
             if (existingSvg) {
                 existingSvg.remove();
             }
-            
+
             var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.classList.add('graph-connections');
-            
+
             var container = graphContainer.querySelector('.graph-container');
             if (!container) return;
-            
+
             // Get all graph nodes (not layers, since we need actual dependencies)
             var allNodes = container.querySelectorAll('.graph-node');
             if (allNodes.length === 0) return;
-            
+
             // Calculate SVG dimensions
             var containerRect = container.getBoundingClientRect();
             svg.setAttribute('width', containerRect.width);
-            svg.setAttribute('height', containerRect.height);
+            svg.setAttribute('height', containerRect.height + 48);  // Extra space for bypass paths below nodes
+            svg.setAttribute('overflow', 'visible');
             
             // Draw regular connections based on actual dependencies
             allNodes.forEach(function(sourceNode) {
@@ -1201,41 +1460,39 @@ def html(event, webdir):
                     if (!targetNode || targetNode.style.display === 'none' || targetNode.classList.contains('hidden') || targetNode.classList.contains('filtered-hidden')) {
                         return;
                     }
-                    
+
+                    // Skip connections to subject analyses - they'll be drawn by the special subject analysis code below
+                    var isTargetSubject = targetNode.dataset.isSubject === 'true';
+                    if (isTargetSubject) {
+                        return;
+                    }
+
                     var sourceRect = sourceNode.getBoundingClientRect();
                     var targetRect = targetNode.getBoundingClientRect();
-                    
+
                     // Calculate connection points (center right of source, center left of target)
                     var x1 = sourceRect.right - containerRect.left;
                     var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
                     var x2 = targetRect.left - containerRect.left;
                     var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-                    
-                    // Create curved path
+
                     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    
-                    // Calculate control points for bezier curve
-                    var controlPointOffset = Math.abs(x2 - x1) / 2;
-                    var cx1 = x1 + controlPointOffset;
-                    var cy1 = y1;
-                    var cx2 = x2 - controlPointOffset;
-                    var cy2 = y2;
-                    
-                    // Create smooth cubic bezier curve
-                    var d = 'M ' + x1 + ' ' + y1 + 
-                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
-                                   cx2 + ' ' + cy2 + ', ' + 
-                                   x2 + ' ' + y2;
-                    
-                    path.setAttribute('d', d);
-                    
-                    // Use different styling for connections to/from subject analyses
-                    var isTargetSubject = targetNode.dataset.isSubject === 'true';
-                    if (isTargetSubject) {
-                        path.classList.add('connection-line-subject');
+
+                    // Use bypass routing for skip-layer connections (span > 1 layer) so
+                    // the path doesn't cut visually through intermediate nodes.
+                    var sourceLayerIndex = parseInt(sourceNode.dataset.layerIndex || '0');
+                    var targetLayerIndex = parseInt(targetNode.dataset.layerIndex || '0');
+                    var d;
+                    if (targetLayerIndex - sourceLayerIndex > 1) {
+                        d = createBypassPath(x1, y1, x2, y2, containerRect.height);
                     } else {
-                        path.classList.add('connection-line');
+                        d = createOctilinearPath(x1, y1, x2, y2, 0);
                     }
+
+                    path.setAttribute('d', d);
+
+                    // Regular connections (non-subject)
+                    path.classList.add('connection-line');
                     
                     svg.appendChild(path);
                 });
@@ -1268,29 +1525,24 @@ def html(event, webdir):
                     
                     var sourceRect = sourceNode.getBoundingClientRect();
                     var targetRect = subjectNode.getBoundingClientRect();
-                    
+
                     // Calculate connection points
                     var x1 = sourceRect.right - containerRect.left;
                     var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
                     var x2 = targetRect.left - containerRect.left;
                     var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-                    
+
                     // Create path for source analysis dependency
                     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    
-                    // Calculate control points for bezier curve
-                    var controlPointOffset = Math.abs(x2 - x1) / 2;
-                    var cx1 = x1 + controlPointOffset;
-                    var cy1 = y1;
-                    var cx2 = x2 - controlPointOffset;
-                    var cy2 = y2;
-                    
-                    // Create smooth cubic bezier curve
-                    var d = 'M ' + x1 + ' ' + y1 + 
-                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
-                                   cx2 + ' ' + cy2 + ', ' + 
-                                   x2 + ' ' + y2;
-                    
+
+                    // Add vertical offset based on index to prevent overlap
+                    var sourceIndex = Array.from(sourceSpecs).indexOf(spec);
+                    var totalSources = sourceSpecs.length;
+                    var verticalOffset = (sourceIndex - (totalSources - 1) / 2) * 8;
+
+                    // Create octilinear (tube-map style) path
+                    var d = createOctilinearPath(x1, y1, x2, y2, verticalOffset);
+
                     path.setAttribute('d', d);
                     
                     // Determine path styling based on source analysis status
@@ -1439,6 +1691,23 @@ def html(event, webdir):
     cards += toc
     cards += """</div><div class='events col-md-9 col-xl-10'
     data-isotope='{ "itemSelector": ".production-item", "layoutMode": "fitRows" }'>"""
+
+    # Add project analyses section before event cards
+    project_analyses = current_ledger.project_analyses
+    if project_analyses and len(project_analyses) > 0:
+        cards += """
+<div class='project-analyses-section'>
+    <h3 class='project-analyses-header'>Project Analyses</h3>
+</div>
+"""
+        for project_analysis in project_analyses:
+            try:
+                cards += project_analysis.html()
+            except Exception as e:
+                # Log error but continue rendering other project analyses
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to render HTML for project analysis {project_analysis.name}: {e}")
 
     for event in events:
         card = ""

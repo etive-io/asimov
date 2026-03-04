@@ -25,4 +25,8 @@ known_pipelines = {
 
 
 for pipeline in discovered_pipelines:
-    known_pipelines[pipeline.name] = pipeline.load()
+    try:
+        known_pipelines[pipeline.name] = pipeline.load()
+    except (ModuleNotFoundError, ImportError):
+        # Skip pipelines that can't be imported (e.g., testing pipelines in production)
+        pass
