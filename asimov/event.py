@@ -678,16 +678,10 @@ class Event:
                             rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                             approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
                             
-                            # Get webdir for results links
-                            webdir = ''
-                            if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
-                                webdir = node.event.webdir
-                            
                             # Construct potential result page URLs based on pipeline
                             result_pages = []
 
                             # Construct base URL using event name and analysis name
-                            import os
                             base_url = f"{self.name}/{node.name}"
 
                             # Add common result page patterns for different pipelines
@@ -817,7 +811,6 @@ class Event:
                             rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
                             approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
 
-                            import os
                             base_url = f"{self.name}/{node.name}"
 
                             result_pages = []

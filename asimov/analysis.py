@@ -24,6 +24,7 @@ Project analyses
 """
 
 import os
+import html
 import configparser
 from copy import deepcopy
 import pathlib
@@ -1361,7 +1362,9 @@ class ProjectAnalysis(Analysis):
             # except KeyError:
             self.logger.warning(f"The pipeline {pipeline} could not be found.")
         
-        needs_value = self.meta.pop("needs", None)
+        # Read 'needs' from kwargs before it gets merged into self.meta so we
+        # don't accidentally mutate the class-level meta_defaults dict.
+        needs_value = kwargs.pop("needs", None)
         self._needs = cast(List[Any], needs_value) if needs_value is not None else []
 
         if "comment" in kwargs:
@@ -1662,14 +1665,15 @@ class ProjectAnalysis(Analysis):
         # Status badge mapping
         status_badge = status_map.get(self.status, "secondary")
 
+        safe_name = html.escape(self.name)
         card = f"""
-<div class='project-analysis-card card event-data' id='project-{self.name}'>
+<div class='project-analysis-card card event-data' id='project-{safe_name}'>
     <div class='card-header'>
-        <h3 class='card-title'>{self.name}</h3>
+        <h3 class='card-title'>{safe_name}</h3>
 """
 
         if self.comment:
-            card += f"        <p class='text-muted'>{self.comment}</p>\n"
+            card += f"        <p class='text-muted'>{html.escape(self.comment)}</p>\n"
 
         # Status badge
         card += f"""        <span class='badge badge-{status_badge}'>{self.status}</span>

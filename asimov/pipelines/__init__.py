@@ -1,3 +1,4 @@
+import logging
 import sys
 
 if sys.version_info < (3, 10):
@@ -14,6 +15,8 @@ from asimov.pipelines.pesummary import PESummary
 
 discovered_pipelines = entry_points(group="asimov.pipelines")
 
+logger = logging.getLogger(__name__)
+
 
 known_pipelines = {
     "bayeswave": BayesWave,
@@ -27,6 +30,10 @@ known_pipelines = {
 for pipeline in discovered_pipelines:
     try:
         known_pipelines[pipeline.name] = pipeline.load()
-    except (ModuleNotFoundError, ImportError):
-        # Skip pipelines that can't be imported (e.g., testing pipelines in production)
-        pass
+    except (ModuleNotFoundError, ImportError) as e:
+        logger.warning(
+            "Could not load pipeline entry point %r: %s. "
+            "This pipeline will not be available.",
+            pipeline.name,
+            e,
+        )
