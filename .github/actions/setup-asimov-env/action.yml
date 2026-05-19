@@ -45,6 +45,7 @@ runs:
       if: steps.cache-env.outputs.cache-hit != 'true'
       shell: bash -el {0}
       run: |
+        git config --global --add safe.directory "${GITHUB_WORKSPACE}"
         conda install -y -n asimov --file conda/packages.txt
         conda install -y -n asimov conda-build
         pip install .
