@@ -126,6 +126,13 @@ class RunningState(MonitorState):
         
         job_status = _get_job_status(job)
 
+        if job_status in ("idle", "running"):
+            # Cached state may be stale if job completed before TTL expired.
+            # A cheap file-existence check catches this before trusting the cache.
+            pipe = analysis.pipeline
+            if pipe and pipe.detect_completion():
+                return self._handle_no_condor_job(context)
+
         if job_status == "idle":
             click.echo(
                 "  \t  "

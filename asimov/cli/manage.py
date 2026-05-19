@@ -352,9 +352,11 @@ def submit(event, update, dryrun):
                     f"The pipeline failed to submit the DAG file to the cluster. {e}",
                 )
             if not dryrun:
-                # Refresh the job list
-                job_list = condor.CondorJobList()
-                job_list.refresh()
+                # Refresh the condor job list (only when using HTCondor)
+                from asimov import config as _cfg
+                if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
+                    job_list = condor.CondorJobList()
+                    job_list.refresh()
                 # Update the ledger
                 ledger.save()
 
