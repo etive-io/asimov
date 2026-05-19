@@ -254,7 +254,7 @@ class NameIterateTests(AsimovTestCase):
 
     def setUp(self):
         super().setUp()
-        # Add the base event and a first analysis so we have an existing name
+        # Apply the event YAML so the event exists for subsequent analysis applications
         apply_page(
             f"{self.cwd}/tests/test_data/test_event.yaml",
             ledger=self.ledger,
