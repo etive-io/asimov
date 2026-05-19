@@ -259,6 +259,11 @@ class Likelihood(Blueprint):
         description="The minimum frequency for the likelihood evaluation, given as a dictionary of values per interferometer.",
         default=None,
     )
+    maximum_frequency: Optional[Dict[str, float]] = pydantic.Field(
+        alias="maximum frequency",
+        description="The maximum frequency for the likelihood evaluation, given as a dictionary of values per interferometer.",
+        default=None,
+    )
 
     model_config = ConfigDict(extra='forbid')
 

@@ -1700,13 +1700,23 @@ class GravitationalWaveTransient(SimpleAnalysis):
             # TODO: Should probably raise a deprecation warning
             self.meta["sampler"]["lmax"] = self.meta["lmax"]
 
-        # Check that the upper frequency is included, otherwise calculate it
+        # Migrate maximum frequency from quality to likelihood
+        if "quality" in self.meta and "maximum frequency" in self.meta["quality"]:
+            self.logger.warning(
+                "Found 'maximum frequency' in the 'quality' section; "
+                "this is deprecated. Please move it to the 'likelihood' section. "
+                "It has been automatically migrated for this run."
+            )
+            if "maximum frequency" not in self.meta["likelihood"]:
+                self.meta["likelihood"]["maximum frequency"] = self.meta["quality"]["maximum frequency"]
+
+        # Calculate maximum frequency from sample rate if not provided
         if "sample rate" in self.meta["likelihood"] and "interferometers" in self.meta:
-            if "maximum frequency" not in self.meta.get("quality", {}):
-                self.meta.setdefault("quality", {})["maximum frequency"] = {}
+            if "maximum frequency" not in self.meta["likelihood"]:
+                self.meta["likelihood"]["maximum frequency"] = {}
                 # Account for the PSD roll-off with the 0.875 factor
                 for ifo in self.meta["interferometers"]:
-                    self.meta["quality"]["maximum frequency"][ifo] = int(
+                    self.meta["likelihood"]["maximum frequency"][ifo] = int(
                         0.875 * self.meta["likelihood"]["sample rate"] / 2
                     )
 
