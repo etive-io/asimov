@@ -1,3 +1,7 @@
+*node_modules*
+.venv-simple
+docs/lvk
+
 # Python build artifacts
 __pycache__/
 *.py[cod]

@@ -9,6 +9,8 @@ Supported Schedulers are:
 """
 
 import os
+import re
+import subprocess
 import datetime
 import yaml
 import warnings
@@ -336,34 +338,92 @@ class HTCondor(Scheduler):
 
 class Slurm(Scheduler):
     """
-    Scheduler implementation for Slurm.
-    
-    Note: This is a placeholder implementation for future Slurm support.
+    Scheduler implementation for Slurm (sbatch/squeue/scancel).
     """
-    
-    def __init__(self):
-        """Initialize the Slurm scheduler."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
-    
-    def submit(self, job_description):
-        """Submit a job to Slurm."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
-    
+
+    # Map Slurm state codes to HTCondor-compatible integer status codes so the
+    # rest of asimov's monitoring machinery can interpret them uniformly.
+    _STATE_MAP = {
+        "PD": 1,   # Pending  → Idle
+        "R":  2,   # Running  → Running
+        "CA": 3,   # Cancelled → Removed
+        "CD": 4,   # Completed → Completed
+        "CG": 2,   # Completing → Running
+        "F":  5,   # Failed   → Held
+        "TO": 5,   # Timeout  → Held
+        "OOM": 5,  # Out of memory → Held
+    }
+
+    def __init__(self, user=None):
+        self.user = user or os.environ.get("USER", "")
+
+    def submit(self, script_file):
+        """Submit an sbatch script; returns the Slurm job ID."""
+        result = subprocess.run(
+            ["sbatch", script_file],
+            capture_output=True, text=True, check=True,
+        )
+        match = re.search(r"Submitted batch job (\d+)", result.stdout)
+        if not match:
+            raise RuntimeError(
+                f"Could not parse job ID from sbatch output: {result.stdout}"
+            )
+        return int(match.group(1))
+
     def delete(self, job_id):
-        """Delete a job from Slurm."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
-    
+        """Cancel a Slurm job."""
+        subprocess.run(["scancel", str(job_id)], check=True)
+
     def query(self, job_id=None):
-        """Query Slurm for job status."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
-    
+        """Return squeue output for one job (or all jobs if job_id is None)."""
+        if job_id is not None:
+            result = subprocess.run(
+                ["squeue", "-j", str(job_id), "-h", "--format=%i %T"],
+                capture_output=True, text=True,
+            )
+            return result.stdout.strip()
+        return self.query_all_jobs()
+
     def submit_dag(self, dag_file, batch_name=None, **kwargs):
-        """Submit a DAG to Slurm."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
-    
+        """
+        Submit an sbatch wrapper script located alongside dag_file.
+
+        Expects a file named ``sbatch_submit.sh`` in the same directory as
+        dag_file, written by the pipeline's build_dag() method.
+        """
+        script = os.path.join(os.path.dirname(dag_file), "sbatch_submit.sh")
+        if not os.path.exists(script):
+            raise FileNotFoundError(
+                f"sbatch_submit.sh not found alongside {dag_file}. "
+                "Ensure build_dag() creates it for Slurm."
+            )
+        return self.submit(script)
+
     def query_all_jobs(self):
-        """Query all jobs from Slurm."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
+        """Return all running jobs for the configured user as a list of dicts."""
+        args = ["squeue", "--format=%i|%j|%T|%C", "-h"]
+        if self.user:
+            args += ["-u", self.user]
+        result = subprocess.run(args, capture_output=True, text=True)
+        data = []
+        for line in result.stdout.strip().splitlines():
+            if not line:
+                continue
+            parts = line.split("|")
+            if len(parts) < 4:
+                continue
+            job_id, name, state, cpus = parts[:4]
+            try:
+                data.append({
+                    "id": int(job_id),
+                    "command": "",
+                    "hosts": int(cpus) if cpus.isdigit() else 0,
+                    "status": self._STATE_MAP.get(state, 0),
+                    "name": name,
+                })
+            except ValueError:
+                continue
+        return data
 
 
 class Job:

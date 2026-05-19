@@ -156,4 +156,31 @@ jobs:
         with:
           script: |
             asimov monitor
-            echo "All testing pipelines completed successfully!"
+            python3 << 'EOF'
+            import sys
+            from asimov.monitor_api import get_analysis_status
+            statuses = get_analysis_status()
+            print("Final analysis statuses:")
+            failures = []
+            for name, status in statuses.items():
+                print(f"  {name}: {status}")
+                if str(status).lower() != "complete":
+                    failures.append(f"{name}: {status}")
+            if failures:
+                print(f"\nFAIL: {len(failures)} analyses not complete:")
+                for f in failures:
+                    print(f"  - {f}")
+                sys.exit(1)
+            print(f"\nAll {len(statuses)} analyses are complete!")
+            EOF
+
+      - name: Archive artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-pipelines-debug
+          path: |
+            .asimov/
+            working/
+            checkouts/
+          retention-days: 5

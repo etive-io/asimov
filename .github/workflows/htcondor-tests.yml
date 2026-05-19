@@ -1,5 +1,11 @@
 name: Tests with HTCondor
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+      - "v*-preview"
+      - "v*-release"
+  workflow_dispatch:
 
 jobs:
   tests:
@@ -68,12 +74,10 @@ jobs:
               server.stop()
           EOF
           
-          # Give the server time to start
-          sleep 3
-      
-      - name: Verify server is running
-        run: |
-          curl -f http://localhost:8765/api/v1/gwf/H/H1_LOSC_16_V1/1126259460,1126259464/file.json || echo "Server check failed but continuing..."
+          # Poll until the server is ready (up to 30 seconds)
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8765/api/v1/gwf/H/H1_LOSC_16_V1/1126259460,1126259464/file.json && break || sleep 2
+          done
       
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
@@ -169,8 +173,8 @@ jobs:
 
       - name: Stop megaplot and cleanup cache
         run: |
-            condor_rm 2
-            rm .asimov/_cache_jobs.yaml
+            condor_rm -all || true
+            rm -f .asimov/_cache_jobs.yaml
 
       - name: Run the asimov monitor
         uses: ./.github/actions/run-asimov-command
@@ -265,7 +269,21 @@ jobs:
                 assert results['total'] >= 0, "Total should be non-negative"
                 assert results['total'] == results['project_analyses'] + results['event_analyses'], \
                     "Total should equal sum of project and event analyses"
-                
+
+                # Verify all analyses reached complete state
+                print("\n5. Verifying all analyses are complete...")
+                statuses = get_analysis_status()
+                failures = []
+                for name, status in statuses.items():
+                    print(f"   - {name}: {status}")
+                    if str(status).lower() not in ("complete", "uploaded"):
+                        failures.append(f"{name}: {status}")
+                if failures:
+                    print(f"\nFAIL: {len(failures)} analyses not complete:")
+                    for f in failures:
+                        print(f"  - {f}")
+                    sys.exit(1)
+
                 print("\n=== All programmatic API tests passed! ===")
                 sys.exit(0)
             except Exception as e:

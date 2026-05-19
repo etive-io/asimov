@@ -7,5 +7,7 @@ runs:
       shell: bash
       run: |
         condor_master &
-        sleep 10
+        for i in $(seq 1 30); do
+          condor_status && break || sleep 3
+        done
         condor_status

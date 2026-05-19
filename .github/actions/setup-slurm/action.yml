@@ -1,0 +1,68 @@
+name: 'Setup Slurm'
+description: 'Install and start a minimal single-node Slurm instance'
+runs:
+  using: "composite"
+  steps:
+    - name: Install Slurm and munge
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y slurm-wlm munge
+
+    - name: Configure munge
+      shell: bash
+      run: |
+        sudo /usr/sbin/create-munge-key -f
+        sudo chown munge:munge /etc/munge/munge.key
+        sudo chmod 400 /etc/munge/munge.key
+        sudo service munge start
+
+    - name: Configure Slurm
+      shell: bash
+      run: |
+        CPUS=$(nproc)
+        HOSTNAME=$(hostname -s)
+        sudo mkdir -p /var/spool/slurmd /var/spool/slurmctld /var/log/slurm
+        sudo chown slurm: /var/spool/slurmd /var/spool/slurmctld /var/log/slurm
+
+        sudo tee /etc/slurm/slurm.conf > /dev/null << EOF
+        ClusterName=test
+        SlurmctldHost=${HOSTNAME}
+        MpiDefault=none
+        ProctrackType=proctrack/pgid
+        ReturnToService=2
+        SlurmctldPidFile=/var/run/slurmctld.pid
+        SlurmctldPort=6817
+        SlurmdPidFile=/var/run/slurmd.pid
+        SlurmdPort=6818
+        SlurmdSpoolDir=/var/spool/slurmd
+        SlurmUser=slurm
+        StateSaveLocation=/var/spool/slurmctld
+        SwitchType=switch/none
+        TaskPlugin=task/none
+        InactiveLimit=0
+        KillWait=30
+        MinJobAge=300
+        SlurmctldTimeout=120
+        SlurmdTimeout=300
+        Waittime=0
+        SchedulerType=sched/backfill
+        SelectType=select/cons_tres
+        SelectTypeParameters=CR_Core
+        AccountingStorageType=accounting_storage/none
+        JobAcctGatherType=jobacct_gather/none
+        SlurmctldDebug=info
+        SlurmdDebug=info
+        NodeName=${HOSTNAME} CPUs=${CPUS} State=UNKNOWN
+        PartitionName=debug Nodes=ALL Default=YES MaxTime=INFINITE State=UP
+        EOF
+
+    - name: Start Slurm daemons
+      shell: bash
+      run: |
+        sudo slurmctld
+        sudo slurmd
+        for i in $(seq 1 20); do
+          sinfo 2>/dev/null | grep -qE 'idle|alloc|mix' && break || sleep 3
+        done
+        sinfo

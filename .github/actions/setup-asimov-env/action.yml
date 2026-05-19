@@ -18,19 +18,18 @@ runs:
         path: |
           /usr/share/miniconda/pkgs
           ~/.cache/pip
-        key: conda-${{ runner.os }}-${{ hashFiles('conda/environment.yaml', 'pyproject.toml') }}
+        key: conda-${{ runner.os }}-${{ hashFiles('conda/packages.txt', 'pyproject.toml') }}
         restore-keys: |
           conda-${{ runner.os }}-
 
     - name: Set up conda environment
-      uses: conda-incubator/setup-miniconda@v2
+      uses: conda-incubator/setup-miniconda@v3
       with:
         miniconda-version: "latest"
         auto-activate-base: false
         python-version: ${{ inputs.python-version }}
         activate-environment: asimov
         channels: conda-forge
-        conda-remove-defaults: "true"
         use-mamba: true
 
     - name: Cache asimov conda env
@@ -38,7 +37,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: /usr/share/miniconda/envs/asimov
-        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/environment.yaml', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v2
+        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/packages.txt', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v2
         restore-keys: |
           conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-
 
@@ -46,7 +45,7 @@ runs:
       if: steps.cache-env.outputs.cache-hit != 'true'
       shell: bash -el {0}
       run: |
-        conda install -y -n asimov --file conda/environment.yaml
+        conda install -y -n asimov --file conda/packages.txt
         conda install -y -n asimov conda-build
         pip install .
         if [ -n "${{ inputs.extra-packages }}" ]; then
