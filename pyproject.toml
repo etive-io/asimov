@@ -89,6 +89,9 @@ packages = [
 	"asimov.configs"
 ]
 
+[tool.setuptools.package-data]
+"asimov.cli" = ["report-theme/*", "static/*.js"]
+
 [project.entry-points."asimov.pipelines"]
 simpletestpipeline = "asimov.pipelines.testing:SimpleTestPipeline"
 subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"

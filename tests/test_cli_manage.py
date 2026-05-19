@@ -18,6 +18,7 @@ from asimov.cli.application import apply_page
 from asimov.cli import manage, project
 from asimov.ledger import YAMLLedger
 from asimov.pipeline import PipelineException
+from tests.blueprints import DEFAULTS_PE, DEFAULTS_PE_PRIORS, EVENTS as BLUEPRINT_EVENTS, PIPELINES
 
 pipelines = {"bayeswave"}
 EVENTS = ["GW150914_095045", "GW190924_021846", "GW190929_012149", "GW191109_010717"]
@@ -48,12 +49,12 @@ class TestBuild(unittest.TestCase):
 
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
-            apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-            apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+            apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+            apply_page(file=DEFAULTS_PE_PRIORS, event=None, ledger=self.ledger)
             for event in EVENTS:
                 for pipeline in pipelines:
-                    apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-                    apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+                    apply_page(file=BLUEPRINT_EVENTS[event], event=None, ledger=self.ledger)
+                    apply_page(file=PIPELINES[pipeline], event=event, ledger=self.ledger)
 
     def test_build_all_events(self):
         """Check that multiple events can be built at once"""
@@ -129,12 +130,12 @@ class TestSubmit(unittest.TestCase):
 
         #f = io.StringIO()
         #with contextlib.redirect_stdout(f):
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE_PRIORS, event=None, ledger=self.ledger)
         for event in EVENTS:
             for pipeline in pipelines:
-                apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-                apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+                apply_page(file=BLUEPRINT_EVENTS[event], event=None, ledger=self.ledger)
+                apply_page(file=PIPELINES[pipeline], event=event, ledger=self.ledger)
 
     def test_buildsubmit_all_events(self):
         """Check that multiple events can be built at once"""

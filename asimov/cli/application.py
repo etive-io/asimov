@@ -458,9 +458,10 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
 
 def apply_via_plugin(event, hookname, **kwargs):
     discovered_hooks = entry_points(group="asimov.hooks.applicator")
+    current_ledger = get_ledger()
     for hook in discovered_hooks:
         if hook.name in hookname:
-            hook.load()(ledger).run(event)
+            hook.load()(current_ledger).run(event)
             click.echo(click.style("●", fg="green") + f"{event} has been applied.")
 
             break

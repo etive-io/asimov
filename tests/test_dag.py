@@ -9,6 +9,7 @@ from asimov.ledger import YAMLLedger
 from asimov.cli.project import make_project
 from asimov.cli.application import apply_page
 import git
+from tests.blueprints import DEFAULTS_PE
 
 
 TEST_LEDGER = """
@@ -31,7 +32,7 @@ class DAGTests(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/project")
         make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
         apply_page(file = f"{self.cwd}/tests/test_data/events_blueprint.yaml", ledger=self.ledger)
 
 

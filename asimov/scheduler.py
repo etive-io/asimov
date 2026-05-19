@@ -502,8 +502,12 @@ class JobList:
         if os.path.exists(self.cache_file):
             age = -os.stat(self.cache_file).st_mtime + datetime.datetime.now().timestamp()
             if float(age) < float(self.cache_time):
-                with open(self.cache_file, "r") as f:
-                    cached_data = yaml.safe_load(f)
+                try:
+                    with open(self.cache_file, "r") as f:
+                        cached_data = yaml.safe_load(f)
+                except yaml.constructor.ConstructorError:
+                    cached_data = None
+                if cached_data is not None:
                     # Only use the cached data if it appears to be a mapping of
                     # job-like objects (i.e., dictionaries with the keys
                     # that JobList relies on). Otherwise, fall back to a refresh.
@@ -515,7 +519,7 @@ class JobList:
                             if not isinstance(job_obj, dict):
                                 valid_cache = False
                                 break
-                            if "job_id" not in job_obj or "dag_id" not in job_obj:
+                            if "id" not in job_obj:
                                 valid_cache = False
                                 break
                         if valid_cache:
@@ -557,12 +561,10 @@ class JobList:
                     # If DAG parent doesn't exist, store this job as a standalone job
                     self.jobs[job.job_id] = job
         
-        # Save to cache
+        # Save to cache as plain dicts so yaml.safe_load can read them back.
         os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-        # Store Job objects directly so that cache loading logic, which expects
-        # Job instances with methods, can validate and use the cached data.
         with open(self.cache_file, "w") as f:
-            f.write(yaml.dump(self.jobs))
+            f.write(yaml.dump({k: v.to_dict() if isinstance(v, Job) else v for k, v in self.jobs.items()}))
     
     def _create_job_from_data(self, job_data):
         """

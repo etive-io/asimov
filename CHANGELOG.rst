@@ -1,3 +1,41 @@
+Unreleased
+==========
+
+Breaking Changes
+----------------
+
+**Waveform Minimum Frequency Location**
+  The ``minimum frequency`` parameter **must** now be placed in the ``waveform``
+  section of a blueprint.  In earlier versions, placing it in the ``quality`` or
+  ``likelihood`` sections was permitted with a deprecation warning.  As of v0.7,
+  any blueprint that specifies ``minimum frequency`` under ``quality`` or
+  ``likelihood`` will be **rejected** with a ``ValueError`` and the blueprint
+  will not be applied.
+
+  To migrate an existing blueprint, move the value from the old location::
+
+      # Old (no longer valid in v0.7)
+      quality:
+        minimum frequency:
+          H1: 20
+          L1: 20
+
+  to the new location::
+
+      # Correct (v0.7+)
+      waveform:
+        minimum frequency:
+          H1: 20
+          L1: 20
+
+  The error message will indicate which section the value was found in and
+  prompt the user to update their blueprint accordingly.
+
+GitHub Pull Requests
+--------------------
+
++ `github#107 <https://github.com/etive-io/asimov/pull/107>`_: Enforce waveform minimum frequency location (breaking change for old blueprints)
+
 0.7.0-alpha2
 ============
 

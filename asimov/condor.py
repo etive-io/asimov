@@ -14,7 +14,7 @@ import os
 import datetime
 import configparser
 from dateutil import tz
-import configparser
+
 
 import warnings
 try:
@@ -392,8 +392,12 @@ class CondorJobList:
             age = -os.stat(cache).st_mtime + datetime.datetime.now().timestamp()
             logger.info(f"Condor cache is {age} seconds old")
             if float(age) < float(config.get("condor", "cache_time")):
-                with open(cache, "r") as f:
-                    self.jobs = yaml.safe_load(f)
+                try:
+                    with open(cache, "r") as f:
+                        self.jobs = yaml.safe_load(f)
+                except yaml.constructor.ConstructorError:
+                    logger.warning("Cache contains unreadable YAML tags, refreshing")
+                    self.refresh()
             else:
                 self.refresh()
 

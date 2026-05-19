@@ -18,6 +18,7 @@ import asimov.event
 from asimov.cli.project import make_project
 from asimov.cli.application import apply_page
 from asimov.ledger import YAMLLedger
+from tests.blueprints import DEFAULTS_PE, DEFAULTS_PE_PRIORS, GWTC21_EVENTS, EVENTS as BLUEPRINT_EVENTS, PIPELINES
 
 EVENTS = ["GW150914_095045", "GW190924_021846", "GW190929_012149", "GW191109_010717"]
 pipelines = {"bayeswave"}
@@ -79,8 +80,8 @@ class ReviewTests(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/project")
         make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=GWTC21_EVENTS["GW150914_095045"], event=None, ledger=self.ledger)
 
         self.event = asimov.event.Event.from_yaml(TEST_YAML.format(self.cwd),
                                                   ledger=self.ledger)
@@ -139,12 +140,12 @@ class ReviewCliTests(unittest.TestCase):
 
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
-            apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-            apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+            apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+            apply_page(file=DEFAULTS_PE_PRIORS, event=None, ledger=self.ledger)
             for event in EVENTS:
                 for pipeline in pipelines:
-                    apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-                    apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+                    apply_page(file=BLUEPRINT_EVENTS[event], event=None, ledger=self.ledger)
+                    apply_page(file=PIPELINES[pipeline], event=event, ledger=self.ledger)
 
     # def test_show_review_no_review(self):
     #     """Check that the CLI can show a review report with no reviews"""

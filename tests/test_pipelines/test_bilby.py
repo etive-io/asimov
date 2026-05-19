@@ -17,6 +17,7 @@ from asimov.cli.application import apply_page
 from asimov.ledger import YAMLLedger
 import io
 import contextlib
+from tests.blueprints import DEFAULTS_PE, DEFAULTS_PE_PRIORS, EVENTS as BLUEPRINT_EVENTS, PIPELINES
 
 class BilbyTests(unittest.TestCase):
     """Test bilby interface"""
@@ -42,12 +43,12 @@ class BilbyTests(unittest.TestCase):
     @unittest.skip("I need to get this to work properly.")
     def test_build_cli(self):
         """Check that a bilby config file can be built."""
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE_PRIORS, event=None, ledger=self.ledger)
         event = "GW150914_095045"
         pipeline = "bilby"
-        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+        apply_page(file=BLUEPRINT_EVENTS[event], event=None, ledger=self.ledger)
+        apply_page(file=PIPELINES[pipeline], event=event, ledger=self.ledger)
 
         runner = CliRunner()
         result = runner.invoke(manage.build, "--dryrun")
@@ -55,12 +56,12 @@ class BilbyTests(unittest.TestCase):
 
     def test_build_api(self):
         """Check that a bilby config file can be built."""
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE_PRIORS, event=None, ledger=self.ledger)
         event = "GW150914_095045"
         pipeline = "bilby"
-        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+        apply_page(file=BLUEPRINT_EVENTS[event], event=None, ledger=self.ledger)
+        apply_page(file=PIPELINES[pipeline], event=event, ledger=self.ledger)
 
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
