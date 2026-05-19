@@ -25,4 +25,12 @@ known_pipelines = {
 
 
 for pipeline in discovered_pipelines:
-    known_pipelines[pipeline.name] = pipeline.load()
+    try:
+        known_pipelines[pipeline.name] = pipeline.load()
+    except Exception as e:
+        import warnings
+        warnings.warn(
+            f"Failed to load pipeline plugin '{pipeline.name}' ({pipeline.value}): {e}",
+            ImportWarning,
+            stacklevel=2,
+        )

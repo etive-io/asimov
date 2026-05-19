@@ -184,8 +184,8 @@ class DetcharTests(AsimovTestCase):
         self.assertIn("waveform", str(context.exception).lower())
         self.assertIn("quality", str(context.exception).lower())
 
-    def test_minimum_frequency_in_likelihood_raises_error(self):
-        """Test that having minimum frequency in likelihood section raises an error."""
+    def test_minimum_frequency_in_likelihood_accepted(self):
+        """Test that likelihood.minimum_frequency is accepted (used by BayesWave)."""
         apply_page(
             f"{self.cwd}/tests/test_data/testing_pe.yaml",
             event=None,
@@ -197,16 +197,12 @@ class DetcharTests(AsimovTestCase):
             ledger=self.ledger,
         )
 
-        # Creating an analysis from this event should raise a ValueError
-        with self.assertRaises(ValueError) as context:
-            apply_page(
-                f"{self.cwd}/tests/test_data/simple_analysis.yaml",
-                event="Deprecated fmin in likelihood",
-                ledger=self.ledger,
-            )
-        
-        self.assertIn("waveform", str(context.exception).lower())
-        self.assertIn("likelihood", str(context.exception).lower())
+        # likelihood.minimum_frequency is valid (BayesWave uses it); should not raise
+        apply_page(
+            f"{self.cwd}/tests/test_data/simple_analysis.yaml",
+            event="Deprecated fmin in likelihood",
+            ledger=self.ledger,
+        )
 
 
 class StrategyTests(AsimovTestCase):

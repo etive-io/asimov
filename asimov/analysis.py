@@ -1749,13 +1749,11 @@ class GravitationalWaveTransient(SimpleAnalysis):
             self.meta["waveform"]["reference frequency"] = ref_freq
 
         if "quality" in self.meta and "minimum frequency" in self.meta["quality"]:
-            self.logger.warning(
-                "Found 'minimum frequency' in the 'quality' section; "
-                "this is deprecated. Please move it to the 'likelihood' section. "
-                "It has been automatically migrated for this run."
+            raise ValueError(
+                "Minimum frequency must be specified in the 'waveform' section, "
+                "not in the 'quality' section. Please update your blueprint to move "
+                "'minimum frequency' from 'quality' to 'waveform'."
             )
-            if "minimum frequency" not in self.meta["likelihood"]:
-                self.meta["likelihood"]["minimum frequency"] = self.meta["quality"]["minimum frequency"]
 
 
         # Gather the PSDs for the job
