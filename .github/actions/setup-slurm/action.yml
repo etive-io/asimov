@@ -12,7 +12,8 @@ runs:
     - name: Configure munge
       shell: bash
       run: |
-        sudo /usr/sbin/create-munge-key -f
+        # create-munge-key was removed in Ubuntu 24.04; generate the key directly
+        sudo dd if=/dev/urandom bs=1 count=1024 of=/etc/munge/munge.key status=none
         sudo chown munge:munge /etc/munge/munge.key
         sudo chmod 400 /etc/munge/munge.key
         sudo service munge start
@@ -24,44 +25,43 @@ runs:
         HOSTNAME=$(hostname -s)
         sudo mkdir -p /var/spool/slurmd /var/spool/slurmctld /var/log/slurm
         sudo chown slurm: /var/spool/slurmd /var/spool/slurmctld /var/log/slurm
-
-        sudo tee /etc/slurm/slurm.conf > /dev/null << EOF
-        ClusterName=test
-        SlurmctldHost=${HOSTNAME}
-        MpiDefault=none
-        ProctrackType=proctrack/pgid
-        ReturnToService=2
-        SlurmctldPidFile=/var/run/slurmctld.pid
-        SlurmctldPort=6817
-        SlurmdPidFile=/var/run/slurmd.pid
-        SlurmdPort=6818
-        SlurmdSpoolDir=/var/spool/slurmd
-        SlurmUser=slurm
-        StateSaveLocation=/var/spool/slurmctld
-        SwitchType=switch/none
-        TaskPlugin=task/none
-        InactiveLimit=0
-        KillWait=30
-        MinJobAge=300
-        SlurmctldTimeout=120
-        SlurmdTimeout=300
-        Waittime=0
-        SchedulerType=sched/backfill
-        SelectType=select/cons_tres
-        SelectTypeParameters=CR_Core
-        AccountingStorageType=accounting_storage/none
-        JobAcctGatherType=jobacct_gather/none
-        SlurmctldDebug=info
-        SlurmdDebug=info
-        NodeName=${HOSTNAME} CPUs=${CPUS} State=UNKNOWN
-        PartitionName=debug Nodes=ALL Default=YES MaxTime=INFINITE State=UP
-        EOF
+        {
+          echo "ClusterName=test"
+          echo "SlurmctldHost=${HOSTNAME}"
+          echo "MpiDefault=none"
+          echo "ProctrackType=proctrack/pgid"
+          echo "ReturnToService=2"
+          echo "SlurmctldPidFile=/var/run/slurmctld.pid"
+          echo "SlurmctldPort=6817"
+          echo "SlurmdPidFile=/var/run/slurmd.pid"
+          echo "SlurmdPort=6818"
+          echo "SlurmdSpoolDir=/var/spool/slurmd"
+          echo "SlurmUser=slurm"
+          echo "StateSaveLocation=/var/spool/slurmctld"
+          echo "SwitchType=switch/none"
+          echo "TaskPlugin=task/none"
+          echo "InactiveLimit=0"
+          echo "KillWait=30"
+          echo "MinJobAge=300"
+          echo "SlurmctldTimeout=120"
+          echo "SlurmdTimeout=300"
+          echo "Waittime=0"
+          echo "SchedulerType=sched/backfill"
+          echo "SelectType=select/cons_tres"
+          echo "SelectTypeParameters=CR_Core"
+          echo "AccountingStorageType=accounting_storage/none"
+          echo "JobAcctGatherType=jobacct_gather/none"
+          echo "SlurmctldDebug=info"
+          echo "SlurmdDebug=info"
+          echo "NodeName=${HOSTNAME} CPUs=${CPUS} State=UNKNOWN"
+          echo "PartitionName=debug Nodes=ALL Default=YES MaxTime=INFINITE State=UP"
+        } | sudo tee /etc/slurm/slurm.conf > /dev/null
 
     - name: Start Slurm daemons
       shell: bash
       run: |
-        sudo slurmctld
-        sudo slurmd
+        sudo slurmctld -f /etc/slurm/slurm.conf
+        sudo slurmd -f /etc/slurm/slurm.conf
         for i in $(seq 1 20); do
           sinfo 2>/dev/null | grep -qE 'idle|alloc|mix' && break || sleep 3
         done
