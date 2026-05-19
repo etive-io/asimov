@@ -297,7 +297,7 @@ class LALInference(Pipeline):
                         )
                         
                         self.production.status = "running"
-                        self.production.job_id = cluster_id
+                        self.production.job_id = int(cluster_id)
                         
                         # Create a mock stdout message for compatibility
                         stdout_msg = f"DAG submitted to cluster {cluster_id}"

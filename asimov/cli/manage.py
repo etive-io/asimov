@@ -326,6 +326,10 @@ def submit(event, update, dryrun):
                 click.echo("Try running `asimov manage build` first.")
             try:
                 cluster_id = pipe.submit_dag(dryrun=dryrun)
+                if isinstance(cluster_id, (tuple, list)):
+                    if not cluster_id:
+                        raise PipelineException("submit_dag returned an empty sequence")
+                    cluster_id = cluster_id[0]
                 if not dryrun:
                     analysis.job_id = int(cluster_id)
                     click.echo(

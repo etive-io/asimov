@@ -41,14 +41,15 @@ your ledger configuration:
 
 Installation
 ------------
-The testing pipelines are only installed when asimov is installed with
-the testing optional dependency:
+The testing pipelines are installed as part of the standard asimov
+installation and are available after installing the base package:
 
 .. code-block:: bash
 
-    pip install asimov[testing]
+    pip install asimov
 
-This ensures they don't add unnecessary dependencies for production use.
+These pipelines are intended primarily for testing, development, and
+example purposes rather than production analyses.
 
 See Also
 --------

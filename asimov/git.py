@@ -86,7 +86,7 @@ class EventRepo:
             return 'master'
         except (git.exc.GitCommandError, AttributeError) as e:
             # In case of any error, return 'master' as a safe default
-            self.logger.warning(f"Could not detect default branch for {self.event}: {e}")
+            self.logger.warning(f"Could not detect default branch for {self.directory}: {e}")
             return 'master'
 
     def __repr__(self):

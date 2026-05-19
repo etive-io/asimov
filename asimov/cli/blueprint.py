@@ -18,4 +18,4 @@ def validate(file_path):
         click.secho(f"Blueprint '{file_path}' is valid.", fg="green")
 
     except Exception as e:
-        click.secho(f"Blueprint '{file_path}' is invalid: {e}", fg="red")
+        raise click.ClickException(f"Blueprint '{file_path}' is invalid: {e}")
