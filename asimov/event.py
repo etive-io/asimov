@@ -524,17 +524,6 @@ class Event:
                     review_message = latest_review.message if latest_review.message else ''
             return review_status, review_message
         
-        # Helper function to generate review indicator HTML
-        def get_review_indicator(review_status):
-            """Generate HTML for review status indicator."""
-            if review_status == 'approved':
-                return '<span class="review-indicator review-approved" title="Approved">✓</span>'
-            elif review_status == 'rejected':
-                return '<span class="review-indicator review-rejected" title="Rejected">✗</span>'
-            elif review_status == 'deprecated':
-                return '<span class="review-indicator review-deprecated" title="Deprecated">⊘</span>'
-            return ''
-        
         card = f"""
         <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
         <div class="card-body">
@@ -549,306 +538,147 @@ class Event:
                 ifos = ", ".join(self.meta["interferometers"]) if isinstance(self.meta["interferometers"], list) else self.meta["interferometers"]
                 card += f"""<p class="text-muted">Interferometers: {ifos}</p>"""
 
-        # Generate graph-based workflow visualization
+        # Generate graph-based workflow visualization (Mermaid + ELK)
         if hasattr(self, 'graph') and self.graph and len(self.graph.nodes()) > 0:
-            # Update graph to reflect current dependencies (important for property-based queries)
             self.update_graph()
-            
-            card += """<div class="workflow-graph">"""
-            card += """<h4>Workflow Graph</h4>"""
-            
+
+            import re
+            import json as _json
+
+            _REVIEW_PREFIX = {'approved': '✓ ', 'rejected': '✗ ', 'deprecated': '⊘ '}
+
+            def _safe_token(name):
+                """Sanitise a string into a token for Mermaid/DOM identifiers."""
+                return re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
+
+            def _safe_dom_id(*parts):
+                dom_id = '-'.join(str(part) for part in parts if part is not None)
+                dom_id = re.sub(r'[^a-zA-Z0-9_-]', '-', dom_id).strip('-')
+                return dom_id or 'analysis-data'
+
+            def _escape_mermaid_label(value):
+                return (str(value)
+                        .replace('\\', '\\\\')
+                        .replace('"', '\\"')
+                        .replace('\r', ' ')
+                        .replace('\n', ' '))
+
+            card += f'<div class="workflow-graph" data-event-name="{self.name}">'
+            card += '<h4>Workflow Graph</h4>'
+            container_id = f'mermaid-{_safe_dom_id(self.name)}'
+            card += f'<div id="{container_id}" class="mermaid-container"></div>'
+
+            node_data_id_by_node = {}
             try:
-                import networkx as nx
-                from asimov.event import status_map
-                
-                # Organize nodes by dependency layers
-                if nx.is_directed_acyclic_graph(self.graph):
-                    # Get layers using topological generations
-                    layers = list(nx.topological_generations(self.graph))
-                    
-                    card += """<div class="graph-container">"""
-                    
-                    for layer_idx, layer in enumerate(layers):
-                        card += """<div class="graph-layer">"""
-                        
-                        for node in layer:
-                            # Get status and review for styling
-                            status = node.status if hasattr(node, 'status') else 'unknown'
-                            review_status, review_message = get_review_info(node)
-                            
-                            status_badge = status_map.get(status, 'secondary')
-                            
-                            # Get pipeline name
-                            pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
-                            
-                            # Get dependencies (predecessors in the graph)
-                            predecessors = list(self.graph.predecessors(node))
-                            predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
-                            
-                            # Get dependents (successors in the graph)
-                            successors = list(self.graph.successors(node))
-                            successor_names = ','.join([succ.name for succ in successors]) if successors else ''
-                            
-                            # Create graph node with click handler
-                            # Add running indicator for active analyses
-                            running_indicator = ''
-                            if status in ['running', 'processing']:
-                                running_indicator = '<span class="graph-running-indicator"></span>'
-                            
-                            # Add review status indicator
-                            review_indicator = get_review_indicator(review_status)
-                            
-                            # Check if this is a subject analysis
-                            is_subject = hasattr(node, 'category') and node.category == 'subject_analyses'
-                            subject_class = ' graph-node-subject' if is_subject else ''
-                            
-                            # Check if stale (dependencies changed)
-                            is_stale = hasattr(node, 'is_stale') and node.is_stale
-                            is_refreshable = hasattr(node, 'is_refreshable') and node.is_refreshable
-                            stale_class = ' graph-node-stale' if is_stale else ''
-                            
-                            # Add staleness indicator for subject analyses
-                            stale_indicator = ''
-                            if is_subject and is_stale:
-                                stale_indicator = '<span class="stale-badge" title="Dependencies changed - needs rerun">⟳</span>'
-                            
-                            # Create unique node IDs by including event name
-                            node_id = f"node-{self.name}-{node.name}"
-                            data_id = f"analysis-data-{self.name}-{node.name}"
-                            
-                            # For subject analyses, include source analysis names
-                            source_analyses_str = ''
-                            if is_subject and hasattr(node, '_analysis_spec_names'):
-                                # Build list of source analyses with their statuses for styling
-                                source_specs = []
-                                for source_name in node._analysis_spec_names:
-                                    # Find the source analysis status
-                                    source_status = 'unknown'
-                                    for n in self.graph.nodes():
-                                        if n.name == source_name:
-                                            source_status = n.status if hasattr(n, 'status') else 'unknown'
-                                            break
-                                    source_specs.append(f"{source_name}:{source_status}")
-                                source_analyses_str = '|'.join(source_specs)
-                            
-                            card += f"""
-                            <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
-                                 id="{node_id}"
-                                 data-event-name="{self.name}"
-                                 data-review="{review_status}" 
-                                 data-status="{status}"
-                                 data-node-name="{node.name}"
-                                 data-predecessors="{predecessor_names}"
-                                 data-successors="{successor_names}"
-                                 data-source-analyses="{source_analyses_str}"
-                                 data-is-subject="{str(is_subject).lower()}"
-                                 data-is-stale="{str(is_stale).lower()}"
-                                 onclick="openAnalysisModal('{data_id}')">
-                                {running_indicator}
-                                {review_indicator}
-                                {stale_indicator}
-                                <div class="graph-node-title">{node.name}</div>
-                                <div class="graph-node-subtitle">{pipeline_name}</div>
-                            </div>
-                            """
-                            
-                            # Add hidden data container for modal
-                            comment = node.comment if hasattr(node, 'comment') and node.comment else ''
-                            rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
-                            approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
-                            
-                            # Get webdir for results links
-                            webdir = ''
-                            if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
-                                webdir = node.event.webdir
-                            
-                            # Construct potential result page URLs based on pipeline
-                            result_pages = []
-                            if webdir and rundir:
-                                # Extract just the directory name from the full rundir path
-                                import os
-                                rundir_name = os.path.basename(rundir.rstrip('/'))
-                                base_url = f"{webdir}/{rundir_name}"
-                                
-                                # Add common result page patterns for different pipelines
-                                if pipeline_name.lower() == 'bilby':
-                                    result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
-                                    result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
-                                elif pipeline_name.lower() == 'bayeswave':
-                                    result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
-                                elif pipeline_name.lower() == 'pesummary':
-                                    result_pages.append(f"{base_url}/home.html|PESummary Results")
-                            
-                            result_pages_str = ';;'.join(result_pages) if result_pages else ''
-                            
-                            # Get current dependencies
-                            dependencies = node.dependencies if hasattr(node, 'dependencies') else []
-                            dependencies_str = ', '.join(dependencies) if dependencies else ''
-                            
-                            # Escape review message for HTML attribute
-                            review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
-                            
-                            card += f"""
-                            <div id="{data_id}" style="display:none;"
-                                 data-name="{node.name}"
-                                 data-status="{status}"
-                                 data-status-badge="{status_badge}"
-                                 data-pipeline="{pipeline_name}"
-                                 data-rundir="{rundir}"
-                                 data-approximant="{approximant}"
-                                 data-comment="{comment}"
-                                 data-dependencies="{dependencies_str}"
-                                 data-review-status="{review_status}"
-                                 data-review-message="{review_message_escaped}"
-                                 data-result-pages="{result_pages_str}">
-                            </div>
-                            """
-                        
-                        card += """</div>"""
-                        
-                        # Add arrow between layers
-                        if layer_idx < len(layers) - 1:
-                            card += """<div class="graph-arrow">→</div>"""
-                    
-                    card += """</div>"""
-                    
-                else:
-                    # Fallback for non-DAG: just list nodes
-                    card += """<div class="graph-container">"""
-                    card += """<div class="graph-layer">"""
-                    for node in self.graph.nodes():
-                        status = node.status if hasattr(node, 'status') else 'unknown'
-                        status_badge = status_map.get(status, 'secondary')
-                        pipeline_name = node.pipeline.name if hasattr(node, 'pipeline') and node.pipeline else ''
-                        
-                        review_status, review_message = get_review_info(node)
-                        
-                        # Get dependencies even for non-DAG
-                        predecessors = list(self.graph.predecessors(node)) if hasattr(self.graph, 'predecessors') else []
-                        predecessor_names = ','.join([pred.name for pred in predecessors]) if predecessors else ''
-                        
-                        successors = list(self.graph.successors(node)) if hasattr(self.graph, 'successors') else []
-                        successor_names = ','.join([succ.name for succ in successors]) if successors else ''
-                        
-                        # Add running indicator for active analyses
-                        running_indicator = ''
-                        if status in ['running', 'processing']:
-                            running_indicator = '<span class="graph-running-indicator"></span>'
-                        
-                        # Add review status indicator
-                        review_indicator = get_review_indicator(review_status)
-                        
-                        # Check if this is a subject analysis
-                        is_subject = hasattr(node, 'category') and node.category == 'subject_analyses'
-                        subject_class = ' graph-node-subject' if is_subject else ''
-                        
-                        # Check if stale (dependencies changed)
-                        is_stale = hasattr(node, 'is_stale') and node.is_stale
-                        is_refreshable = hasattr(node, 'is_refreshable') and node.is_refreshable
-                        stale_class = ' graph-node-stale' if is_stale else ''
-                        
-                        # Add staleness indicator for subject analyses
-                        stale_indicator = ''
-                        if is_subject and is_stale:
-                            stale_indicator = '<span class="stale-badge" title="Dependencies changed - needs rerun">⟳</span>'
-                        
-                        # Create unique node IDs by including event name
-                        node_id = f"node-{self.name}-{node.name}"
-                        data_id = f"analysis-data-{self.name}-{node.name}"
-                        
-                        # For subject analyses, include source analysis names
-                        source_analyses_str = ''
-                        if is_subject and hasattr(node, '_analysis_spec_names'):
-                            # Build list of source analyses with their statuses for styling
-                            source_specs = []
-                            for source_name in node._analysis_spec_names:
-                                # Find the source analysis status
-                                source_status = 'unknown'
-                                for n in self.graph.nodes():
-                                    if n.name == source_name:
-                                        source_status = n.status if hasattr(n, 'status') else 'unknown'
-                                        break
-                                source_specs.append(f"{source_name}:{source_status}")
-                            source_analyses_str = '|'.join(source_specs)
-                        
-                        card += f"""
-                        <div class="graph-node status-{status} review-{review_status}{subject_class}{stale_class}" 
-                             id="{node_id}"
-                             data-event-name="{self.name}"
-                             data-review="{review_status}"
-                             data-status="{status}"
-                             data-node-name="{node.name}"
-                             data-predecessors="{predecessor_names}"
-                             data-successors="{successor_names}"
-                             data-source-analyses="{source_analyses_str}"
-                             data-is-subject="{str(is_subject).lower()}"
-                             data-is-stale="{str(is_stale).lower()}"
-                             onclick="openAnalysisModal('{data_id}')">
-                            {running_indicator}
-                            {review_indicator}
-                            {stale_indicator}
-                            <div class="graph-node-title">{node.name}</div>
-                            <div class="graph-node-subtitle">{pipeline_name}</div>
-                        </div>
-                        """
-                        
-                        comment = node.comment if hasattr(node, 'comment') and node.comment else ''
-                        rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
-                        approximant = node.meta.get('approximant', '') if hasattr(node, 'meta') else ''
-                        
-                        # Get webdir for results links
-                        webdir = ''
-                        if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
-                            webdir = node.event.webdir
-                        
-                        # Construct potential result page URLs based on pipeline
-                        result_pages = []
-                        if webdir and rundir:
-                            # Extract just the directory name from the full rundir path
-                            import os
-                            rundir_name = os.path.basename(rundir.rstrip('/'))
-                            base_url = f"{webdir}/{rundir_name}"
-                            
-                            # Add common result page patterns for different pipelines
-                            if pipeline_name.lower() == 'bilby':
-                                result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
-                                result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
-                            elif pipeline_name.lower() == 'bayeswave':
-                                result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
-                            elif pipeline_name.lower() == 'pesummary':
-                                result_pages.append(f"{base_url}/home.html|PESummary Results")
-                        
-                        result_pages_str = ';;'.join(result_pages) if result_pages else ''
-                        
-                        # Get current dependencies
-                        dependencies = node.dependencies if hasattr(node, 'dependencies') else []
-                        dependencies_str = ', '.join(dependencies) if dependencies else ''
-                        
-                        # Escape review message for HTML attribute
-                        review_message_escaped = review_message.replace('"', '&quot;').replace("'", '&#39;')
-                        
-                        card += f"""
-                        <div id="{data_id}" style="display:none;"
-                             data-name="{node.name}"
-                             data-status="{status}"
-                             data-status-badge="{status_badge}"
-                             data-pipeline="{pipeline_name}"
-                             data-rundir="{rundir}"
-                             data-approximant="{approximant}"
-                             data-comment="{comment}"
-                             data-dependencies="{dependencies_str}"
-                             data-review-status="{review_status}"
-                             data-review-message="{review_message_escaped}"
-                             data-result-pages="{result_pages_str}">
-                        </div>
-                        """
-                    card += """</div>"""
-                    card += """</div>"""
-                    
+                nodes_data = []
+                node_map = {}
+                node_mid_by_node = {}
+                event_prefix = f'event_{_safe_token(self.name)}'
+                for idx, node in enumerate(self.graph.nodes()):
+                    mid = f'{event_prefix}_{_safe_token(node.name)}_{idx}'
+                    data_id = _safe_dom_id('analysis-data', self.name, node.name, idx)
+                    node_mid_by_node[node] = mid
+                    node_data_id_by_node[node] = data_id
+                    node_map[mid] = data_id
+                    status = (node.status or 'unknown') if hasattr(node, 'status') else 'unknown'
+                    review_status, _ = get_review_info(node)
+                    pipeline_name = (node.pipeline.name
+                                     if hasattr(node, 'pipeline') and node.pipeline else '')
+                    prefix = _REVIEW_PREFIX.get(review_status, '')
+                    label = _escape_mermaid_label(f'{prefix}{node.name}\\n{pipeline_name}')
+                    is_subject = (getattr(node, 'category', '') == 'subject_analyses')
+                    nodes_data.append({
+                        'id': mid,
+                        'label': label,
+                        'status': status,
+                        'review': review_status,
+                        'isSubject': is_subject,
+                        'dataId': data_id,
+                    })
+
+                edges_data = [{'from': node_mid_by_node[s], 'to': node_mid_by_node[t]}
+                              for s, t in self.graph.edges()
+                              if s in node_mid_by_node and t in node_mid_by_node]
+
+                event_name_js = _json.dumps(self.name)
+                container_id_js = _json.dumps(container_id)
+                nodes_js = _json.dumps(nodes_data)
+                edges_js = _json.dumps(edges_data)
+                node_map_js = _json.dumps(node_map)
+
+                card += f"""<script>
+window.asimovGraphs = window.asimovGraphs || {{}};
+window.asimovGraphs[{event_name_js}] = {{
+  containerId: {container_id_js},
+  nodes: {nodes_js},
+  edges: {edges_js}
+}};
+window.asimovNodeMap = window.asimovNodeMap || {{}};
+Object.assign(window.asimovNodeMap, {node_map_js});
+</script>"""
+
             except Exception as e:
-                card += f"""<p class="text-muted">Error rendering graph: {str(e)}</p>"""
-            
-            card += """</div>"""
+                card += f'<p class="text-muted">Error generating graph data: {str(e)}</p>'
+
+            # Hidden data containers for modal — one per analysis node
+            try:
+                import os as _os
+
+                for node in self.graph.nodes():
+                    status = node.status if hasattr(node, 'status') else 'unknown'
+                    review_status, review_message = get_review_info(node)
+                    status_badge = status_map.get(status, 'secondary')
+                    pipeline_name = (node.pipeline.name
+                                     if hasattr(node, 'pipeline') and node.pipeline else '')
+                    data_id = node_data_id_by_node.get(
+                        node, _safe_dom_id('analysis-data', self.name, node.name)
+                    )
+
+                    comment = node.comment if hasattr(node, 'comment') and node.comment else ''
+                    rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
+                    approximant = (node.meta.get('approximant', '')
+                                   if hasattr(node, 'meta') else '')
+
+                    webdir = ''
+                    if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
+                        webdir = node.event.webdir
+
+                    result_pages = []
+                    if webdir and rundir:
+                        rundir_name = _os.path.basename(rundir.rstrip('/'))
+                        base_url = f"{webdir}/{rundir_name}"
+                        if pipeline_name.lower() == 'bilby':
+                            result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
+                            result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
+                        elif pipeline_name.lower() == 'bayeswave':
+                            result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
+                        elif pipeline_name.lower() == 'pesummary':
+                            result_pages.append(f"{base_url}/home.html|PESummary Results")
+
+                    result_pages_str = ';;'.join(result_pages)
+                    dependencies = node.dependencies if hasattr(node, 'dependencies') else []
+                    dependencies_str = ', '.join(dependencies) if dependencies else ''
+                    review_message_escaped = (review_message
+                                              .replace('"', '&quot;')
+                                              .replace("'", '&#39;'))
+
+                    card += f"""<div id="{data_id}" style="display:none;"
+                         data-name="{node.name}"
+                         data-status="{status}"
+                         data-status-badge="{status_badge}"
+                         data-pipeline="{pipeline_name}"
+                         data-rundir="{rundir}"
+                         data-approximant="{approximant}"
+                         data-comment="{comment}"
+                         data-dependencies="{dependencies_str}"
+                         data-review-status="{review_status}"
+                         data-review-message="{review_message_escaped}"
+                         data-result-pages="{result_pages_str}"></div>"""
+
+            except Exception as e:
+                card += f'<p class="text-muted">Error generating modal data: {str(e)}</p>'
+
+            card += '</div>'
 
         # card += """
         # </div></div>

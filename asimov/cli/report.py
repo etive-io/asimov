@@ -44,6 +44,17 @@ def html(event, webdir):
     if not webdir:
         webdir = config.get("general", "webroot")
 
+    # Copy the bundled Mermaid+ELK JS alongside the report
+    os.makedirs(webdir, exist_ok=True)
+    try:
+        import shutil as _shutil
+        _bundle = files("asimov.cli").joinpath("static/mermaid-elk.bundle.js")
+        with _bundle.open("rb") as _src:
+            with open(os.path.join(webdir, "mermaid-elk.bundle.js"), "wb") as _dst:
+                _shutil.copyfileobj(_src, _dst)
+    except Exception as _e:
+        click.echo(f"Warning: could not copy Mermaid bundle: {_e}", err=True)
+
     report = otter.Otter(
         f"{webdir}/index.html",
         author="Asimov",
@@ -393,219 +404,23 @@ def html(event, webdir):
             padding: 0.35em 0.65em;
         }
 
-        /* Graph visualization styles */
+        /* Workflow graph (Mermaid) */
         .workflow-graph {
-            padding: 2rem 1rem;
+            padding: 1rem;
             background: white;
             border-radius: 0.5rem;
             margin: 1rem 0;
-            min-height: 200px;
-            position: relative;
         }
 
-        .graph-node {
-            display: inline-block;
-            padding: 0.75rem 1.25rem;
-            background: white;
-            border: 2px solid #e1e4e8;
-            border-radius: 0.5rem;
-            margin: 0.5rem;
+        .mermaid-container {
+            overflow-x: auto;
+            min-height: 80px;
+        }
+
+        /* Make Mermaid nodes clickable */
+        .mermaid-container .node rect,
+        .mermaid-container .node polygon {
             cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            min-width: 120px;
-            text-align: center;
-        }
-
-        .graph-node:hover {
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            transform: translateY(-2px);
-        }
-
-        .graph-node.status-running,
-        .graph-node.status-processing {
-            border-color: #0366d6;
-            background: #e7f3ff;
-        }
-
-        .graph-node.status-finished,
-        .graph-node.status-uploaded {
-            border-color: #28a745;
-            background: #e6f7ed;
-        }
-
-        .graph-node.status-stuck {
-            border-color: #ffc107;
-            background: #fff8e6;
-        }
-
-        .graph-node.status-stopped,
-        .graph-node.status-cancelled {
-            border-color: #6c757d;
-            background: #f6f8fa;
-            opacity: 0.7;
-        }
-
-        .graph-node.hidden {
-            display: none;
-        }
-
-        .graph-node-title {
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-
-        .graph-node-subtitle {
-            font-size: 0.85rem;
-            color: #586069;
-        }
-
-        .graph-running-indicator {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background-color: #0366d6;
-            animation: pulse 2s ease-in-out infinite;
-        }
-
-        .graph-container {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: center;
-            gap: 2rem;
-            position: relative;
-        }
-
-        .graph-layer {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.5rem;
-            position: relative;
-        }
-
-        .graph-arrow {
-            font-size: 2rem;
-            color: transparent;
-            margin: 0 1rem;
-            user-select: none;
-        }
-
-        /* SVG connection lines */
-        .graph-connections {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        .graph-node {
-            position: relative;
-            z-index: 1;
-        }
-
-        .connection-line {
-            fill: none;
-            stroke: #586069;
-            stroke-width: 2;
-            opacity: 0.6;
-        }
-        
-        /* Subject analysis styling */
-        .graph-node-subject {
-            border-width: 3px;
-            border-style: double;
-            background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%);
-        }
-        
-        .graph-node-subject .graph-node-title::before {
-            content: '◆ ';
-            color: #6f42c1;
-            font-weight: bold;
-        }
-        
-        /* Stale analysis styling */
-        .graph-node-stale {
-            border-color: #fd7e14 !important;
-            box-shadow: 0 0 0 2px rgba(253, 126, 20, 0.2);
-        }
-        
-        .stale-badge {
-            position: absolute;
-            top: 0.25rem;
-            left: 0.25rem;
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background-color: #fd7e14;
-            color: white;
-            text-align: center;
-            line-height: 20px;
-            font-size: 0.9rem;
-            font-weight: bold;
-            z-index: 10;
-            animation: rotate 2s linear infinite;
-        }
-        
-        @keyframes rotate {
-            from {
-                transform: rotate(0deg);
-            }
-            to {
-                transform: rotate(360deg);
-            }
-        }
-        
-        /* Subject analysis connection styling - use purple for dependencies */
-        .connection-line-subject {
-            stroke: #6f42c1;
-            stroke-width: 3;
-            opacity: 0.7;
-        }
-
-        /* Subject analysis source dependency styling - different styles based on source status */
-        .connection-edge {
-            transition: opacity 0.3s ease;
-        }
-        
-        .connection-edge:hover {
-            opacity: 1 !important;
-        }
-        
-        .connection-edge.connection-included .connection-line {
-            stroke: #28a745;
-            stroke-dasharray: none;
-            stroke-width: 2.5;
-            opacity: 0.8;
-        }
-        
-        .connection-edge.connection-pending .connection-line {
-            stroke: #ffc107;
-            stroke-dasharray: 5,5;
-            stroke-width: 2.5;
-            opacity: 0.7;
-            animation: flow 0.6s linear infinite;
-        }
-        
-        .connection-edge.connection-waiting .connection-line {
-            stroke: #586069;
-            stroke-dasharray: 2,3;
-            stroke-width: 2;
-            opacity: 0.4;
-        }
-        
-        @keyframes flow {
-            to {
-                stroke-dashoffset: 10;
-            }
         }
 
         /* Modal styles */
@@ -733,105 +548,213 @@ def html(event, webdir):
         report + style
 
         script = """
+<script src="mermaid-elk.bundle.js"></script>
 <script type="text/javascript">
-    window.onload = function() {
-        setupRefresh();
-        initializeFilters();
-        initializeToggles();
-        calculateStats();
+    // Mermaid graph state ---------------------------------------------------
+
+    window.asimovNodeMap = window.asimovNodeMap || {};
+    window.asimovGraphs  = window.asimovGraphs  || {};
+
+    var asimovActiveFilters = {
+        hiddenStatuses: new Set(),
+        hiddenReviews:  new Set(),
+        onlyStatus:     null,   // when a status filter button is active
+        onlyReview:     null
     };
 
-    function setupRefresh() {
-      setTimeout(refreshPage, 1000*60*15); // Refresh every 15 minutes (in milliseconds)
+    var ALL_STATUSES = ['finished','uploaded','running','processing','stuck',
+                        'ready','wait','stopped','cancelled','manual','unknown'];
+
+    var MERMAID_CLASSDEFS = [
+        'classDef finished   fill:#e6f7ed,stroke:#28a745,color:#000',
+        'classDef uploaded   fill:#e6f7ed,stroke:#28a745,color:#000',
+        'classDef running    fill:#e7f3ff,stroke:#0366d6,color:#000',
+        'classDef processing fill:#e7f3ff,stroke:#0366d6,color:#000',
+        'classDef stuck      fill:#fff8e6,stroke:#ffc107,color:#000',
+        'classDef ready      fill:#fff,stroke:#e1e4e8,color:#000',
+        'classDef wait       fill:#fff,stroke:#e1e4e8,color:#000',
+        'classDef stopped    fill:#f6f8fa,stroke:#6c757d,color:#aaa',
+        'classDef cancelled  fill:#f6f8fa,stroke:#6c757d,color:#aaa',
+        'classDef manual     fill:#fff3cd,stroke:#fd7e14,color:#000',
+        'classDef unknown    fill:#fff,stroke:#e1e4e8,color:#000'
+    ].join('\\n    ');
+
+    function isNodeVisible(n, filters) {
+        if (filters.hiddenStatuses.has(n.status)) return false;
+        if (filters.hiddenReviews.has(n.review))  return false;
+        if (filters.onlyStatus && n.status !== filters.onlyStatus) return false;
+        if (filters.onlyReview && n.review !== filters.onlyReview) return false;
+        return true;
     }
-    
-    function refreshPage() {
-       window.location = location.href;
+
+    function buildMermaidDef(graphData, filters) {
+        var visibleNodes = graphData.nodes.filter(function(n) {
+            return isNodeVisible(n, filters);
+        });
+        var visibleIds = new Set(visibleNodes.map(function(n) { return n.id; }));
+        var visibleEdges = graphData.edges.filter(function(e) {
+            return visibleIds.has(e.from) && visibleIds.has(e.to);
+        });
+        var lines = ['flowchart LR', '    ' + MERMAID_CLASSDEFS];
+        visibleNodes.forEach(function(n) {
+            var lbl = '"' + n.label + '"';
+            var shape = n.isSubject ? ('{{' + lbl + '}}') : ('[' + lbl + ']');
+            lines.push('    ' + n.id + shape + ':::' + n.status);
+            lines.push('    click ' + n.id + ' openAnalysisModalFromMermaid');
+        });
+        visibleEdges.forEach(function(e) {
+            lines.push('    ' + e.from + ' --> ' + e.to);
+        });
+        return lines.join('\\n');
+    }
+
+    var mermaidRenderSeq = 0;
+    async function rerenderAllGraphs() {
+        if (!window.mermaid || !window.asimovGraphs) return;
+        for (var eventName in window.asimovGraphs) {
+            var gd = window.asimovGraphs[eventName];
+            var def = buildMermaidDef(gd, asimovActiveFilters);
+            var renderId = 'asimov-mermaid-' + (mermaidRenderSeq++);
+            try {
+                var result = await mermaid.render(renderId, def);
+                var container = document.getElementById(gd.containerId);
+                if (container) {
+                    container.innerHTML = result.svg;
+                    if (result.bindFunctions) result.bindFunctions(container);
+                }
+            } catch(e) {
+                console.warn('Mermaid render error for ' + eventName + ':', e);
+            }
+        }
+        checkEventVisibility();
+    }
+
+    // Called by Mermaid click handlers in the rendered SVG
+    function openAnalysisModalFromMermaid(nodeId) {
+        var dataId = window.asimovNodeMap && window.asimovNodeMap[nodeId];
+        if (dataId) openAnalysisModal(dataId);
+    }
+
+    // Stats are derived from the JS graph data (not DOM nodes)
+    function calculateStats() {
+        var stats = { total: 0, running: 0, finished: 0, stuck: 0, cancelled: 0 };
+        for (var eventName in window.asimovGraphs) {
+            window.asimovGraphs[eventName].nodes.forEach(function(n) {
+                stats.total++;
+                if (n.status === 'running' || n.status === 'processing') stats.running++;
+                else if (n.status === 'finished' || n.status === 'uploaded') stats.finished++;
+                else if (n.status === 'stuck') stats.stuck++;
+                else if (n.status === 'cancelled' || n.status === 'stopped') stats.cancelled++;
+            });
+        }
+        // Also count legacy .asimov-analysis elements (non-graph events)
+        document.querySelectorAll('.asimov-analysis').forEach(function(el) {
+            stats.total++;
+            if (el.classList.contains('asimov-analysis-running') ||
+                el.classList.contains('asimov-analysis-processing')) stats.running++;
+            else if (el.classList.contains('asimov-analysis-finished') ||
+                     el.classList.contains('asimov-analysis-uploaded')) stats.finished++;
+            else if (el.classList.contains('asimov-analysis-stuck')) stats.stuck++;
+            else if (el.classList.contains('asimov-analysis-cancelled') ||
+                     el.classList.contains('asimov-analysis-stopped')) stats.cancelled++;
+        });
+        ['total','running','finished','stuck','cancelled'].forEach(function(k) {
+            var el = document.getElementById('stat-' + k);
+            if (el) el.textContent = stats[k];
+        });
+    }
+
+    // Event visibility — collapses events where all graph nodes are filtered out
+    function checkEventVisibility() {
+        document.querySelectorAll('.event-data').forEach(function(eventEl) {
+            var eventName = eventEl.dataset.eventName;
+            var hasVisible = false;
+
+            // Check Mermaid graph data
+            if (window.asimovGraphs && window.asimovGraphs[eventName]) {
+                var gd = window.asimovGraphs[eventName];
+                hasVisible = gd.nodes.some(function(n) {
+                    return isNodeVisible(n, asimovActiveFilters);
+                });
+            }
+            // Also check legacy .asimov-analysis elements
+            if (!hasVisible) {
+                eventEl.querySelectorAll('.asimov-analysis').forEach(function(a) {
+                    if (a.style.display !== 'none' && !a.classList.contains('hidden')) hasVisible = true;
+                });
+            }
+
+            eventEl.classList.toggle('collapsed', !hasVisible);
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter controls
+    // -----------------------------------------------------------------------
+
+    function setupRefresh() {
+        setTimeout(function() { window.location = location.href; }, 1000 * 60 * 15);
     }
 
     function initializeFilters() {
-        // Filter by status
+        // Status filter buttons — show ONLY nodes with that status
         document.querySelectorAll('.filter-status').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 var status = this.getAttribute('data-status');
-                var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
-                
+                var analyses = document.querySelectorAll('.asimov-analysis');
+
                 if (this.classList.contains('active')) {
-                    // Deactivate filter - show all
-                    analyses.forEach(function(analysis) {
-                        analysis.style.display = '';
-                        analysis.classList.remove('filtered-hidden');
-                    });
+                    // Deactivate — show all
                     this.classList.remove('active');
-                    
-                    // Redraw connections after deactivating filter
-                    setTimeout(drawGraphConnections, 50);
-                    checkEventVisibility();
+                    asimovActiveFilters.onlyStatus = null;
+                    analyses.forEach(function(a) {
+                        a.style.display = '';
+                        a.classList.remove('filtered-hidden');
+                    });
                 } else {
-                    // Activate filter
                     document.querySelectorAll('.filter-status').forEach(function(b) {
                         b.classList.remove('active');
                     });
                     this.classList.add('active');
-                    
-                    analyses.forEach(function(analysis) {
-                        var matchesFilter = false;
-                        
-                        // Check both graph node status classes and legacy analysis classes
-                        if (analysis.classList.contains('status-' + status) || 
-                            analysis.classList.contains('asimov-analysis-' + status)) {
-                            matchesFilter = true;
-                        }
-                        
-                        if (matchesFilter) {
-                            analysis.style.display = '';
-                            analysis.classList.remove('filtered-hidden');
-                        } else {
-                            analysis.style.display = 'none';
-                            analysis.classList.add('filtered-hidden');
-                            
-                            // Hide all downstream dependencies
-                            hideDownstreamDependencies(analysis);
-                        }
+                    asimovActiveFilters.onlyStatus = status;
+                    analyses.forEach(function(a) {
+                        var matches = a.classList.contains('asimov-analysis-' + status);
+                        a.style.display = matches ? '' : 'none';
+                        a.classList.toggle('filtered-hidden', !matches);
                     });
-                    
-                    // Redraw connections after filtering
-                    setTimeout(drawGraphConnections, 50);
-                    checkEventVisibility();
                 }
+                rerenderAllGraphs();
             });
         });
 
-        // Toggle cancelled/rejected
+        // Hide Cancelled / Rejected / Deprecated
         var hideCancelledBtn = document.getElementById('hide-cancelled');
         if (hideCancelledBtn) {
             hideCancelledBtn.addEventListener('click', function() {
                 this.classList.toggle('active');
-                var analyses = document.querySelectorAll('.graph-node.status-cancelled, .graph-node.status-stopped, .asimov-analysis-cancelled, .asimov-analysis-stopped');
-                analyses.forEach(function(analysis) {
-                    if (hideCancelledBtn.classList.contains('active')) {
-                        analysis.classList.add('hidden');
-                        analysis.style.display = 'none';
-                        // Hide downstream dependencies of cancelled analyses
-                        hideDownstreamDependencies(analysis);
-                    } else {
-                        analysis.classList.remove('hidden');
-                        analysis.style.display = '';
-                    }
+                var isActive = this.classList.contains('active');
+
+                // Graph filtering via asimovActiveFilters
+                ['cancelled','stopped'].forEach(function(s) {
+                    isActive ? asimovActiveFilters.hiddenStatuses.add(s)
+                             : asimovActiveFilters.hiddenStatuses.delete(s);
                 });
-                var reviews = document.querySelectorAll('.review-deprecated, .review-rejected');
-                reviews.forEach(function(review) {
-                    if (hideCancelledBtn.classList.contains('active')) {
-                        review.classList.add('hidden');
-                    } else {
-                        review.classList.remove('hidden');
-                    }
+                ['deprecated','rejected'].forEach(function(r) {
+                    isActive ? asimovActiveFilters.hiddenReviews.add(r)
+                             : asimovActiveFilters.hiddenReviews.delete(r);
                 });
-                
-                // Redraw connections after hiding cancelled
-                setTimeout(drawGraphConnections, 50);
+
+                // Legacy .asimov-analysis elements
+                document.querySelectorAll(
+                    '.asimov-analysis-cancelled, .asimov-analysis-stopped'
+                ).forEach(function(a) {
+                    a.classList.toggle('hidden', isActive);
+                    a.style.display = isActive ? 'none' : '';
+                });
+
+                rerenderAllGraphs();
             });
-            // Auto-hide on page load
+            // Auto-apply on page load
             hideCancelledBtn.click();
         }
 
@@ -839,55 +762,55 @@ def html(event, webdir):
         var showAllBtn = document.getElementById('show-all');
         if (showAllBtn) {
             showAllBtn.addEventListener('click', function() {
-                // Clear status filters
-                document.querySelectorAll('.filter-status').forEach(function(b) {
+                document.querySelectorAll('.filter-status, .filter-review').forEach(function(b) {
                     b.classList.remove('active');
                 });
+                if (hideCancelledBtn) hideCancelledBtn.classList.remove('active');
 
-                // Clear review filters
-                document.querySelectorAll('.filter-review').forEach(function(b) {
-                    b.classList.remove('active');
+                asimovActiveFilters.hiddenStatuses.clear();
+                asimovActiveFilters.hiddenReviews.clear();
+                asimovActiveFilters.onlyStatus = null;
+                asimovActiveFilters.onlyReview = null;
+
+                document.querySelectorAll('.asimov-analysis').forEach(function(a) {
+                    a.style.display = '';
+                    a.classList.remove('hidden', 'filtered-hidden');
                 });
 
-                // Deactivate "Hide Cancelled" and unhide all related items
-                if (hideCancelledBtn) {
-                    hideCancelledBtn.classList.remove('active');
-                }
-
-                // Show all analyses and remove any hidden state
-                document.querySelectorAll('.graph-node, .asimov-analysis').forEach(function(analysis) {
-                    analysis.style.display = '';
-                    analysis.classList.remove('hidden');
-                    analysis.classList.remove('filtered-hidden');
-                });
-
-                // Also unhide any reviews that were hidden by "Hide Cancelled"
-                document.querySelectorAll('.review-deprecated, .review-rejected').forEach(function(review) {
-                    review.classList.remove('hidden');
-                });
-                
-                // Redraw connections after showing all
-                setTimeout(drawGraphConnections, 50);
+                rerenderAllGraphs();
             });
         }
-    }
 
-    // Helper function to hide downstream dependencies recursively
-    function hideDownstreamDependencies(node) {
-        if (!node.dataset || !node.dataset.successors) return;
-        
-        var successorNames = node.dataset.successors.split(',').filter(function(name) { return name.trim(); });
-        var eventName = node.dataset.eventName || '';
-        
-        successorNames.forEach(function(successorName) {
-            var successorNodeId = 'node-' + eventName + '-' + successorName.trim();
-            var successorNode = document.getElementById(successorNodeId);
-            if (successorNode && successorNode.style.display !== 'none') {
-                successorNode.style.display = 'none';
-                successorNode.classList.add('filtered-hidden');
-                // Recursively hide its dependencies
-                hideDownstreamDependencies(successorNode);
-            }
+        // Review filter buttons
+        document.querySelectorAll('.filter-review').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var reviewStatus = this.dataset.review;
+                var analyses = document.querySelectorAll('.asimov-analysis');
+
+                if (this.classList.contains('active')) {
+                    this.classList.remove('active');
+                    asimovActiveFilters.onlyReview = null;
+                    analyses.forEach(function(a) {
+                        if (!a.classList.contains('hidden')) {
+                            a.style.display = '';
+                            a.classList.remove('filtered-hidden');
+                        }
+                    });
+                } else {
+                    document.querySelectorAll('.filter-review').forEach(function(b) {
+                        b.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                    asimovActiveFilters.onlyReview = reviewStatus;
+                    analyses.forEach(function(a) {
+                        var aReview = a.dataset.review || 'none';
+                        var matches = aReview === reviewStatus;
+                        a.style.display = matches ? '' : 'none';
+                        a.classList.toggle('filtered-hidden', !matches);
+                    });
+                }
+                rerenderAllGraphs();
+            });
         });
     }
 
@@ -903,61 +826,23 @@ def html(event, webdir):
         });
     }
 
-    function calculateStats() {
-        var stats = {
-            total: 0,
-            running: 0,
-            finished: 0,
-            stuck: 0,
-            cancelled: 0
-        };
-
-        // Count both graph nodes and legacy asimov-analysis elements
-        var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
-        analyses.forEach(function(analysis) {
-            stats.total++;
-            
-            // Check for graph node status classes
-            if (analysis.classList.contains('status-running') || 
-                analysis.classList.contains('status-processing') ||
-                analysis.classList.contains('asimov-analysis-running') || 
-                analysis.classList.contains('asimov-analysis-processing')) {
-                stats.running++;
-            } else if (analysis.classList.contains('status-finished') || 
-                       analysis.classList.contains('status-uploaded') ||
-                       analysis.classList.contains('asimov-analysis-finished') || 
-                       analysis.classList.contains('asimov-analysis-uploaded')) {
-                stats.finished++;
-            } else if (analysis.classList.contains('status-stuck') ||
-                       analysis.classList.contains('asimov-analysis-stuck')) {
-                stats.stuck++;
-            } else if (analysis.classList.contains('status-cancelled') || 
-                       analysis.classList.contains('status-stopped') ||
-                       analysis.classList.contains('asimov-analysis-cancelled') || 
-                       analysis.classList.contains('asimov-analysis-stopped')) {
-                stats.cancelled++;
-            }
-        });
-
-        // Update stat displays if they exist
-        if (document.getElementById('stat-total')) {
-            document.getElementById('stat-total').textContent = stats.total;
-        }
-        if (document.getElementById('stat-running')) {
-            document.getElementById('stat-running').textContent = stats.running;
-        }
-        if (document.getElementById('stat-finished')) {
-            document.getElementById('stat-finished').textContent = stats.finished;
-        }
-        if (document.getElementById('stat-stuck')) {
-            document.getElementById('stat-stuck').textContent = stats.stuck;
-        }
-        if (document.getElementById('stat-cancelled')) {
-            document.getElementById('stat-cancelled').textContent = stats.cancelled;
+    function initializeSearch() {
+        var searchBox = document.getElementById('subject-search');
+        if (searchBox) {
+            searchBox.addEventListener('input', function() {
+                var searchTerm = this.value.toLowerCase();
+                document.querySelectorAll('.event-data').forEach(function(event) {
+                    var eventName = (event.dataset.eventName || '').toLowerCase();
+                    event.style.display = eventName.includes(searchTerm) ? '' : 'none';
+                });
+            });
         }
     }
 
-    // Modal functionality
+    // -----------------------------------------------------------------------
+    // Modal functionality (unchanged)
+    // -----------------------------------------------------------------------
+
     function openAnalysisModal(dataId) {
         var modal = document.getElementById('analysis-modal');
         var backdrop = document.getElementById('modal-backdrop');
@@ -1072,284 +957,26 @@ def html(event, webdir):
         }
     }
 
-    // Subject search functionality
-    function initializeSearch() {
-        var searchBox = document.getElementById('subject-search');
-        if (searchBox) {
-            searchBox.addEventListener('input', function() {
-                var searchTerm = this.value.toLowerCase();
-                document.querySelectorAll('.event-data').forEach(function(event) {
-                    var eventName = event.dataset.eventName.toLowerCase();
-                    if (eventName.includes(searchTerm)) {
-                        event.style.display = '';
-                    } else {
-                        event.style.display = 'none';
-                    }
-                });
-            });
-        }
-    }
-
-    // Review status filters
-    function initializeReviewFilters() {
-        document.querySelectorAll('.filter-review').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var reviewStatus = this.dataset.review;
-                var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
-                
-                if (this.classList.contains('active')) {
-                    // Deactivate filter - show all
-                    analyses.forEach(function(analysis) {
-                        if (!analysis.classList.contains('hidden')) {
-                            analysis.style.display = '';
-                            analysis.classList.remove('filtered-hidden');
-                        }
-                    });
-                    this.classList.remove('active');
-                } else {
-                    // Activate filter
-                    document.querySelectorAll('.filter-review').forEach(function(b) {
-                        b.classList.remove('active');
-                    });
-                    this.classList.add('active');
-                    
-                    analyses.forEach(function(analysis) {
-                        var analysisReview = analysis.dataset.review || 'none';
-                        if (analysisReview === reviewStatus) {
-                            analysis.style.display = '';
-                            analysis.classList.remove('filtered-hidden');
-                        } else {
-                            analysis.style.display = 'none';
-                            analysis.classList.add('filtered-hidden');
-                            // Hide downstream dependencies
-                            hideDownstreamDependencies(analysis);
-                        }
-                    });
-                }
-                
-                // Redraw connections after review filter
-                setTimeout(drawGraphConnections, 50);
-                checkEventVisibility();
-            });
-        });
-    }
-
-    // Check and collapse events with no visible analyses
-    function checkEventVisibility() {
-        document.querySelectorAll('.event-data').forEach(function(event) {
-            var visibleAnalyses = 0;
-            event.querySelectorAll('.graph-node, .asimov-analysis').forEach(function(analysis) {
-                if (analysis.style.display !== 'none' && !analysis.classList.contains('hidden')) {
-                    visibleAnalyses++;
-                }
-            });
-            
-            if (visibleAnalyses === 0) {
-                event.classList.add('collapsed');
-            } else {
-                event.classList.remove('collapsed');
-            }
-        });
-    }
-
-    // Draw SVG connections between graph layers
-    function drawGraphConnections() {
-        document.querySelectorAll('.workflow-graph').forEach(function(graphContainer) {
-            // Create or get SVG element
-            var existingSvg = graphContainer.querySelector('.graph-connections');
-            if (existingSvg) {
-                existingSvg.remove();
-            }
-            
-            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.classList.add('graph-connections');
-            
-            var container = graphContainer.querySelector('.graph-container');
-            if (!container) return;
-            
-            // Get all graph nodes (not layers, since we need actual dependencies)
-            var allNodes = container.querySelectorAll('.graph-node');
-            if (allNodes.length === 0) return;
-            
-            // Calculate SVG dimensions
-            var containerRect = container.getBoundingClientRect();
-            svg.setAttribute('width', containerRect.width);
-            svg.setAttribute('height', containerRect.height);
-            
-            // Draw regular connections based on actual dependencies
-            allNodes.forEach(function(sourceNode) {
-                // Skip if source node is hidden
-                if (sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
-                    return;
-                }
-                
-                // Get successors from data attribute
-                var successors = sourceNode.dataset.successors;
-                if (!successors || !successors.trim()) return;
-                
-                var successorNames = successors.split(',').map(function(name) { return name.trim(); }).filter(function(name) { return name; });
-                
-                // Get event name for scoped lookups
-                var eventName = sourceNode.dataset.eventName || '';
-                
-                successorNames.forEach(function(successorName) {
-                    // Create scoped node ID using event name
-                    var targetNodeId = 'node-' + eventName + '-' + successorName;
-                    var targetNode = document.getElementById(targetNodeId);
-                    
-                    // Skip if target node doesn't exist or is hidden
-                    if (!targetNode || targetNode.style.display === 'none' || targetNode.classList.contains('hidden') || targetNode.classList.contains('filtered-hidden')) {
-                        return;
-                    }
-                    
-                    var sourceRect = sourceNode.getBoundingClientRect();
-                    var targetRect = targetNode.getBoundingClientRect();
-                    
-                    // Calculate connection points (center right of source, center left of target)
-                    var x1 = sourceRect.right - containerRect.left;
-                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
-                    var x2 = targetRect.left - containerRect.left;
-                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-                    
-                    // Create curved path
-                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    
-                    // Calculate control points for bezier curve
-                    var controlPointOffset = Math.abs(x2 - x1) / 2;
-                    var cx1 = x1 + controlPointOffset;
-                    var cy1 = y1;
-                    var cx2 = x2 - controlPointOffset;
-                    var cy2 = y2;
-                    
-                    // Create smooth cubic bezier curve
-                    var d = 'M ' + x1 + ' ' + y1 + 
-                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
-                                   cx2 + ' ' + cy2 + ', ' + 
-                                   x2 + ' ' + y2;
-                    
-                    path.setAttribute('d', d);
-                    
-                    // Use different styling for connections to/from subject analyses
-                    var isTargetSubject = targetNode.dataset.isSubject === 'true';
-                    if (isTargetSubject) {
-                        path.classList.add('connection-line-subject');
-                    } else {
-                        path.classList.add('connection-line');
-                    }
-                    
-                    svg.appendChild(path);
-                });
-            });
-            
-            // Draw subject analysis source dependencies with status-based styling
-            allNodes.forEach(function(subjectNode) {
-                // Only process subject analyses
-                if (subjectNode.dataset.isSubject !== 'true') return;
-                
-                var sourceAnalyses = subjectNode.dataset.sourceAnalyses;
-                if (!sourceAnalyses || !sourceAnalyses.trim()) return;
-                
-                // Parse source analyses: "name1:status1|name2:status2|..."
-                var sourceSpecs = sourceAnalyses.split('|').filter(function(spec) { return spec.trim(); });
-                var eventName = subjectNode.dataset.eventName || '';
-                
-                sourceSpecs.forEach(function(spec) {
-                    var parts = spec.split(':');
-                    var sourceName = parts[0];
-                    var sourceStatus = parts[1] || 'unknown';
-                    
-                    // Find the source analysis node
-                    var sourceNodeId = 'node-' + eventName + '-' + sourceName;
-                    var sourceNode = document.getElementById(sourceNodeId);
-                    
-                    if (!sourceNode || sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
-                        return;
-                    }
-                    
-                    var sourceRect = sourceNode.getBoundingClientRect();
-                    var targetRect = subjectNode.getBoundingClientRect();
-                    
-                    // Calculate connection points
-                    var x1 = sourceRect.right - containerRect.left;
-                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
-                    var x2 = targetRect.left - containerRect.left;
-                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-                    
-                    // Create path for source analysis dependency
-                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    
-                    // Calculate control points for bezier curve
-                    var controlPointOffset = Math.abs(x2 - x1) / 2;
-                    var cx1 = x1 + controlPointOffset;
-                    var cy1 = y1;
-                    var cx2 = x2 - controlPointOffset;
-                    var cy2 = y2;
-                    
-                    // Create smooth cubic bezier curve
-                    var d = 'M ' + x1 + ' ' + y1 + 
-                            ' C ' + cx1 + ' ' + cy1 + ', ' + 
-                                   cx2 + ' ' + cy2 + ', ' + 
-                                   x2 + ' ' + y2;
-                    
-                    path.setAttribute('d', d);
-                    
-                    // Determine path styling based on source analysis status
-                    if (sourceStatus === 'finished' || sourceStatus === 'uploaded') {
-                        path.classList.add('connection-included');
-                    } else if (sourceStatus === 'processing' || sourceStatus === 'running') {
-                        path.classList.add('connection-pending');
-                    } else {
-                        path.classList.add('connection-waiting');
-                    }
-                    
-                    // Add title for hover tooltip
-                    var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                    title.textContent = subjectNode.dataset.nodeName + ' uses ' + sourceName + ' (' + sourceStatus + ')';
-                    path.appendChild(title);
-                    
-                    svg.appendChild(path);
-                });
-            });
-            
-            // Insert SVG at the beginning of container so it's behind nodes
-            container.insertBefore(svg, container.firstChild);
-        });
-    }
-
-    // Enhanced initialization
+    // Initialization
     window.onload = function() {
         setupRefresh();
         initializeFilters();
         initializeToggles();
         initializeSearch();
-        initializeReviewFilters();
         calculateStats();
-        
-        // Draw graph connections after DOM is ready
-        setTimeout(drawGraphConnections, 100);
-        
+
         // Add modal close handlers
         var closeBtn = document.getElementById('modal-close-btn');
         if (closeBtn) {
             closeBtn.addEventListener('click', closeAnalysisModal);
         }
-        
         var backdrop = document.getElementById('modal-backdrop');
         if (backdrop) {
             backdrop.addEventListener('click', closeAnalysisModal);
         }
-        
-        // Add filter change listener to check event visibility
-        document.querySelectorAll('.filter-status, .filter-review, #hide-cancelled').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                setTimeout(checkEventVisibility, 100);
-            });
-        });
-        
-        // Redraw connections on window resize
-        window.addEventListener('resize', function() {
-            setTimeout(drawGraphConnections, 100);
-        });
+
+        // Initial Mermaid render (filters already applied by initializeFilters)
+        rerenderAllGraphs();
     };
 
 </script>
