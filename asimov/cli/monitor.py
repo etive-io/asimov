@@ -311,7 +311,7 @@ def monitor(ctx, event, update, dry_run, chain):
         complete = {
             production
             for production in event.productions
-            if production.status in {"finished", "uploaded", "processing"}
+            if production.status in {"finished", "uploaded", "processing", "complete"}
         }
         others = all_productions - set(event.get_all_latest()) - complete
         if len(others) > 0:

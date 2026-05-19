@@ -521,7 +521,7 @@ class Analysis:
 
     @property
     def finished(self):
-        finished_states = ["finished", "processing", "uploaded"]
+        finished_states = ["finished", "processing", "uploaded", "complete"]
         return self.status in finished_states
 
     @property
@@ -1168,7 +1168,7 @@ class SubjectAnalysis(Analysis):
         if not hasattr(self, 'analyses') or not self.analyses:
             return False
         
-        finished_statuses = {"finished", "uploaded", "processing"}
+        finished_statuses = {"finished", "uploaded", "processing", "complete"}
         for analysis in self.analyses:
             if analysis.status not in finished_statuses:
                 return False
