@@ -91,11 +91,6 @@ class Waveform(Blueprint):
         description="The mode array to use in the waveform model.",
         default=None,
     )
-    minimum_frequency: dict[str, float] | None = pydantic.Field(
-        alias="minimum frequency",
-        description="The minimum frequency for the waveform model, given as a dictionary of values per interferometer.",
-        default=None,
-    )
 
 
     model_config = ConfigDict(extra='forbid')
@@ -259,7 +254,11 @@ class Likelihood(Blueprint):
         description="Configuration parameters for Relative Binning in the likelihood.",
         default=None,
     )
-
+    minimum_frequency: Optional[Dict[str, float]] = pydantic.Field(
+        alias="minimum frequency",
+        description="The minimum frequency for the likelihood evaluation, given as a dictionary of values per interferometer.",
+        default=None,
+    )
 
     model_config = ConfigDict(extra='forbid')
 

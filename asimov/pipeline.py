@@ -524,10 +524,10 @@ class PESummaryPipeline(PostPipeline):
         )[0]
         
         # Validate minimum frequency format
-        min_freq = self.production.meta["waveform"]["minimum frequency"]
+        min_freq = self.production.meta["likelihood"]["minimum frequency"]
         if not isinstance(min_freq, dict) or not min_freq:
             raise ValueError(
-                "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                "Minimum frequency in 'likelihood' section must be a non-empty dictionary "
                 "mapping interferometer names to frequency values."
             )
         
