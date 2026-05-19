@@ -41,9 +41,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: /usr/share/miniconda/envs/asimov
-        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/packages.txt', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v2
+        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/packages.txt', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v3
         restore-keys: |
-          conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-
+          conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-v3-
 
     - name: Install conda dependencies
       if: steps.cache-env.outputs.cache-hit != 'true' && inputs.conda-packages != ''
@@ -63,3 +63,4 @@ runs:
         if [ -n "${{ inputs.extra-packages }}" ]; then
           "$CONDA_PYTHON" -m pip install ${{ inputs.extra-packages }}
         fi
+        echo "Installed asimov from: $("$CONDA_PYTHON" -c 'import asimov; print(asimov.__file__)')"
