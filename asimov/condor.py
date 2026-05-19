@@ -24,6 +24,10 @@ except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
 
+# htcondor2 exposes only HTCondorException; older htcondor has the specific subtypes.
+_HTCondorLocateError = getattr(htcondor, "HTCondorLocateError", htcondor.HTCondorException)
+_HTCondorIOError = getattr(htcondor, "HTCondorIOError", htcondor.HTCondorException)
+
 import yaml
 
 from asimov import config, logger, LOGGER_LEVEL
@@ -117,8 +121,8 @@ def _submit_job_legacy(submit_description):
         result = schedd.submit(hostname_job)
         cluster_id = result.cluster()
     except (
-        htcondor.HTCondorLocateError,
-        htcondor.HTCondorIOError,
+        _HTCondorLocateError,
+        _HTCondorIOError,
         configparser.NoOptionError,
         configparser.NoSectionError,
         KeyError,
@@ -133,7 +137,7 @@ def _submit_job_legacy(submit_description):
                 result = schedd.submit(hostname_job)
                 cluster_id = result.cluster()
                 break
-            except htcondor.HTCondorIOError:
+            except _HTCondorIOError:
                 logger.info(f"{collector} cannot receive jobs")
 
     return cluster_id
@@ -220,7 +224,7 @@ def collect_history(cluster_id):
                 )
                 logger.info(f"Jobs found: {jobs}")
                 break
-            except htcondor.HTCondorIOError:
+            except _HTCondorIOError:
                 logger.info(f"{collector} cannot receive jobs")
         if len(list(jobs)) == 0:
             raise ValueError
@@ -411,7 +415,7 @@ class CondorJobList:
 
         try:
             collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
-        except htcondor.HTCondorLocateError as e:
+        except _HTCondorLocateError as e:
             logger.error("Could not find a valid condor scheduler")
             logger.exception(e)
             raise e
