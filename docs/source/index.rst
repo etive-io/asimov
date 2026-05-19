@@ -139,6 +139,7 @@ Users' guide
    :caption: The Ledger
 
    ledger
+   blueprints
       
    
 .. toctree::
