@@ -57,7 +57,9 @@ runs:
       run: |
         git config --global --add safe.directory "${GITHUB_WORKSPACE}"
         CONDA_BASE="$("${CONDA_EXE:-conda}" info --base)"
-        "${CONDA_BASE}/envs/asimov/bin/pip" install --force-reinstall .
+        CONDA_PYTHON="${CONDA_BASE}/envs/asimov/bin/python"
+        "$CONDA_PYTHON" -m ensurepip --upgrade
+        "$CONDA_PYTHON" -m pip install --force-reinstall .
         if [ -n "${{ inputs.extra-packages }}" ]; then
-          "${CONDA_BASE}/envs/asimov/bin/pip" install ${{ inputs.extra-packages }}
+          "$CONDA_PYTHON" -m pip install ${{ inputs.extra-packages }}
         fi
