@@ -297,9 +297,11 @@ class ProjectTestPipeline(Pipeline):
                     f.write("population_rate: 10.5\n")
                     f.write("rate_uncertainty: 2.3\n")
                     f.write("selection_effects: 0.85\n")
-                    
+
         super().after_completion()
-        
+        # No post-processing step; mark directly as complete.
+        self.production.status = "complete"
+
     def samples(self, absolute=False):
         """
         Return the location of population samples.

@@ -269,7 +269,9 @@ class SimpleTestPipeline(Pipeline):
                     f.write("test_error: 0.1\n")
                     
         super().after_completion()
-        
+        # No post-processing step; mark directly as complete.
+        self.production.status = "complete"
+
     def samples(self, absolute=False):
         """
         Return the location of output samples.
