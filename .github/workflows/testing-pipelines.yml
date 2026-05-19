@@ -151,28 +151,31 @@ jobs:
         with:
           script: asimov monitor
 
+      - name: Write pipeline verification script
+        run: |
+          cat > /tmp/verify_pipelines.py <<'EOF'
+          import sys
+          from asimov.monitor_api import get_analysis_status
+          statuses = get_analysis_status()
+          print("Final analysis statuses:")
+          failures = []
+          for name, status in statuses.items():
+              print(f"  {name}: {status}")
+              if str(status).lower() != "complete":
+                  failures.append(f"{name}: {status}")
+          if failures:
+              print(f"\nFAIL: {len(failures)} analyses not complete:")
+              for f in failures:
+                  print(f"  - {f}")
+              sys.exit(1)
+          print(f"\nAll {len(statuses)} analyses are complete!")
+          EOF
+          chmod 644 /tmp/verify_pipelines.py
+
       - name: Verify all testing pipelines completed
         uses: ./.github/actions/run-asimov-command
         with:
-          script: |
-            asimov monitor
-            python3 << 'EOF'
-            import sys
-            from asimov.monitor_api import get_analysis_status
-            statuses = get_analysis_status()
-            print("Final analysis statuses:")
-            failures = []
-            for name, status in statuses.items():
-                print(f"  {name}: {status}")
-                if str(status).lower() != "complete":
-                    failures.append(f"{name}: {status}")
-            if failures:
-                print(f"\nFAIL: {len(failures)} analyses not complete:")
-                for f in failures:
-                    print(f"  - {f}")
-                sys.exit(1)
-            print(f"\nAll {len(statuses)} analyses are complete!")
-            EOF
+          script: python3 /tmp/verify_pipelines.py
 
       - name: Archive artifacts on failure
         if: failure()

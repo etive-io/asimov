@@ -101,7 +101,7 @@ jobs:
       - name: Verify all testing pipelines completed
         run: |
           asimov monitor
-          python3 -c "
+          python3 <<'EOF'
           import sys
           from asimov.monitor_api import get_analysis_status
           statuses = get_analysis_status()
@@ -116,7 +116,7 @@ jobs:
               [print(f'  - {f}') for f in failures]
               sys.exit(1)
           print(f'All {len(statuses)} analyses are complete!')
-          "
+          EOF
 
       - name: Archive artifacts on failure
         if: failure()

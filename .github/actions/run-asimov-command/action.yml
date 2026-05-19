@@ -12,6 +12,7 @@ runs:
     - name: Run asimov command
       shell: bash -el {0}
       run: |
+        CONDA_EXE="${CONDA_EXE:-$(which conda)}"
         su - submituser <<SUBMITUSER
         set -euo pipefail
         cd "$GITHUB_WORKSPACE"

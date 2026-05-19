@@ -378,8 +378,8 @@ class Slurm(Scheduler):
         """Return squeue output for one job (or all jobs if job_id is None)."""
         if job_id is not None:
             result = subprocess.run(
-                ["squeue", "-j", str(job_id), "-h", "--format=%i %T"],
-                capture_output=True, text=True,
+                ["squeue", "-j", str(job_id), "-h", "--format=%i %t"],
+                capture_output=True, text=True, check=True,
             )
             return result.stdout.strip()
         return self.query_all_jobs()
@@ -401,10 +401,10 @@ class Slurm(Scheduler):
 
     def query_all_jobs(self):
         """Return all running jobs for the configured user as a list of dicts."""
-        args = ["squeue", "--format=%i|%j|%T|%C", "-h"]
+        args = ["squeue", "--format=%i|%j|%t|%C", "-h"]
         if self.user:
             args += ["-u", self.user]
-        result = subprocess.run(args, capture_output=True, text=True)
+        result = subprocess.run(args, capture_output=True, text=True, check=True)
         data = []
         for line in result.stdout.strip().splitlines():
             if not line:
