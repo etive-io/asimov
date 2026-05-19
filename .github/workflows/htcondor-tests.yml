@@ -5,6 +5,11 @@ on:
       - master
       - "v*-preview"
       - "v*-release"
+  pull_request:
+    branches:
+      - master
+      - "v*-preview"
+      - "v*-release"
   workflow_dispatch:
 
 jobs:
