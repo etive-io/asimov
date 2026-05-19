@@ -547,27 +547,45 @@ class Event:
 
             _REVIEW_PREFIX = {'approved': '✓ ', 'rejected': '✗ ', 'deprecated': '⊘ '}
 
-            def _mid(name):
-                """Sanitise an analysis name to a valid Mermaid node ID."""
-                return re.sub(r'[^a-zA-Z0-9]', '_', name)
+            def _safe_token(name):
+                """Sanitise a string into a token for Mermaid/DOM identifiers."""
+                return re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
+
+            def _safe_dom_id(*parts):
+                dom_id = '-'.join(str(part) for part in parts if part is not None)
+                dom_id = re.sub(r'[^a-zA-Z0-9_-]', '-', dom_id).strip('-')
+                return dom_id or 'analysis-data'
+
+            def _escape_mermaid_label(value):
+                return (str(value)
+                        .replace('\\', '\\\\')
+                        .replace('"', '\\"')
+                        .replace('\r', ' ')
+                        .replace('\n', ' '))
 
             card += f'<div class="workflow-graph" data-event-name="{self.name}">'
             card += '<h4>Workflow Graph</h4>'
-            card += f'<div id="mermaid-{self.name}" class="mermaid-container"></div>'
+            container_id = f'mermaid-{_safe_dom_id(self.name)}'
+            card += f'<div id="{container_id}" class="mermaid-container"></div>'
 
+            node_data_id_by_node = {}
             try:
                 nodes_data = []
                 node_map = {}
-                for node in self.graph.nodes():
-                    mid = _mid(node.name)
-                    data_id = f"analysis-data-{self.name}-{node.name}"
+                node_mid_by_node = {}
+                event_prefix = f'event_{_safe_token(self.name)}'
+                for idx, node in enumerate(self.graph.nodes()):
+                    mid = f'{event_prefix}_{_safe_token(node.name)}_{idx}'
+                    data_id = _safe_dom_id('analysis-data', self.name, node.name, idx)
+                    node_mid_by_node[node] = mid
+                    node_data_id_by_node[node] = data_id
                     node_map[mid] = data_id
                     status = (node.status or 'unknown') if hasattr(node, 'status') else 'unknown'
                     review_status, _ = get_review_info(node)
                     pipeline_name = (node.pipeline.name
                                      if hasattr(node, 'pipeline') and node.pipeline else '')
                     prefix = _REVIEW_PREFIX.get(review_status, '')
-                    label = f'{prefix}{node.name}\\n{pipeline_name}'.replace('"', '#quot;')
+                    label = _escape_mermaid_label(f'{prefix}{node.name}\\n{pipeline_name}')
                     is_subject = (getattr(node, 'category', '') == 'subject_analyses')
                     nodes_data.append({
                         'id': mid,
@@ -578,13 +596,12 @@ class Event:
                         'dataId': data_id,
                     })
 
-                edges_data = [
-                    {'from': _mid(s.name), 'to': _mid(t.name)}
-                    for s, t in self.graph.edges()
-                ]
+                edges_data = [{'from': node_mid_by_node[s], 'to': node_mid_by_node[t]}
+                              for s, t in self.graph.edges()
+                              if s in node_mid_by_node and t in node_mid_by_node]
 
                 event_name_js = _json.dumps(self.name)
-                container_id_js = _json.dumps(f'mermaid-{self.name}')
+                container_id_js = _json.dumps(container_id)
                 nodes_js = _json.dumps(nodes_data)
                 edges_js = _json.dumps(edges_data)
                 node_map_js = _json.dumps(node_map)
@@ -606,7 +623,6 @@ Object.assign(window.asimovNodeMap, {node_map_js});
             # Hidden data containers for modal — one per analysis node
             try:
                 import os as _os
-                from asimov.event import status_map
 
                 for node in self.graph.nodes():
                     status = node.status if hasattr(node, 'status') else 'unknown'
@@ -614,7 +630,9 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                     status_badge = status_map.get(status, 'secondary')
                     pipeline_name = (node.pipeline.name
                                      if hasattr(node, 'pipeline') and node.pipeline else '')
-                    data_id = f"analysis-data-{self.name}-{node.name}"
+                    data_id = node_data_id_by_node.get(
+                        node, _safe_dom_id('analysis-data', self.name, node.name)
+                    )
 
                     comment = node.comment if hasattr(node, 'comment') and node.comment else ''
                     rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''

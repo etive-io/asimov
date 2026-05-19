@@ -5,7 +5,7 @@ mermaid.registerLayoutLoaders(elkLayouts);
 
 mermaid.initialize({
   startOnLoad: false,      // we call mermaid.render() manually after page load
-  securityLevel: 'loose',  // required for click handlers in diagram definitions
+  securityLevel: 'antiscript',
   flowchart: {
     defaultRenderer: 'elk',
   },

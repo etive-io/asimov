@@ -558,7 +558,8 @@ def html(event, webdir):
     var asimovActiveFilters = {
         hiddenStatuses: new Set(),
         hiddenReviews:  new Set(),
-        onlyStatus:     null    // when a status filter button is active
+        onlyStatus:     null,   // when a status filter button is active
+        onlyReview:     null
     };
 
     var ALL_STATUSES = ['finished','uploaded','running','processing','stuck',
@@ -578,12 +579,17 @@ def html(event, webdir):
         'classDef unknown    fill:#fff,stroke:#e1e4e8,color:#000'
     ].join('\\n    ');
 
+    function isNodeVisible(n, filters) {
+        if (filters.hiddenStatuses.has(n.status)) return false;
+        if (filters.hiddenReviews.has(n.review))  return false;
+        if (filters.onlyStatus && n.status !== filters.onlyStatus) return false;
+        if (filters.onlyReview && n.review !== filters.onlyReview) return false;
+        return true;
+    }
+
     function buildMermaidDef(graphData, filters) {
         var visibleNodes = graphData.nodes.filter(function(n) {
-            if (filters.hiddenStatuses.has(n.status)) return false;
-            if (filters.hiddenReviews.has(n.review))  return false;
-            if (filters.onlyStatus && n.status !== filters.onlyStatus) return false;
-            return true;
+            return isNodeVisible(n, filters);
         });
         var visibleIds = new Set(visibleNodes.map(function(n) { return n.id; }));
         var visibleEdges = graphData.edges.filter(function(e) {
@@ -668,10 +674,7 @@ def html(event, webdir):
             if (window.asimovGraphs && window.asimovGraphs[eventName]) {
                 var gd = window.asimovGraphs[eventName];
                 hasVisible = gd.nodes.some(function(n) {
-                    if (asimovActiveFilters.hiddenStatuses.has(n.status)) return false;
-                    if (asimovActiveFilters.hiddenReviews.has(n.review))  return false;
-                    if (asimovActiveFilters.onlyStatus && n.status !== asimovActiveFilters.onlyStatus) return false;
-                    return true;
+                    return isNodeVisible(n, asimovActiveFilters);
                 });
             }
             // Also check legacy .asimov-analysis elements
@@ -767,6 +770,7 @@ def html(event, webdir):
                 asimovActiveFilters.hiddenStatuses.clear();
                 asimovActiveFilters.hiddenReviews.clear();
                 asimovActiveFilters.onlyStatus = null;
+                asimovActiveFilters.onlyReview = null;
 
                 document.querySelectorAll('.asimov-analysis').forEach(function(a) {
                     a.style.display = '';
