@@ -931,11 +931,11 @@ Each parameter prior is specified as a sub-section with the following optional k
    * - ``priors:phi 12``
      - ``Uniform``
      - Prior on the azimuthal angle between the two spin vectors.
-       Defaults to ``Uniform(0, 2π)`` with periodic boundary.
+       Defaults to ``Uniform(0, 2*pi)`` with periodic boundary.
    * - ``priors:phi jl``
      - ``Uniform``
      - Prior on the azimuthal angle of the total angular momentum.
-       Defaults to ``Uniform(0, 2π)`` with periodic boundary.
+       Defaults to ``Uniform(0, 2*pi)`` with periodic boundary.
    * - ``priors:lambda 1``
      - ``Uniform``
      - Prior on the tidal deformability of the primary component.
