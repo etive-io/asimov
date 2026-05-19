@@ -53,10 +53,11 @@ runs:
         conda install -y -n asimov --file ${{ inputs.conda-packages }}
 
     - name: Install asimov from source
-      shell: bash -el {0}
+      shell: bash -e {0}
       run: |
         git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-        $CONDA_EXE run -n asimov pip install --force-reinstall .
+        CONDA_BASE="$("${CONDA_EXE:-conda}" info --base)"
+        "${CONDA_BASE}/envs/asimov/bin/pip" install --force-reinstall .
         if [ -n "${{ inputs.extra-packages }}" ]; then
-          $CONDA_EXE run -n asimov pip install ${{ inputs.extra-packages }}
+          "${CONDA_BASE}/envs/asimov/bin/pip" install ${{ inputs.extra-packages }}
         fi
