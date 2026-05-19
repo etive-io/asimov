@@ -9,6 +9,10 @@ inputs:
     description: 'Additional pip packages to install'
     default: ''
     required: false
+  conda-packages:
+    description: 'Path to conda packages file; set to empty string to skip heavy conda packages'
+    default: 'conda/packages.txt'
+    required: false
 runs:
   using: "composite"
   steps:
@@ -41,13 +45,12 @@ runs:
         restore-keys: |
           conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-
 
-    - name: Install dependencies
-      if: steps.cache-env.outputs.cache-hit != 'true'
+    - name: Install conda dependencies
+      if: steps.cache-env.outputs.cache-hit != 'true' && inputs.conda-packages != ''
       shell: bash -el {0}
       run: |
         git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-        conda install -y -n asimov --file conda/packages.txt
-        conda install -y -n asimov conda-build
+        conda install -y -n asimov --file ${{ inputs.conda-packages }}
 
     - name: Install asimov from source
       shell: bash -el {0}

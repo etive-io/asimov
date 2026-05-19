@@ -8,9 +8,6 @@ jobs:
   test-pipelines-slurm:
     name: "Testing Pipelines Slurm Test"
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
     steps:
 
       - uses: actions/checkout@v5
@@ -19,11 +16,12 @@ jobs:
 
       - uses: ./.github/actions/setup-slurm
 
-      - name: Setup Asimov Environment
-        uses: ./.github/actions/setup-asimov-env
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          extra-packages: ""
+
+      - name: Install asimov
+        run: pip install .
 
       - name: Set up git
         run: |
@@ -32,32 +30,22 @@ jobs:
           git config --global user.name "Your Name"
 
       - name: Create asimov project
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov init "Test Project"
+        run: asimov init "Test Project"
 
       - name: Configure Slurm scheduler
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov configuration update scheduler/type slurm
+        run: asimov configuration update scheduler/type slurm
 
       - name: Apply testing configuration
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output \
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_data/testing_pe.yaml"
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_data/testing_pe.yaml"
 
       - name: Add test event
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output \
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
 
       - name: Add SimpleTestPipeline analysis
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output \
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline.yaml" \
-            -e GW150914_095045
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline.yaml" -e GW150914_095045
 
       - name: Build and submit SimpleTestPipeline job
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov manage build submit
+        run: asimov manage build submit
 
       - name: Wait for SimpleTestPipeline completion
         uses: ./.github/actions/wait-for-files
@@ -70,18 +58,13 @@ jobs:
           show-condor-q: "false"
 
       - name: Run asimov monitor for SimpleTestPipeline
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov monitor
+        run: asimov monitor
 
       - name: Add SubjectTestPipeline analysis
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output \
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/subject_test_pipeline.yaml" \
-            -e GW150914_095045
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/subject_test_pipeline.yaml" -e GW150914_095045
 
       - name: Build and submit SubjectTestPipeline job
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov manage build submit
+        run: asimov manage build submit
 
       - name: Wait for SubjectTestPipeline completion
         uses: ./.github/actions/wait-for-files
@@ -94,17 +77,13 @@ jobs:
           show-condor-q: "false"
 
       - name: Run asimov monitor for SubjectTestPipeline
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov monitor
+        run: asimov monitor
 
       - name: Add ProjectTestPipeline analysis
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output \
-            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/project_test_pipeline.yaml"
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/project_test_pipeline.yaml"
 
       - name: Build and submit ProjectTestPipeline job
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov manage build submit
+        run: asimov manage build submit
 
       - name: Wait for ProjectTestPipeline completion
         uses: ./.github/actions/wait-for-files
@@ -117,13 +96,12 @@ jobs:
           show-condor-q: "false"
 
       - name: Run asimov monitor for ProjectTestPipeline
-        run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov monitor
+        run: asimov monitor
 
       - name: Verify all testing pipelines completed
         run: |
-          $CONDA_EXE run -n asimov --no-capture-output asimov monitor
-          $CONDA_EXE run -n asimov --no-capture-output python3 -c "
+          asimov monitor
+          python3 -c "
           import sys
           from asimov.monitor_api import get_analysis_status
           statuses = get_analysis_status()
