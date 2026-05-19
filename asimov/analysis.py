@@ -25,6 +25,7 @@ Project analyses
 
 import os
 import html
+import urllib.parse
 import configparser
 from copy import deepcopy
 import pathlib
@@ -1705,8 +1706,9 @@ class ProjectAnalysis(Analysis):
 """
             for subject in self._subjects:
                 subject_name = subject.name if hasattr(subject, 'name') else str(subject)
-                safe_subject_name = html.escape(subject_name, quote=True)
-                card += f"                <li><a href='#card-{safe_subject_name}'>{safe_subject_name}</a></li>\n"
+                safe_subject_name = html.escape(subject_name)
+                safe_subject_href = urllib.parse.quote(subject_name, safe="")
+                card += f"                <li><a href='#card-{safe_subject_href}'>{safe_subject_name}</a></li>\n"
 
             card += """            </ul>
         </details>
