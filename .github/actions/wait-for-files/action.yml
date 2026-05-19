@@ -31,7 +31,7 @@ runs:
   using: "composite"
   steps:
     - name: Wait for files
-      shell: bash -el {0}
+      shell: bash {0}
       run: |
         set -euo pipefail
         # Resolve inputs to concrete values in the outer shell

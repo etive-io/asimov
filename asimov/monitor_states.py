@@ -19,6 +19,15 @@ else:
 logger = logger.getChild("monitor_states")
 logger.setLevel(LOGGER_LEVEL)
 
+_CONDOR_STATUSES = {0: "unexplained", 1: "idle", 2: "running", 3: "removed", 4: "completed", 5: "held", 6: "submission error"}
+
+
+def _get_job_status(job):
+    """Return lowercase status string from a CondorJob object or a plain dict."""
+    if isinstance(job, dict):
+        return _CONDOR_STATUSES.get(job.get("status", 0), "unexplained")
+    return job.status.lower()
+
 
 class MonitorState(ABC):
     """
@@ -115,15 +124,17 @@ class RunningState(MonitorState):
             # Job not found, may have completed or been evicted
             return self._handle_no_condor_job(context)
         
-        if job.status.lower() == "idle":
+        job_status = _get_job_status(job)
+
+        if job_status == "idle":
             click.echo(
                 "  \t  "
                 + click.style("●", "green")
                 + f" {analysis.name} is in the queue (condor id: {context.job_id})"
             )
             return True
-            
-        elif job.status.lower() == "running":
+
+        elif job_status == "running":
             click.echo(
                 "  \t  "
                 + click.style("●", "green")
@@ -136,8 +147,8 @@ class RunningState(MonitorState):
             analysis.status = "running"
             context.update_ledger()
             return True
-            
-        elif job.status.lower() == "completed":
+
+        elif job_status == "completed":
             pipe = analysis.pipeline
             pipe.after_completion()
             click.echo(
@@ -148,7 +159,7 @@ class RunningState(MonitorState):
             context.refresh_job_list()
             return True
             
-        elif job.status.lower() == "held":
+        elif job_status == "held":
             click.echo(
                 "  \t  "
                 + click.style("●", "yellow")
