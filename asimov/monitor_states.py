@@ -252,13 +252,14 @@ class FinishedState(MonitorState):
         
         if pipe:
             pipe.after_completion()
+            context.update_ledger()
             click.echo(
                 "  \t  "
                 + click.style("●", "green")
                 + f" {context.analysis.name} has finished and post-processing has been started"
             )
             context.refresh_job_list()
-        
+
         return True
 
 
