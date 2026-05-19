@@ -473,7 +473,7 @@ class PESummaryPipeline(PostPipeline):
             # "should_transfer_files": "YES",
             "request_disk": "8192MB",
             "+flock_local": "True",
-            "+DESIRED_Sites": htcondor.classad.quote("nogrid"),
+            "+DESIRED_Sites": classad.quote("nogrid"),
         }
 
         if "accounting group" in self.meta:
@@ -511,8 +511,12 @@ class PESummaryPipeline(PostPipeline):
                 htcondor.HTCondorIOError,
             ):
                 # If you can't find a specified scheduler, use the first one you find
-                schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
-                schedd = htcondor.Schedd(schedulers)
+                try:
+                    schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+                    schedd = htcondor.Schedd(schedulers)
+                except (htcondor.HTCondorLocateError, htcondor.HTCondorIOError):
+                    # Last resort: use default Schedd
+                    schedd = htcondor.Schedd()
 
             result = schedd.submit(hostname_job)
             cluster_id = result.cluster()

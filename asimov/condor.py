@@ -75,6 +75,7 @@ def submit_job(submit_description):
         # If you can't find a specified scheduler, try until it works
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
+        cluster_id = None
         for collector in collectors:
             logger.info(f"Found {collector}")
             schedd = htcondor.Schedd(collector)
@@ -84,6 +85,9 @@ def submit_job(submit_description):
                 break
             except htcondor.HTCondorIOError:
                 logger.info(f"{collector} cannot receive jobs")
+        
+        if cluster_id is None:
+            raise RuntimeError("Failed to submit job: no available HTCondor scheduler could accept the job")
 
     return cluster_id
 
@@ -95,7 +99,13 @@ def delete_job(cluster_id):
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except (
+        htcondor.HTCondorLocateError,
+        htcondor.HTCondorIOError,
+        configparser.NoOptionError,
+        configparser.NoSectionError,
+        KeyError,
+    ):
         # If you can't find a specified scheduler, use the first one you find
         schedd = htcondor.Schedd()
     schedd.act(htcondor.JobAction.Remove, f"ClusterId == {cluster_id}")
@@ -108,7 +118,13 @@ def collect_history(cluster_id):
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except (
+        htcondor.HTCondorLocateError,
+        htcondor.HTCondorIOError,
+        configparser.NoOptionError,
+        configparser.NoSectionError,
+        KeyError,
+    ):
         # If you can't find a specified scheduler, use the first one you find
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -340,7 +356,8 @@ class CondorJobList:
                     ],
                 )
                 data += jobs
-            except:  # NoQA
+            except (htcondor.HTCondorIOError, htcondor.HTCondorLocateError, RuntimeError):
+                # Skip schedulers that can't be queried
                 pass
 
             retdat = []
