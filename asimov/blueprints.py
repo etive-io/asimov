@@ -1,6 +1,7 @@
 """
 Code to handle blueprints and their associated specification.
 """
+from __future__ import annotations
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, model_validator

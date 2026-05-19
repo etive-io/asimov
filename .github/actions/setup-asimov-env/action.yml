@@ -56,7 +56,7 @@ runs:
       shell: bash -el {0}
       run: |
         git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-        pip install --force-reinstall .
+        $CONDA_EXE run -n asimov pip install --force-reinstall .
         if [ -n "${{ inputs.extra-packages }}" ]; then
-          pip install ${{ inputs.extra-packages }}
+          $CONDA_EXE run -n asimov pip install ${{ inputs.extra-packages }}
         fi
