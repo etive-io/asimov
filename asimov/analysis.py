@@ -1769,6 +1769,15 @@ class GravitationalWaveTransient(SimpleAnalysis):
             ref_freq = self.meta["likelihood"].pop("reference frequency")
             self.meta["waveform"]["reference frequency"] = ref_freq
 
+        if "quality" in self.meta and "minimum frequency" in self.meta["quality"]:
+            self.logger.warning(
+                "Found 'minimum frequency' in the 'quality' section; "
+                "this is deprecated. Please move it to the 'waveform' section. "
+                "It has been automatically migrated for this run."
+            )
+            if "minimum frequency" not in self.meta["waveform"]:
+                self.meta["waveform"]["minimum frequency"] = self.meta["quality"]["minimum frequency"]
+
         # Gather the PSDs for the job
         self.psds = self._collect_psds()
 
