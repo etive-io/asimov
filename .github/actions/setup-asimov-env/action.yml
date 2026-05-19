@@ -41,20 +41,19 @@ runs:
         restore-keys: |
           conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-
 
-    - name: Install dependencies & asimov
+    - name: Install dependencies
       if: steps.cache-env.outputs.cache-hit != 'true'
       shell: bash -el {0}
       run: |
         git config --global --add safe.directory "${GITHUB_WORKSPACE}"
         conda install -y -n asimov --file conda/packages.txt
         conda install -y -n asimov conda-build
+
+    - name: Install asimov from source
+      shell: bash -el {0}
+      run: |
+        git config --global --add safe.directory "${GITHUB_WORKSPACE}"
         pip install .
         if [ -n "${{ inputs.extra-packages }}" ]; then
           pip install ${{ inputs.extra-packages }}
         fi
-
-    - name: Install extra packages (cache hit)
-      if: steps.cache-env.outputs.cache-hit == 'true' && inputs.extra-packages != ''
-      shell: bash -el {0}
-      run: |
-        pip install ${{ inputs.extra-packages }}

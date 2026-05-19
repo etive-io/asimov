@@ -13,14 +13,13 @@ likelihood:
   segment start: 1126259460.391
   start frequency: 13.333333333333334
   window length: 4
+  minimum frequency:
+    H1: 20
+    L1: 20  
 name: GW150914_095045
 priors:
   amplitude order: 1
   chirp mass:
     maximum: 41.97447913941358
     minimum: 21.418182160215295
-quality:
-  minimum frequency:
-    H1: 20
-    L1: 20
 
