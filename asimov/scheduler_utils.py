@@ -188,9 +188,17 @@ def get_job_list(cache_time=None):
     scheduler = get_configured_scheduler()
     
     if cache_time is None:
-        try:
-            cache_time = float(config.get("condor", "cache_time"))
-        except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        for section, key in [
+            ("scheduler", "cache_time"),
+            ("slurm", "cache_time"),
+            ("condor", "cache_time"),
+        ]:
+            try:
+                cache_time = float(config.get(section, key))
+                break
+            except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+                continue
+        else:
             cache_time = 900  # Default to 15 minutes
     
     return JobList(scheduler, cache_time=cache_time)

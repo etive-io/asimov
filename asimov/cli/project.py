@@ -95,12 +95,20 @@ def make_project(
         pass
 
     # Auto-detect scheduler type
-    # Check for Slurm first, then fall back to HTCondor
+    has_slurm = bool(shutil.which("sbatch") and shutil.which("squeue"))
+    has_condor = bool(shutil.which("condor_submit") and shutil.which("condor_q"))
+
+    if has_slurm and has_condor:
+        logger.warning(
+            "Both Slurm and HTCondor appear to be available. "
+            "Defaulting to Slurm. Set scheduler/type = htcondor in asimov.conf to override."
+        )
+
     scheduler_type = "htcondor"  # default
-    if shutil.which("sbatch") and shutil.which("squeue"):
+    if has_slurm:
         scheduler_type = "slurm"
         logger.info("Detected Slurm scheduler")
-    elif shutil.which("condor_submit") and shutil.which("condor_q"):
+    elif has_condor:
         scheduler_type = "htcondor"
         logger.info("Detected HTCondor scheduler")
     else:
