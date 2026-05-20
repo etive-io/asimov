@@ -3,6 +3,18 @@ description: 'Start and verify HTCondor service'
 runs:
   using: "composite"
   steps:
+    - name: Configure HTCondor slot for CI
+      shell: bash
+      run: |
+        # Advertise a large partitionable slot so pipeline jobs with generous
+        # default memory requests (e.g. bilby_pipe MergeNode = 16 GB) always
+        # match.  Written before condor_master starts so no reconfig is needed.
+        cat > /etc/condor/config.d/10-ci-slots.conf << 'CONDOREOF'
+        NUM_SLOTS_TYPE_1 = 1
+        SLOT_TYPE_1_PARTITIONABLE = TRUE
+        SLOT_TYPE_1 = cpus=100%, memory=32768
+        CONDOREOF
+
     - name: Start HTCondor
       shell: bash
       run: |
@@ -11,20 +23,3 @@ runs:
           condor_status && break || sleep 3
         done
         condor_status
-
-    - name: Cap memory requests for CI
-      shell: bash
-      run: |
-        cat > /etc/condor/config.d/99-ci-memory-cap.conf << 'EOF'
-        # Pipeline defaults (e.g. bilby_pipe's MergeNode) can request
-        # more memory than a CI runner has.  Cap everything at 4 GB so
-        # jobs always match the local slot without changing any pipeline
-        # code or templates.
-        JOB_TRANSFORM_NAMES = CapMemoryForCI
-        JOB_TRANSFORM_CapMemoryForCI @=end
-          if RequestMemory > 4096
-            SET RequestMemory = 4096
-          endif
-        @end
-        EOF
-        condor_reconfig
