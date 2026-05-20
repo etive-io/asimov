@@ -3,16 +3,15 @@ description: 'Start and verify HTCondor service'
 runs:
   using: "composite"
   steps:
-    - name: Configure HTCondor slot for CI
+    - name: Configure HTCondor for CI
       shell: bash
       run: |
-        # Advertise a large partitionable slot so pipeline jobs with generous
-        # default memory requests (e.g. bilby_pipe MergeNode = 16 GB) always
-        # match.  Written before condor_master starts so no reconfig is needed.
-        cat > /etc/condor/config.d/10-ci-slots.conf << 'CONDOREOF'
-        NUM_SLOTS_TYPE_1 = 1
-        SLOT_TYPE_1_PARTITIONABLE = TRUE
-        SLOT_TYPE_1 = cpus=100%, memory=32768
+        # Override the advertised machine memory so jobs with generous default
+        # requests (e.g. bilby_pipe MergeNode = 16 GB) always match the local
+        # slot without touching slot types or structure, which mini configures
+        # via its own role metaknobs.
+        cat > /etc/condor/config.d/10-ci-machine.conf << 'CONDOREOF'
+        MEMORY = 32768
         CONDOREOF
 
     - name: Start HTCondor
