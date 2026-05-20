@@ -341,9 +341,6 @@ class HTCondor(Scheduler):
         str
             Path to the generated HTCondor DAG file.
         """
-        import tempfile
-        import re
-        
         slurm_dir = os.path.dirname(os.path.abspath(slurm_file))
         
         # Parse the Slurm script to extract job submissions
@@ -511,7 +508,6 @@ class Slurm(Scheduler):
         Returns the integer Slurm job ID.
         """
         if isinstance(script_file_or_description, (JobDescription, dict)):
-            import tempfile
             submit_dict = (
                 script_file_or_description.to_slurm()
                 if isinstance(script_file_or_description, JobDescription)
@@ -535,10 +531,15 @@ class Slurm(Scheduler):
 
     def _sbatch(self, script_path):
         """Run sbatch on *script_path* and return the integer job ID."""
-        result = subprocess.run(
-            ["sbatch", script_path],
-            capture_output=True, text=True, check=True,
-        )
+        try:
+            result = subprocess.run(
+                ["sbatch", script_path],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"sbatch failed (exit {e.returncode}): {e.stderr.strip()}"
+            ) from e
         match = re.search(r"Submitted batch job (\d+)", result.stdout)
         if not match:
             raise RuntimeError(
@@ -635,7 +636,6 @@ class Slurm(Scheduler):
             return self._sbatch(wrapper)
 
         # Fall back: convert HTCondor DAG → Slurm orchestrator script
-        import tempfile
         slurm_script = self._convert_dag_to_slurm(dag_file, batch_name, **kwargs)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".sh", delete=False
@@ -644,8 +644,11 @@ class Slurm(Scheduler):
             script_path = f.name
         try:
             return self._sbatch(script_path)
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to submit DAG to Slurm: {e.stderr}")
+        finally:
+            try:
+                os.unlink(script_path)
+            except OSError:
+                pass
 
     def _is_slurm_batch_script(self, file_path):
         """Return True if *file_path* looks like a Slurm batch script."""
@@ -798,7 +801,10 @@ class Slurm(Scheduler):
         args = ["squeue", "--format=%i|%j|%t|%C", "-h"]
         if self.user:
             args += ["-u", self.user]
-        result = subprocess.run(args, capture_output=True, text=True, check=True)
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"squeue failed: {e.stderr.strip()}") from e
         data = []
         for line in result.stdout.strip().splitlines():
             if not line:
