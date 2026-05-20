@@ -1,15 +1,5 @@
-name: Tests with HTCondor
+name: Combined Pipeline Integration Test
 on:
-  push:
-    branches:
-      - master
-      - "v*-preview"
-      - "v*-release"
-  pull_request:
-    branches:
-      - master
-      - "v*-preview"
-      - "v*-release"
   workflow_dispatch:
 
 jobs:
