@@ -146,6 +146,15 @@ jobs:
           interval: "30"
           working-directory: .
 
+      - name: Wait for gwdata cache file
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "H1.cache"
+          directory: "working/GW150914_095045/get-data/cache"
+          timeout: "120"
+          interval: "10"
+          working-directory: .
+
       - name: Run asimov monitor
         uses: ./.github/actions/run-asimov-command
         with:
