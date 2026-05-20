@@ -169,6 +169,9 @@ class BayesWave(Pipeline):
         ]
 
         self.logger.info(" ".join(command))
+        self.logger.info(f"cache files in meta: {'cache files' in self.production.meta.get('data', {})}")
+        if "cache files" in self.production.meta.get("data", {}):
+            self.logger.info(f"cache files: {self.production.meta['data']['cache files']}")
         if dryrun:
             print(" ".join(command))
             self.logger.info(" ".join(command))
@@ -180,9 +183,8 @@ class BayesWave(Pipeline):
             if "To submit:" not in str(out):
                 self.production.status = "stuck"
                 self.logger.error("Could not create a DAG file")
-                self.logger.info(f"{command}")
-                self.logger.debug(out)
-                self.logger.debug(err)
+                self.logger.error(f"Command: {' '.join(command)}")
+                self.logger.error(f"bayeswave_pipe output:\n{out.decode('utf-8', errors='replace') if isinstance(out, bytes) else out}")
                 raise PipelineException("The DAG file could not be created.")
             else:
                 self.logger.info("DAG file created")

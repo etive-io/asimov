@@ -151,6 +151,30 @@ jobs:
         with:
           script: asimov monitor
 
+      - name: Debug - show ledger data state and cache files
+        run: |
+          echo "=== Ledger data section ==="
+          python3 -c "
+          import yaml
+          with open('.asimov/ledger.yml') as f:
+              ledger = yaml.safe_load(f)
+          for ev in ledger.get('events', []):
+              print('Event:', ev.get('name'))
+              data = ev.get('data', {})
+              print('  data keys:', list(data.keys()))
+              if 'cache files' in data:
+                  print('  cache files:', data['cache files'])
+              else:
+                  print('  NO cache files in data!')
+              for prod_dict in ev.get('productions', []):
+                  for pname, prod in prod_dict.items():
+                      print(f'  Production {pname}: status={prod.get(\"status\")}')
+          "
+          echo "=== Cache directory ==="
+          ls -la working/GW150914_095045/get-data/cache/ 2>/dev/null || echo "No cache directory found"
+          echo "=== Cache file contents ==="
+          cat working/GW150914_095045/get-data/cache/*.cache 2>/dev/null || echo "No cache files found"
+
       - name: Create PSDs using Bayeswave
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
@@ -159,13 +183,24 @@ jobs:
           script: |
             asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
 
+      - name: Build Bayeswave config
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov manage build
+
+      - name: Show generated Bayeswave INI
+        run: |
+          echo "=== Generated generate-psd.ini ==="
+          find checkouts/ -name "generate-psd.ini" -exec cat {} \; 2>/dev/null || echo "No generate-psd.ini found"
+
       - name: Submit Bayeswave
         env:
           GWDATAFIND_SERVER: https://datafind.gwosc.org
         uses: ./.github/actions/run-asimov-command
         with:
-          script: |
-            asimov manage build submit
+          script: asimov manage submit
 
       - name: Wait for PSD files
         uses: ./.github/actions/wait-for-files
