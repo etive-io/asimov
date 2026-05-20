@@ -226,22 +226,22 @@ jobs:
           script: |
             python3 << 'EOF'
             import sys
-            from asimov.project import Project
+            from asimov.ledger import YAMLLedger
 
-            project = Project.load(".")
+            ledger = YAMLLedger()
             failures = []
-            for subject in project.subjects:
-                for analysis in subject.analyses:
-                    status = str(analysis.status).lower()
-                    print(f"{analysis.name}: {status}")
+            for event in ledger.get_event():
+                for production in event.productions:
+                    status = str(production.status).lower()
+                    print(f"{production.name}: {status}")
                     if status not in ("complete", "uploaded"):
-                        failures.append(f"{analysis.name}: {status}")
+                        failures.append(f"{production.name}: {status}")
             if failures:
-                print(f"\nFAIL — {len(failures)} analysis/analyses not complete:")
+                print(f"\nFAIL — {len(failures)} production(s) not complete:")
                 for f in failures:
                     print(f"  {f}")
                 sys.exit(1)
-            print("\nAll analyses complete.")
+            print("\nAll productions complete.")
             EOF
 
       - name: Archive testing artifacts
