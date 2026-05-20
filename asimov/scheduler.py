@@ -109,10 +109,10 @@ class Scheduler(ABC):
     def query_all_jobs(self):
         """
         Query all jobs from the scheduler.
-        
+
         This method is used to get a list of all jobs currently in the scheduler
         queue, which is useful for monitoring and status checking.
-        
+
         Returns
         -------
         list of dict
@@ -125,6 +125,26 @@ class Scheduler(ABC):
             - dag id: Parent DAG ID if this is a subjob (optional)
         """
         raise NotImplementedError
+
+    def _is_slurm_batch_script(self, file_path):
+        """
+        Return True if *file_path* looks like a Slurm batch script.
+
+        Detects Slurm markers (``#SBATCH``, etc.) and the absence of
+        HTCondor DAG markers so each scheduler can identify files
+        intended for the other system.
+        """
+        try:
+            with open(file_path) as f:
+                content = "".join(f.readline() for _ in range(10))
+            slurm_markers = ["#SBATCH", "sbatch", "squeue", "scancel"]
+            htcondor_markers = ["JOB ", "PARENT ", "CHILD ", "SCRIPT "]
+            return (
+                any(m in content for m in slurm_markers)
+                and not any(m in content for m in htcondor_markers)
+            )
+        except Exception:
+            return False
 
 
 class HTCondor(Scheduler):
@@ -288,38 +308,6 @@ class HTCondor(Scheduler):
             raise RuntimeError(f"Failed to submit DAG to HTCondor: {e}")
         except Exception as e:
             raise RuntimeError(f"Unexpected error submitting DAG: {e}")
-    
-    def _is_slurm_batch_script(self, file_path):
-        """
-        Detect if a file is a Slurm batch script.
-        
-        Parameters
-        ----------
-        file_path : str
-            Path to the file to check.
-            
-        Returns
-        -------
-        bool
-            True if the file appears to be a Slurm batch script.
-        """
-        try:
-            with open(file_path, 'r') as f:
-                first_lines = [f.readline() for _ in range(10)]
-                content = ''.join(first_lines)
-                
-                # Check for Slurm-specific markers
-                slurm_markers = ['#SBATCH', 'sbatch', 'squeue', 'scancel']
-                has_slurm = any(marker in content for marker in slurm_markers)
-                
-                # Check for HTCondor-specific markers
-                htcondor_markers = ['JOB ', 'PARENT ', 'CHILD ', 'SCRIPT ']
-                has_htcondor = any(marker in content for marker in htcondor_markers)
-                
-                # It's a Slurm script if it has Slurm markers but not HTCondor markers
-                return has_slurm and not has_htcondor
-        except Exception:
-            return False
     
     def _convert_slurm_to_dag(self, slurm_file, batch_name=None, **kwargs):
         """
@@ -600,7 +588,11 @@ class Slurm(Scheduler):
             raise RuntimeError(f"Failed to cancel Slurm job {job_id}: {e.stderr}")
 
     def query(self, job_id=None, projection=None):
-        """Return squeue output for one job (or all jobs) as a list of dicts."""
+        """Return squeue output for one job (or all jobs) as a list of dicts.
+
+        Note: the ``projection`` parameter is accepted for API compatibility
+        with HTCondor but is not used; squeue always returns a fixed field set.
+        """
         cmd = [
             "squeue", "--format=%i|%j|%t|%N", "--noheader",
             "--user", self.user or os.environ.get("USER", ""),
@@ -653,20 +645,6 @@ class Slurm(Scheduler):
                 os.unlink(script_path)
             except OSError:
                 pass
-
-    def _is_slurm_batch_script(self, file_path):
-        """Return True if *file_path* looks like a Slurm batch script."""
-        try:
-            with open(file_path) as f:
-                content = "".join(f.readline() for _ in range(10))
-            slurm_markers = ["#SBATCH", "sbatch", "squeue", "scancel"]
-            htcondor_markers = ["JOB ", "PARENT ", "CHILD ", "SCRIPT "]
-            return (
-                any(m in content for m in slurm_markers)
-                and not any(m in content for m in htcondor_markers)
-            )
-        except Exception:
-            return False
 
     def _convert_dag_to_slurm(self, dag_file, batch_name=None, **kwargs):
         """
@@ -1026,7 +1004,9 @@ class JobList:
                     self.jobs[job.job_id] = job
         
         # Save to cache as plain dicts so yaml.safe_load can read them back.
-        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+        cache_dir = os.path.dirname(self.cache_file)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
         with open(self.cache_file, "w") as f:
             f.write(yaml.dump({k: v.to_dict() if isinstance(v, Job) else v for k, v in self.jobs.items()}))
     

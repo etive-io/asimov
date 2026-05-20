@@ -216,7 +216,10 @@ def stop(dry_run, use_scheduler_api):
 
 def _stop_htcondor_monitor(dry_run, use_scheduler_api):
     """Stop monitoring using HTCondor."""
-    cluster = ledger.data["cronjob"]
+    cluster = ledger.data.get("cronjob")
+    if cluster is None:
+        click.secho("  \t  ● No running monitor found", fg="yellow")
+        return
     
     # Use the new scheduler API if requested, otherwise use the legacy interface
     if use_scheduler_api:
