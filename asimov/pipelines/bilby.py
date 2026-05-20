@@ -532,7 +532,13 @@ class Bilby(Pipeline):
             else:
                 job_label = self.production.name
             
-            dag_filename = f"dag_{job_label}.submit"
+            # bilby_pipe with scheduler=slurm produces a Slurm master script
+            # instead of an HTCondor .submit file.
+            from asimov.scheduler import Slurm as _Slurm
+            if isinstance(self.scheduler, _Slurm):
+                dag_filename = f"slurm_{job_label}_master.sh"
+            else:
+                dag_filename = f"dag_{job_label}.submit"
             dag_path = os.path.join(self.production.rundir, "submit", dag_filename)
             batch_name = f"bilby/{self.production.event.name}/{self.production.name}"
 

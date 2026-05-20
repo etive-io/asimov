@@ -6,9 +6,13 @@ This guide explains how to use the scheduler abstraction in asimov pipelines and
 Overview
 --------
 
-Asimov now includes a scheduler abstraction layer that provides a uniform interface for
-interacting with different job schedulers (HTCondor, Slurm, etc.). This reduces code
-duplication and makes it easier to switch between schedulers.
+Asimov includes a scheduler abstraction layer that provides a uniform interface for
+interacting with different job schedulers. Currently supported schedulers:
+
+* **HTCondor**: The High-Throughput Computing (HTC) workload manager
+* **Slurm**: The Simple Linux Utility for Resource Management
+
+This abstraction reduces code duplication and makes it easy to switch between schedulers.
 
 Using the Scheduler in Pipelines
 ---------------------------------
@@ -47,13 +51,16 @@ DAG Submission
 
 DAG submission (via ``submit_dag`` methods) now uses the scheduler API. For HTCondor backends,
 this wraps the Python bindings (e.g., ``htcondor.Submit.from_dag()``) rather than calling
-``condor_submit_dag`` directly. The scheduler property remains available in these methods for
-any additional, non-DAG job submissions that may be needed.
+``condor_submit_dag`` directly.
+
+For Slurm backends, HTCondor DAG files are automatically converted to Slurm batch scripts
+with proper job dependencies. This allows pipelines that generate HTCondor DAGs (such as
+bilby, bayeswave, and lalinference) to work seamlessly with Slurm.
 
 Using the Scheduler in CLI Commands
 ------------------------------------
 
-The monitor loop and other CLI commands can use the scheduler API directly:
+The monitor loop and other CLI commands use the scheduler API:
 
 .. code-block:: python
 
@@ -75,16 +82,30 @@ The monitor loop and other CLI commands can use the scheduler API directly:
     job = create_job_from_dict(job_dict)
     cluster_id = scheduler.submit(job)
 
-The ``asimov monitor start`` and ``asimov monitor stop`` commands now support the
-``--use-scheduler-api`` flag to use the new scheduler API directly:
+Monitor Daemon
+~~~~~~~~~~~~~~
+
+The monitor daemon behavior differs based on the scheduler:
+
+**HTCondor**: Uses HTCondor's cron functionality to run periodic jobs
 
 .. code-block:: bash
 
-    # Use the new scheduler API
-    asimov monitor start --use-scheduler-api
-    
-    # Use the legacy interface (default)
-    asimov monitor start
+    asimov start  # Submits a recurring job via HTCondor
+    asimov stop   # Removes the HTCondor job
+
+**Slurm**: Uses system cron to schedule periodic monitor runs
+
+.. code-block:: bash
+
+    asimov start  # Creates a cron job (requires python-crontab)
+    asimov stop   # Removes the cron job
+
+For Slurm support, install the optional dependency:
+
+.. code-block:: bash
+
+    pip install asimov[slurm]
 
 Backward Compatibility
 ----------------------
@@ -106,7 +127,10 @@ This means existing code continues to work without modification:
 Configuration
 -------------
 
-You can configure the scheduler in your ``asimov.conf`` file:
+Asimov automatically detects which scheduler is available during ``asimov init``.
+You can manually configure the scheduler in your ``asimov.conf`` file:
+
+**HTCondor Configuration**
 
 .. code-block:: ini
 
@@ -114,18 +138,36 @@ You can configure the scheduler in your ``asimov.conf`` file:
     type = htcondor
     
     [condor]
+    user = your_username
     scheduler = my-schedd.example.com  # Optional: specific schedd
 
-Future Schedulers
------------------
-
-When Slurm or other schedulers are fully implemented, you'll be able to switch by
-simply changing the configuration:
+**Slurm Configuration**
 
 .. code-block:: ini
 
     [scheduler]
     type = slurm
+    
+    [slurm]
+    user = your_username
+    partition = compute  # Optional: specific partition
+    cron_minute = */15   # Optional: monitor frequency (default: every 15 minutes)
 
-All code using the scheduler API will automatically use the new scheduler without
-requiring any code changes.
+Switching Schedulers
+--------------------
+
+To switch between schedulers, simply update the ``[scheduler]`` section in your
+``asimov.conf`` file and restart your workflows. All code using the scheduler API
+will automatically use the new scheduler without requiring any code changes.
+
+Example: Switching from HTCondor to Slurm
+
+.. code-block:: ini
+
+    # Before
+    [scheduler]
+    type = htcondor
+    
+    # After
+    [scheduler]
+    type = slurm

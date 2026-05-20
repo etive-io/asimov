@@ -4,13 +4,15 @@ This module contains logic for interacting with a scheduling system.
 Supported Schedulers are:
 
 - HTCondor
-- Slurm (planned)
+- Slurm
 
 """
 
 import os
 import re
+import shlex
 import subprocess
+import tempfile
 import datetime
 import yaml
 import warnings
@@ -20,6 +22,11 @@ try:
     warnings.filterwarnings("ignore", module="htcondor2")
     import htcondor2 as htcondor  # NoQA
     import classad2 as classad  # NoQA
+    # htcondor2 uses different exception names, create aliases for compatibility
+    if not hasattr(htcondor, 'HTCondorIOError'):
+        htcondor.HTCondorIOError = htcondor.HTCondorException
+    if not hasattr(htcondor, 'HTCondorLocateError'):
+        htcondor.HTCondorLocateError = htcondor.HTCondorException
 except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
@@ -102,10 +109,10 @@ class Scheduler(ABC):
     def query_all_jobs(self):
         """
         Query all jobs from the scheduler.
-        
+
         This method is used to get a list of all jobs currently in the scheduler
         queue, which is useful for monitoring and status checking.
-        
+
         Returns
         -------
         list of dict
@@ -118,6 +125,26 @@ class Scheduler(ABC):
             - dag id: Parent DAG ID if this is a subjob (optional)
         """
         raise NotImplementedError
+
+    def _is_slurm_batch_script(self, file_path):
+        """
+        Return True if *file_path* looks like a Slurm batch script.
+
+        Detects Slurm markers (``#SBATCH``, etc.) and the absence of
+        HTCondor DAG markers so each scheduler can identify files
+        intended for the other system.
+        """
+        try:
+            with open(file_path) as f:
+                content = "".join(f.readline() for _ in range(10))
+            slurm_markers = ["#SBATCH", "sbatch", "squeue", "scancel"]
+            htcondor_markers = ["JOB ", "PARENT ", "CHILD ", "SCRIPT "]
+            return (
+                any(m in content for m in slurm_markers)
+                and not any(m in content for m in htcondor_markers)
+            )
+        except Exception:
+            return False
 
 
 class HTCondor(Scheduler):
@@ -226,10 +253,13 @@ class HTCondor(Scheduler):
         """
         Submit a DAG file to the HTCondor scheduler.
         
+        This method can handle both HTCondor DAG files and Slurm-style batch scripts.
+        If a Slurm-style script is detected, it will be converted to HTCondor DAG format.
+        
         Parameters
         ----------
         dag_file : str
-            Path to the DAG submit file.
+            Path to the DAG submit file (HTCondor or Slurm format).
         batch_name : str, optional
             A name for the batch of jobs.
         **kwargs
@@ -249,6 +279,11 @@ class HTCondor(Scheduler):
         """
         if not os.path.exists(dag_file):
             raise FileNotFoundError(f"DAG file not found: {dag_file}")
+        
+        # Check if this is a Slurm-style batch script
+        if self._is_slurm_batch_script(dag_file):
+            # Convert Slurm batch script to HTCondor DAG
+            dag_file = self._convert_slurm_to_dag(dag_file, batch_name, **kwargs)
         
         try:
             # Use HTCondor's Submit.from_dag to create a submit description from the DAG file
@@ -273,6 +308,97 @@ class HTCondor(Scheduler):
             raise RuntimeError(f"Failed to submit DAG to HTCondor: {e}")
         except Exception as e:
             raise RuntimeError(f"Unexpected error submitting DAG: {e}")
+    
+    def _convert_slurm_to_dag(self, slurm_file, batch_name=None, **kwargs):
+        """
+        Convert a Slurm batch script to an HTCondor DAG file.
+        
+        This is a simplified conversion that handles basic Slurm batch scripts.
+        
+        Parameters
+        ----------
+        slurm_file : str
+            Path to the Slurm batch script.
+        batch_name : str, optional
+            Name for the batch job.
+        **kwargs
+            Additional parameters.
+            
+        Returns
+        -------
+        str
+            Path to the generated HTCondor DAG file.
+        """
+        slurm_dir = os.path.dirname(os.path.abspath(slurm_file))
+        
+        # Parse the Slurm script to extract job submissions
+        jobs = []
+        dependencies = {}
+        
+        with open(slurm_file, 'r') as f:
+            content = f.read()
+            
+            # Find sbatch commands with dependency tracking
+            # Pattern: job_id=$(sbatch [--dependency=afterok:$dep_id] --parsable --wrap "command")
+            sbatch_pattern = r'job_ids?\[(\w+)\]=\$\(sbatch\s+(.*?)--wrap\s+"([^"]+)"\)'
+            
+            for match in re.finditer(sbatch_pattern, content, re.MULTILINE | re.DOTALL):
+                job_name = match.group(1)
+                sbatch_args = match.group(2)
+                command = match.group(3)
+                
+                jobs.append({
+                    'name': job_name,
+                    'command': command,
+                    'args': sbatch_args
+                })
+                
+                # Extract dependencies
+                dep_pattern = r'--dependency=afterok:\$\{job_ids\[(\w+)\]\}'
+                dep_matches = re.findall(dep_pattern, sbatch_args)
+                if dep_matches:
+                    dependencies[job_name] = dep_matches
+        
+        # Create HTCondor DAG file
+        dag_lines = []
+        dag_lines.append(f"# Converted from Slurm batch script: {os.path.basename(slurm_file)}")
+        dag_lines.append("")
+        
+        # Create submit files for each job
+        submit_files = {}
+        for job in jobs:
+            job_name = job['name']
+            command = job['command']
+            
+            # Create a submit file for this job
+            submit_file = os.path.join(slurm_dir, f"{job_name}.sub")
+            with open(submit_file, 'w') as f:
+                f.write(f"# Submit file for {job_name}\n")
+                f.write(f"executable = /bin/bash\n")
+                f.write(f'arguments = -c "{command}"\n')
+                f.write(f"output = {job_name}.out\n")
+                f.write(f"error = {job_name}.err\n")
+                f.write(f"log = {job_name}.log\n")
+                f.write(f"request_cpus = 1\n")
+                f.write(f"request_memory = 1GB\n")
+                f.write(f"queue\n")
+            
+            submit_files[job_name] = submit_file
+            dag_lines.append(f"JOB {job_name} {submit_file}")
+        
+        dag_lines.append("")
+        
+        # Add dependencies
+        for child, parents in dependencies.items():
+            for parent in parents:
+                dag_lines.append(f"PARENT {parent} CHILD {child}")
+        
+        # Write the DAG file
+        dag_file = os.path.join(slurm_dir, f"{os.path.splitext(os.path.basename(slurm_file))[0]}_converted.dag")
+        with open(dag_file, 'w') as f:
+            f.write('\n'.join(dag_lines) + '\n')
+        
+        return dag_file
     
     def query_all_jobs(self):
         """
@@ -352,17 +478,56 @@ class Slurm(Scheduler):
         "F":  5,   # Failed   → Held
         "TO": 5,   # Timeout  → Held
         "OOM": 5,  # Out of memory → Held
+        "NF": 5,   # Node Fail → Held
     }
 
-    def __init__(self, user=None):
+    def __init__(self, user=None, partition=None):
         self.user = user or os.environ.get("USER", "")
+        self.partition = partition
 
-    def submit(self, script_file):
-        """Submit an sbatch script; returns the Slurm job ID."""
-        result = subprocess.run(
-            ["sbatch", script_file],
-            capture_output=True, text=True, check=True,
-        )
+    def submit(self, script_file_or_description):
+        """
+        Submit a job to Slurm.
+
+        Accepts either a path to an sbatch script (str) or a
+        ``JobDescription`` / dict, in which case a temporary batch script
+        is generated from ``_create_batch_script`` before submission.
+
+        Returns the integer Slurm job ID.
+        """
+        if isinstance(script_file_or_description, (JobDescription, dict)):
+            submit_dict = (
+                script_file_or_description.to_slurm()
+                if isinstance(script_file_or_description, JobDescription)
+                else script_file_or_description
+            )
+            script_content = self._create_batch_script(submit_dict)
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".sh", delete=False
+            ) as f:
+                f.write(script_content)
+                script_path = f.name
+            try:
+                return self._sbatch(script_path)
+            finally:
+                try:
+                    os.unlink(script_path)
+                except OSError:
+                    pass
+        else:
+            return self._sbatch(script_file_or_description)
+
+    def _sbatch(self, script_path):
+        """Run sbatch on *script_path* and return the integer job ID."""
+        try:
+            result = subprocess.run(
+                ["sbatch", script_path],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"sbatch failed (exit {e.returncode}): {e.stderr.strip()}"
+            ) from e
         match = re.search(r"Submitted batch job (\d+)", result.stdout)
         if not match:
             raise RuntimeError(
@@ -370,41 +535,263 @@ class Slurm(Scheduler):
             )
         return int(match.group(1))
 
+
+    def _create_batch_script(self, submit_dict):
+        """Build a Slurm batch script string from a submit dictionary."""
+        lines = ["#!/bin/bash"]
+        if self.partition:
+            lines.append(f"#SBATCH --partition={self.partition}")
+        job_name = submit_dict.get("job_name") or submit_dict.get("batch_name")
+        if job_name:
+            lines.append(f"#SBATCH --job-name={job_name}")
+        for key in ("output", "error"):
+            if key in submit_dict:
+                lines.append(f"#SBATCH --{'output' if key == 'output' else 'error'}={submit_dict[key]}")
+        if "cpus" in submit_dict:
+            lines.append(f"#SBATCH --cpus-per-task={submit_dict['cpus']}")
+        if "memory" in submit_dict:
+            mem = submit_dict["memory"]
+            if isinstance(mem, str):
+                if mem.endswith("GB"):
+                    mem = int(mem[:-2]) * 1024
+                elif mem.endswith("MB"):
+                    mem = int(mem[:-2])
+                else:
+                    raise ValueError(
+                        f"Unrecognised memory unit in {mem!r}. Use 'MB' or 'GB'."
+                    )
+            lines.append(f"#SBATCH --mem={mem}")
+        if "time" in submit_dict:
+            lines.append(f"#SBATCH --time={submit_dict['time']}")
+        for key, value in submit_dict.items():
+            if key.startswith("slurm_"):
+                slurm_key = key[len("slurm_"):].replace("_", "-")
+                lines.append(f"#SBATCH --{slurm_key}={value}")
+        if submit_dict.get("getenv"):
+            lines.append("#SBATCH --export=ALL")
+        lines.append("")
+        if "executable" in submit_dict:
+            cmd = submit_dict["executable"]
+            if "arguments" in submit_dict:
+                cmd += f" {submit_dict['arguments']}"
+            lines.append(cmd)
+        return "\n".join(lines) + "\n"
+
     def delete(self, job_id):
         """Cancel a Slurm job."""
-        subprocess.run(["scancel", str(job_id)], check=True)
-
-    def query(self, job_id=None):
-        """Return squeue output for one job (or all jobs if job_id is None)."""
-        if job_id is not None:
-            result = subprocess.run(
-                ["squeue", "-j", str(job_id), "-h", "--format=%i %t"],
+        try:
+            subprocess.run(
+                ["scancel", str(job_id)],
                 capture_output=True, text=True, check=True,
             )
-            return result.stdout.strip()
-        return self.query_all_jobs()
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to cancel Slurm job {job_id}: {e.stderr}")
+
+    def query(self, job_id=None, projection=None):
+        """Return squeue output for one job (or all jobs) as a list of dicts.
+
+        Note: the ``projection`` parameter is accepted for API compatibility
+        with HTCondor but is not used; squeue always returns a fixed field set.
+        """
+        cmd = [
+            "squeue", "--format=%i|%j|%t|%N", "--noheader",
+            "--user", self.user or os.environ.get("USER", ""),
+        ]
+
+        if job_id is not None:
+            cmd += ["--job", str(job_id)]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError:
+            return []
+        jobs = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|")
+            if len(parts) >= 4:
+                jobs.append({
+                    "JobId": parts[0],
+                    "JobName": parts[1],
+                    "State": parts[2],
+                    "NodeList": parts[3],
+                })
+        return jobs
 
     def submit_dag(self, dag_file, batch_name=None, **kwargs):
         """
-        Submit an sbatch wrapper script located alongside dag_file.
+        Submit a DAG to Slurm.
 
-        Expects a file named ``sbatch_submit.sh`` in the same directory as
-        dag_file, written by the pipeline's build_dag() method.
+        Prefers an ``sbatch_submit.sh`` file alongside *dag_file* (written by
+        ``build_dag()``).  Falls back to converting the HTCondor DAG file to a
+        Slurm orchestrator script when no wrapper script is present.
         """
-        script = os.path.join(os.path.dirname(dag_file), "sbatch_submit.sh")
-        if not os.path.exists(script):
-            raise FileNotFoundError(
-                f"sbatch_submit.sh not found alongside {dag_file}. "
-                "Ensure build_dag() creates it for Slurm."
-            )
-        return self.submit(script)
+        if not os.path.exists(dag_file):
+            raise FileNotFoundError(f"DAG file not found: {dag_file}")
+
+        # If dag_file is already a Slurm batch script (e.g. produced by
+        # bilby_pipe with scheduler=slurm), submit it directly.
+        if self._is_slurm_batch_script(dag_file):
+            return self._sbatch(dag_file)
+
+        wrapper = os.path.join(os.path.dirname(dag_file), "sbatch_submit.sh")
+        if os.path.exists(wrapper):
+            return self._sbatch(wrapper)
+
+        # Fall back: convert HTCondor DAG → Slurm orchestrator script
+        slurm_script = self._convert_dag_to_slurm(dag_file, batch_name, **kwargs)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".sh", delete=False
+        ) as f:
+            f.write(slurm_script)
+            script_path = f.name
+        try:
+            return self._sbatch(script_path)
+        finally:
+            try:
+                os.unlink(script_path)
+            except OSError:
+                pass
+
+    def _convert_dag_to_slurm(self, dag_file, batch_name=None, **kwargs):
+        """
+        Convert an HTCondor DAG file to a Slurm orchestrator batch script.
+
+        A per-job wrapper ``.sh`` file is written for each DAG job so that
+        commands are never embedded into the orchestrator via ``--wrap``.
+        The orchestrator submits each wrapper with ``sbatch --parsable``
+        in topological order, using bash associative arrays to track IDs.
+        """
+        dag_dir = os.path.dirname(os.path.abspath(dag_file))
+        jobs = {}
+        dependencies = {}
+
+        with open(dag_file) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("JOB"):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        job_name, submit_file = parts[1], parts[2]
+                        job_dir = dag_dir
+                        if "DIR" in parts:
+                            idx = parts.index("DIR")
+                            if idx + 1 < len(parts):
+                                job_dir = parts[idx + 1]
+                                if not os.path.isabs(job_dir):
+                                    job_dir = os.path.join(dag_dir, job_dir)
+                        if not os.path.isabs(submit_file):
+                            submit_file = os.path.join(job_dir, submit_file)
+                        jobs[job_name] = {"submit_file": submit_file, "dir": job_dir}
+                elif line.startswith("PARENT"):
+                    parts = line.split()
+                    if "CHILD" in parts:
+                        child_idx = parts.index("CHILD")
+                        parents = parts[1:child_idx]
+                        children = parts[child_idx + 1:]
+                        for child in children:
+                            for parent in parents:
+                                dependencies.setdefault(child, []).append(parent)
+
+        # Write a per-job wrapper script for each DAG job.
+        for job_name, info in jobs.items():
+            wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
+            if os.path.exists(info["submit_file"]):
+                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+            else:
+                cmd = f"echo 'submit file not found for {job_name}'"
+            with open(wrapper_path, "w") as wf:
+                wf.write("#!/bin/bash\n")
+                wf.write(f"{cmd}\n")
+            os.chmod(wrapper_path, 0o755)
+            info["wrapper"] = wrapper_path
+
+        dag_base = os.path.splitext(os.path.basename(dag_file))[0]
+        lines = [
+            "#!/bin/bash",
+            f"#SBATCH --job-name={batch_name or 'asimov-dag'}",
+            f"#SBATCH --output={os.path.join(dag_dir, dag_base)}.out",
+            f"#SBATCH --error={os.path.join(dag_dir, dag_base)}.err",
+            "#SBATCH --cpus-per-task=1",
+            "#SBATCH --mem=1GB",
+            "",
+            "declare -A job_ids",
+            "",
+        ]
+        for job_name in self._topological_sort(list(jobs.keys()), dependencies):
+            info = jobs[job_name]
+            wrapper = shlex.quote(info.get("wrapper", "/dev/null"))
+            if job_name in dependencies:
+                dep_str = ":".join(
+                    f"${{job_ids[{d}]}}" for d in dependencies[job_name]
+                )
+                lines.append(
+                    f'job_ids[{job_name}]=$(sbatch --dependency=afterok:{dep_str} --parsable {wrapper})'
+                )
+            else:
+                lines.append(
+                    f'job_ids[{job_name}]=$(sbatch --parsable {wrapper})'
+                )
+            lines.append(f'echo "Submitted {job_name} as job ${{job_ids[{job_name}]}}"')
+            lines.append("")
+        lines.append("echo 'All jobs submitted'")
+        return "\n".join(lines) + "\n"
+
+    def _topological_sort(self, jobs, dependencies):
+        """Kahn's algorithm; raises RuntimeError on cycles."""
+        from collections import deque
+        adj = {j: [] for j in jobs}
+        in_degree = {j: 0 for j in jobs}
+        for child, parents in dependencies.items():
+            for parent in parents:
+                if parent in adj:
+                    adj[parent].append(child)
+                    in_degree[child] += 1
+        queue = deque(j for j in jobs if in_degree[j] == 0)
+        result = []
+        while queue:
+            job = queue.popleft()
+            result.append(job)
+            for child in adj[job]:
+                in_degree[child] -= 1
+                if in_degree[child] == 0:
+                    queue.append(child)
+        if len(result) != len(jobs):
+            raise RuntimeError("Circular dependency detected in DAG")
+        return result
+
+    def _parse_submit_file_for_slurm(self, submit_file, job_dir):
+        """Extract the command from an HTCondor submit file, quoting all values."""
+        executable = arguments = None
+        with open(submit_file) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("executable"):
+                    executable = line.split("=", 1)[1].strip()
+                elif line.startswith("arguments"):
+                    arguments = line.split("=", 1)[1].strip().strip('"\'')
+        quoted_dir = shlex.quote(job_dir)
+        if not executable:
+            return f"cd {quoted_dir} && echo 'No executable found in submit file'"
+        if not os.path.isabs(executable):
+            executable = os.path.join(job_dir, executable)
+        quoted_exe = shlex.quote(executable)
+        if arguments:
+            try:
+                arg_tokens = shlex.split(arguments)
+                quoted_args = " ".join(shlex.quote(a) for a in arg_tokens)
+            except ValueError:
+                quoted_args = shlex.quote(arguments)
+            return f"cd {quoted_dir} && {quoted_exe} {quoted_args}"
+        return f"cd {quoted_dir} && {quoted_exe}"
 
     def query_all_jobs(self):
         """Return all running jobs for the configured user as a list of dicts."""
         args = ["squeue", "--format=%i|%j|%t|%C", "-h"]
         if self.user:
             args += ["-u", self.user]
-        result = subprocess.run(args, capture_output=True, text=True, check=True)
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"squeue failed: {e.stderr.strip()}") from e
         data = []
         for line in result.stdout.strip().splitlines():
             if not line:
@@ -622,7 +1009,9 @@ class JobList:
                     self.jobs[job.job_id] = job
         
         # Save to cache as plain dicts so yaml.safe_load can read them back.
-        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+        cache_dir = os.path.dirname(self.cache_file)
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
         with open(self.cache_file, "w") as f:
             f.write(yaml.dump({k: v.to_dict() if isinstance(v, Job) else v for k, v in self.jobs.items()}))
     
@@ -663,6 +1052,8 @@ def get_scheduler(scheduler_type="htcondor", **kwargs):
         The type of scheduler to create. Options: "htcondor", "slurm"
     **kwargs
         Additional keyword arguments to pass to the scheduler constructor.
+        For HTCondor: schedd_name (str)
+        For Slurm: partition (str)
         
     Returns
     -------
@@ -769,12 +1160,47 @@ class JobDescription:
         -------
         dict
             A dictionary containing the Slurm submit description.
-            
-        Note
-        ----
-        This is a placeholder for future Slurm support.
         """
-        raise NotImplementedError("Slurm conversion is not yet implemented")
+        description = {}
+        description["executable"] = self.executable
+        description["output"] = self.output
+        description["error"] = self.error
+        # Note: Slurm doesn't have a direct equivalent to HTCondor's log file
+        # We'll store it for potential use in the batch script
+        description["log"] = self.log
+        
+        # Map generic resource parameters to Slurm-specific ones
+        if "cpus" in self.kwargs:
+            description["cpus"] = self.kwargs["cpus"]
+        if "memory" in self.kwargs:
+            description["memory"] = self.kwargs["memory"]
+        if "disk" in self.kwargs:
+            # Slurm doesn't have a direct disk request parameter
+            # Store it for potential use in specialized configurations
+            description["disk"] = self.kwargs["disk"]
+        
+        # Set defaults for resource parameters if not provided
+        description.setdefault("cpus", 1)
+        description.setdefault("memory", "1GB")
+        
+        # Add batch_name if present
+        if "batch_name" in self.kwargs:
+            description["batch_name"] = self.kwargs["batch_name"]
+        
+        # Handle arguments
+        if "arguments" in self.kwargs:
+            description["arguments"] = self.kwargs["arguments"]
+        
+        # Handle environment variables
+        if "getenv" in self.kwargs:
+            description["getenv"] = self.kwargs["getenv"]
+        
+        # Add any additional kwargs with slurm_ prefix directly
+        for key, value in self.kwargs.items():
+            if key not in ["cpus", "memory", "disk", "batch_name", "arguments", "getenv"]:
+                description[key] = value
+        
+        return description
     
     def to_dict(self, scheduler_type="htcondor"):
         """

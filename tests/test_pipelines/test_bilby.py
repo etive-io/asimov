@@ -71,4 +71,24 @@ class BilbyTests(unittest.TestCase):
         
     def test_read_ini(self):
         """Check that a bilby ini file can be read correctly."""
-        pass
+        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
+        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+        event = "GW150914_095045"
+        pipeline = "bilby"
+        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
+        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+
+        if not config.has_section("scheduler"):
+            config.add_section("scheduler")
+        if not config.has_section("slurm"):
+            config.add_section("slurm")
+
+        config.set("scheduler", "type", "slurm")
+        config.set("slurm", "user", "slurmtest")
+
+        config_path = os.path.join(self.cwd, "tests", "tmp", "project", "bilby-test.ini")
+        self.ledger.get_event(event)[0].productions[0].make_config(config_path)
+
+        bilby_config = Bilby.read_ini(config_path)
+        self.assertEqual(bilby_config.get("root", "scheduler"), "slurm")
+        self.assertEqual(bilby_config.get("root", "accounting_user"), "slurmtest")

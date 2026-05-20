@@ -1,0 +1,147 @@
+name: Tests with Slurm
+on:
+  push:
+    paths:
+      - 'asimov/scheduler.py'
+      - 'asimov/scheduler_utils.py'
+      - 'asimov/cli/monitor.py'
+      - 'asimov/pipelines/testing/**'
+      - '.github/workflows/slurm-tests.yml'
+      - '.github/actions/setup-slurm/**'
+  pull_request:
+    paths:
+      - 'asimov/scheduler.py'
+      - 'asimov/scheduler_utils.py'
+      - 'asimov/cli/monitor.py'
+      - 'asimov/pipelines/testing/**'
+      - '.github/workflows/slurm-tests.yml'
+      - '.github/actions/setup-slurm/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testing-pipelines:
+    name: "Testing Pipelines with Slurm"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-slurm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install asimov
+        run: pip install .
+
+      - name: Set up git
+        run: |
+          git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+
+      - name: Create asimov project
+        run: asimov init "Test Project"
+
+      - name: Configure Slurm scheduler
+        run: asimov configuration update scheduler/type slurm
+
+      - name: Apply testing configuration
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_data/testing_pe.yaml"
+
+      - name: Add test event
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+
+      - name: Add SimpleTestPipeline analysis
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline.yaml" -e GW150914_095045
+
+      - name: Build and submit SimpleTestPipeline job
+        run: asimov manage build submit
+
+      - name: Wait for SimpleTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW150914_095045/test-simple-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Run asimov monitor for SimpleTestPipeline
+        run: asimov monitor
+
+      - name: Add SubjectTestPipeline analysis
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/subject_test_pipeline.yaml" -e GW150914_095045
+
+      - name: Build and submit SubjectTestPipeline job
+        run: asimov manage build submit
+
+      - name: Wait for SubjectTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "combined_results.dat"
+          directory: "working/GW150914_095045/test-subject-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Run asimov monitor for SubjectTestPipeline
+        run: asimov monitor
+
+      - name: Add ProjectTestPipeline analysis
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/project_test_pipeline.yaml"
+
+      - name: Build and submit ProjectTestPipeline job
+        run: asimov manage build submit
+
+      - name: Wait for ProjectTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "population_results.dat"
+          directory: "working/project-analyses/GW150914_095045/test-project-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Run asimov monitor for ProjectTestPipeline
+        run: asimov monitor
+
+      - name: Verify all testing pipelines completed
+        run: |
+          asimov monitor
+          python3 <<'EOF'
+          import sys
+          from asimov.monitor_api import get_analysis_status
+          statuses = get_analysis_status()
+          print('Final analysis statuses:')
+          failures = []
+          for name, status in statuses.items():
+              print(f'  {name}: {status}')
+              if str(status).lower() != 'complete':
+                  failures.append(f'{name}: {status}')
+          if failures:
+              print(f'FAIL: {len(failures)} analyses not complete:')
+              [print(f'  - {f}') for f in failures]
+              sys.exit(1)
+          print(f'All {len(statuses)} analyses are complete!')
+          EOF
+
+      - name: Archive artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-pipelines-slurm-debug
+          path: |
+            .asimov/
+            working/
+            checkouts/
+          retention-days: 5
+
