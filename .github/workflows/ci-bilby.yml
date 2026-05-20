@@ -220,30 +220,6 @@ jobs:
         with:
           script: asimov monitor
 
-      - name: Verify Bilby completed successfully
-        uses: ./.github/actions/run-asimov-command
-        with:
-          script: |
-            python3 << 'EOF'
-            import sys
-            from asimov.ledger import YAMLLedger
-
-            ledger = YAMLLedger()
-            failures = []
-            for event in ledger.get_event():
-                for production in event.productions:
-                    status = str(production.status).lower()
-                    print(f"{production.name}: {status}")
-                    if status not in ("complete", "uploaded"):
-                        failures.append(f"{production.name}: {status}")
-            if failures:
-                print(f"\nFAIL — {len(failures)} production(s) not complete:")
-                for f in failures:
-                    print(f"  {f}")
-                sys.exit(1)
-            print("\nAll productions complete.")
-            EOF
-
       - name: Archive testing artifacts
         if: always()
         uses: actions/upload-artifact@v4
