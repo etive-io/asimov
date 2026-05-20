@@ -1,5 +1,22 @@
 name: Tests with Slurm
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'asimov/scheduler.py'
+      - 'asimov/scheduler_utils.py'
+      - 'asimov/cli/monitor.py'
+      - 'asimov/pipelines/testing/**'
+      - '.github/workflows/slurm-tests.yml'
+      - '.github/actions/setup-slurm/**'
+  pull_request:
+    paths:
+      - 'asimov/scheduler.py'
+      - 'asimov/scheduler_utils.py'
+      - 'asimov/cli/monitor.py'
+      - 'asimov/pipelines/testing/**'
+      - '.github/workflows/slurm-tests.yml'
+      - '.github/actions/setup-slurm/**'
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -645,6 +645,19 @@ class Slurm(Scheduler):
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to submit DAG to Slurm: {e.stderr}")
 
+    def _is_slurm_batch_script(self, file_path):
+        """Return True if *file_path* looks like a Slurm batch script."""
+        try:
+            with open(file_path) as f:
+                content = "".join(f.readline() for _ in range(10))
+            slurm_markers = ["#SBATCH", "sbatch", "squeue", "scancel"]
+            htcondor_markers = ["JOB ", "PARENT ", "CHILD ", "SCRIPT "]
+            return (
+                any(m in content for m in slurm_markers)
+                and not any(m in content for m in htcondor_markers)
+            )
+        except Exception:
+            return False
 
     def _convert_dag_to_slurm(self, dag_file, batch_name=None, **kwargs):
         """

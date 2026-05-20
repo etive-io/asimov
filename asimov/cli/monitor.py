@@ -1,3 +1,4 @@
+import shlex
 import shutil
 import configparser
 import sys
@@ -116,87 +117,76 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
 
 def _start_slurm_monitor():
     """Start monitoring using system cron job for Slurm."""
-    if not CRONTAB_AVAILABLE:
-        # python-crontab not available, provide manual instructions
-        _start_slurm_monitor_manual()
-        return
-    
     try:
         minute_expression = config.get("slurm", "cron_minute")
     except (configparser.NoOptionError, configparser.NoSectionError):
         minute_expression = "*/15"
-    
-    # Get the current working directory (project root)
+
+    if not CRONTAB_AVAILABLE:
+        _start_slurm_monitor_manual(minute_expression)
+        return
+
     project_root = os.getcwd()
     asimov_executable = shutil.which("asimov")
-    
+
     if not asimov_executable:
         click.secho("  \t  ● Error: asimov executable not found in PATH", fg="red")
         return
-    
+
     try:
-        # Use the user's crontab
         cron = CronTab(user=True)
-        
-        # Create a unique comment to identify this job
         job_comment = f"asimov-monitor-{ledger.data['project']['name']}"
-        
-        # Remove any existing job with the same comment
         cron.remove_all(comment=job_comment)
-        
-        # Create the new job
-        command = f"cd {project_root} && {asimov_executable} monitor --chain >> {os.path.join('.asimov', 'asimov_cron.out')} 2>> {os.path.join('.asimov', 'asimov_cron.err')}"
+
+        out = shlex.quote(os.path.join(project_root, ".asimov", "asimov_cron.out"))
+        err = shlex.quote(os.path.join(project_root, ".asimov", "asimov_cron.err"))
+        command = (
+            f"cd {shlex.quote(project_root)} && "
+            f"{shlex.quote(asimov_executable)} monitor --chain >> {out} 2>> {err}"
+        )
         job = cron.new(command=command, comment=job_comment)
-        
-        # Parse the minute expression
-        # Support */N format for every N minutes
+
         if minute_expression.startswith("*/"):
-            interval = int(minute_expression[2:])
-            job.minute.every(interval)
+            job.minute.every(int(minute_expression[2:]))
         else:
             job.setall(minute_expression)
-        
-        # Write the crontab
+
         cron.write()
-        
-        # Save the job identifier in the ledger
         ledger.data["cronjob"] = job_comment
         ledger.save()
-        
         click.secho(f"  \t  ● Asimov is running via cron ({job_comment})", fg="green")
         logger.info(f"Running asimov cronjob via cron: {job_comment}")
-        
+
     except Exception as e:
         logger.error(f"Failed to create cron job: {e}")
         click.secho(f"  \t  ● Error creating cron job: {e}", fg="red")
-        _start_slurm_monitor_manual()
+        _start_slurm_monitor_manual(minute_expression)
 
 
-def _start_slurm_monitor_manual():
-    """Provide manual instructions for setting up Slurm monitoring."""
-    try:
-        minute_expression = config.get("slurm", "cron_minute")
-    except (configparser.NoOptionError, configparser.NoSectionError):
-        minute_expression = "*/15"
-    
+def _start_slurm_monitor_manual(minute_expression="*/15"):
+    """Print manual cron setup instructions and write a helper shell script."""
     project_root = os.getcwd()
     asimov_executable = shutil.which("asimov") or "asimov"
-    
-    click.secho("  \t  ● python-crontab not installed. Setting up cron manually...", fg="yellow")
-    
-    # Create a shell script as an alternative
+
+    click.secho(
+        "  \t  ● python-crontab not installed. Setting up cron manually...", fg="yellow"
+    )
+
     script_path = os.path.join(".asimov", "asimov_monitor.sh")
-    with open(script_path, 'w') as f:
+    with open(script_path, "w") as f:
         f.write("#!/bin/bash\n")
-        f.write(f"cd {project_root}\n")
-        f.write(f"{asimov_executable} monitor --chain >> {os.path.join('.asimov', 'asimov_cron.out')} 2>> {os.path.join('.asimov', 'asimov_cron.err')}\n")
-    
+        f.write(f"cd {shlex.quote(project_root)}\n")
+        out = os.path.join(project_root, ".asimov", "asimov_cron.out")
+        err = os.path.join(project_root, ".asimov", "asimov_cron.err")
+        f.write(
+            f"{shlex.quote(asimov_executable)} monitor --chain"
+            f" >> {shlex.quote(out)} 2>> {shlex.quote(err)}\n"
+        )
+
     os.chmod(script_path, 0o755)
-    
-    click.echo(f"\nPlease add the following line to your crontab (crontab -e):")
+    click.echo("\nPlease add the following line to your crontab (crontab -e):")
     click.echo(f"{minute_expression} * * * * {script_path}")
-    
-    # Save a marker in the ledger
+
     ledger.data["cronjob"] = "manual-cron"
     ledger.save()
 

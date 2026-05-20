@@ -294,8 +294,9 @@ class SlurmSchedulerTests(unittest.TestCase):
     @patch("subprocess.run")
     def test_slurm_query_all_jobs(self, mock_run):
         """Test querying all Slurm jobs."""
+        # query_all_jobs uses format=%i|%j|%t|%C (4 fields: id, name, state, cpus)
         mock_run.return_value = Mock(
-            stdout="12345|test-job-1|R|node01|2\n12346|test-job-2|PD|node02|1\n",
+            stdout="12345|test-job-1|R|2\n12346|test-job-2|PD|1\n",
             returncode=0,
         )
 
