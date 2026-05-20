@@ -11,6 +11,19 @@ on:
       - "v*-preview"
       - "v*-release"
   workflow_dispatch:
+    inputs:
+      bilby-version:
+        description: "bilby pip spec"
+        default: "bilby"
+        required: false
+      bilby-pipe-version:
+        description: "bilby_pipe pip spec"
+        default: "bilby_pipe==1.4.0"
+        required: false
+      gwdata-version:
+        description: "asimov-gwdata pip spec or git URL"
+        default: "git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache"
+        required: false
 
 jobs:
   bilby:
@@ -46,8 +59,10 @@ jobs:
         with:
           python-version: "3.10"
           extra-packages: >-
-            -U bilby bilby_pipe==1.4.0
-            git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache
+            -U
+            ${{ inputs.bilby-version || 'bilby' }}
+            ${{ inputs.bilby-pipe-version || 'bilby_pipe==1.4.0' }}
+            ${{ inputs.gwdata-version || 'git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache' }}
             pesummary
 
       - name: Set up git
