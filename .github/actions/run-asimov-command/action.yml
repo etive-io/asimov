@@ -15,9 +15,9 @@ runs:
         CONDA_EXE="${CONDA_EXE:-$(which conda)}"
         CONDA_BASE="$($CONDA_EXE info --base)"
         su - submituser <<SUBMITUSER
-        set -euo pipefail
         source "${CONDA_BASE}/etc/profile.d/conda.sh"
         conda activate asimov
+        set -euo pipefail
         cd "$GITHUB_WORKSPACE"
         ${{ inputs.script }}
         SUBMITUSER
