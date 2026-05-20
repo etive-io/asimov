@@ -158,6 +158,7 @@ class RunningState(MonitorState):
         elif job_status == "completed":
             pipe = analysis.pipeline
             pipe.after_completion()
+            context.update_ledger()
             click.echo(
                 "  \t  "
                 + click.style("●", "green")
@@ -210,8 +211,8 @@ class RunningState(MonitorState):
                     logger.exception(e)
             
             analysis.status = "finished"
-            context.update_ledger()
             pipe.after_completion()
+            context.update_ledger()
             click.secho(
                 f"  \t  ● {analysis.name} - Completion detected",
                 fg="green",
