@@ -627,6 +627,11 @@ class Slurm(Scheduler):
         if not os.path.exists(dag_file):
             raise FileNotFoundError(f"DAG file not found: {dag_file}")
 
+        # If dag_file is already a Slurm batch script (e.g. produced by
+        # bilby_pipe with scheduler=slurm), submit it directly.
+        if self._is_slurm_batch_script(dag_file):
+            return self._sbatch(dag_file)
+
         wrapper = os.path.join(os.path.dirname(dag_file), "sbatch_submit.sh")
         if os.path.exists(wrapper):
             return self._sbatch(wrapper)
