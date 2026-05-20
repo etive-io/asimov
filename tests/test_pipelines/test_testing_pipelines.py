@@ -13,6 +13,7 @@ from asimov.pipelines.testing import (
     ProjectTestPipeline
 )
 from asimov.analysis import SimpleAnalysis, SubjectAnalysis, ProjectAnalysis
+from asimov.scheduler import Slurm
 
 from asimov.ledger import YAMLLedger
 
@@ -115,6 +116,38 @@ class TestingPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "test_job.sh"))
         )
+
+    def test_simple_pipeline_submit_slurm(self):
+        """Test that SimpleTestPipeline can submit a Slurm wrapper."""
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger
+        )
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_events.yaml",
+            ledger=self.ledger
+        )
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+        analysis = SimpleAnalysis(
+            subject=event,
+            name="test-simple",
+            pipeline="simpletestpipeline",
+            status="ready",
+            ledger=self.ledger,
+            rundir=os.path.join(self.test_dir, "simple_run")
+        )
+        analysis.pipeline._scheduler = Slurm()
+        analysis.pipeline._scheduler.submit_dag = MagicMock(return_value=45678)
+
+        job_id = analysis.pipeline.submit_dag(dryrun=False)
+
+        self.assertEqual(job_id, 45678)
+        self.assertTrue(
+            os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
+        )
+        analysis.pipeline._scheduler.submit_dag.assert_called_once()
 
     def test_simple_pipeline_completion(self):
         """Test that SimpleTestPipeline can detect completion."""
@@ -288,6 +321,37 @@ class SubjectPipelineTests(unittest.TestCase):
             os.path.exists(os.path.join(analysis.rundir, "test_subject_job.sh"))
         )
 
+    def test_subject_pipeline_submit_slurm(self):
+        """Test that SubjectTestPipeline can submit a Slurm wrapper."""
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger
+        )
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_events.yaml",
+            ledger=self.ledger
+        )
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+        analysis = SubjectAnalysis(
+            subject=event,
+            name="test-subject",
+            pipeline="subjecttestpipeline",
+            status="ready",
+            rundir=os.path.join(self.test_dir, "subject_run")
+        )
+        analysis.pipeline._scheduler = Slurm()
+        analysis.pipeline._scheduler.submit_dag = MagicMock(return_value=56789)
+
+        job_id = analysis.pipeline.submit_dag(dryrun=False)
+
+        self.assertEqual(job_id, 56789)
+        self.assertTrue(
+            os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
+        )
+        analysis.pipeline._scheduler.submit_dag.assert_called_once()
+
 
 class ProjectPipelineTests(unittest.TestCase):
     """Test the ProjectTestPipeline specifically."""
@@ -351,6 +415,37 @@ class ProjectPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "test_project_job.sh"))
         )
+
+    def test_project_pipeline_submit_slurm(self):
+        """Test that ProjectTestPipeline can submit a Slurm wrapper."""
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger
+        )
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_events.yaml",
+            ledger=self.ledger
+        )
+
+        analysis = ProjectAnalysis(
+            name="test-project",
+            pipeline="projecttestpipeline",
+            status="ready",
+            subjects=["GW150914_095045"],
+            ledger=self.ledger,
+            working_directory=os.path.join(self.test_dir, "project_run")
+        )
+        analysis.pipeline._scheduler = Slurm()
+        analysis.pipeline._scheduler.submit_dag = MagicMock(return_value=67890)
+
+        job_id = analysis.pipeline.submit_dag(dryrun=False)
+
+        self.assertEqual(job_id, 67890)
+        self.assertTrue(
+            os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
+        )
+        analysis.pipeline._scheduler.submit_dag.assert_called_once()
 
 
 if __name__ == '__main__':

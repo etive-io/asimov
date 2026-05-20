@@ -1,212 +1,295 @@
-name: Slurm Integration Tests (Manual)
-# Note: Slurm integration tests require container images that may not be publicly accessible
-# Unit tests for Slurm scheduler run automatically in the main test suite (tests.test_scheduler)
-# This workflow is for optional integration testing with a real Slurm cluster
-on: workflow_dispatch
+name: Tests with Slurm
+on: [push, pull_request]
+
+permissions:
+  contents: read
 
 jobs:
-  slurm-unit-tests:
-    name: "Slurm Unit Tests (No Slurm Required)"
+  testing-pipelines:
+    name: "Testing Pipelines with Slurm"
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-slurm
+
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
+
+      - name: Install asimov
+        run: pip install .
+
+      - name: Set up git
+        run: |
+          git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+
+      - name: Create asimov project
+        run: asimov init "Test Project"
+
+      - name: Configure Slurm scheduler
+        run: asimov configuration update scheduler/type slurm
+
+      - name: Apply testing configuration
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_data/testing_pe.yaml"
+
+      - name: Add test event
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+
+      - name: Add SimpleTestPipeline analysis
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline.yaml" -e GW150914_095045
+
+      - name: Build and submit SimpleTestPipeline job
+        run: asimov manage build submit
+
+      - name: Wait for SimpleTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW150914_095045/test-simple-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Run asimov monitor for SimpleTestPipeline
+        run: asimov monitor
+
+      - name: Add SubjectTestPipeline analysis
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/subject_test_pipeline.yaml" -e GW150914_095045
+
+      - name: Build and submit SubjectTestPipeline job
+        run: asimov manage build submit
+
+      - name: Wait for SubjectTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "combined_results.dat"
+          directory: "working/GW150914_095045/test-subject-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Run asimov monitor for SubjectTestPipeline
+        run: asimov monitor
+
+      - name: Add ProjectTestPipeline analysis
+        run: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/project_test_pipeline.yaml"
+
+      - name: Build and submit ProjectTestPipeline job
+        run: asimov manage build submit
+
+      - name: Wait for ProjectTestPipeline completion
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "population_results.dat"
+          directory: "working/project-analyses/GW150914_095045/test-project-pipeline"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Run asimov monitor for ProjectTestPipeline
+        run: asimov monitor
+
+      - name: Verify all testing pipelines completed
+        run: |
+          asimov monitor
+          python3 <<'EOF'
+          import sys
+          from asimov.monitor_api import get_analysis_status
+          statuses = get_analysis_status()
+          print('Final analysis statuses:')
+          failures = []
+          for name, status in statuses.items():
+              print(f'  {name}: {status}')
+              if str(status).lower() != 'complete':
+                  failures.append(f'{name}: {status}')
+          if failures:
+              print(f'FAIL: {len(failures)} analyses not complete:')
+              [print(f'  - {f}') for f in failures]
+              sys.exit(1)
+          print(f'All {len(statuses)} analyses are complete!')
+          EOF
+
+      - name: Archive artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-pipelines-slurm-debug
+          path: |
+            .asimov/
+            working/
+            checkouts/
+          retention-days: 5
+
+  bilby:
+    name: "Bilby end-to-end with Slurm"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-slurm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
-          python -m pip install python-crontab
+          pip install .
+          pip install -U bilby bilby_pipe==1.4.0 "git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache" pesummary
 
-      - name: Run scheduler unit tests
+      - name: Set up git
         run: |
-          # These tests use mocking and don't require a real Slurm installation
-          python -m unittest tests.test_scheduler -v
+          git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
 
-      - name: Verify Slurm scheduler can be imported
+      - name: Start MockGWDataFindServer
         run: |
-          python -c "from asimov.scheduler import Slurm; print('✓ Slurm scheduler imported successfully')"
+          python3 << EOF &
+          from tests.mock_gwdatafind_server import MockGWDataFindServer
+          import time
 
-      - name: Test DAG translation functions
-        run: |
-          python << 'EOF'
-          from asimov.scheduler import Slurm
-          import tempfile
-          import os
-          
-          # Test HTCondor DAG to Slurm conversion
-          with tempfile.TemporaryDirectory() as tmpdir:
-              dag_file = os.path.join(tmpdir, "test.dag")
-              with open(dag_file, 'w') as f:
-                  f.write("JOB job_a job_a.sub\n")
-                  f.write("JOB job_b job_b.sub\n")
-                  f.write("PARENT job_a CHILD job_b\n")
-              
-              # Create submit files
-              with open(os.path.join(tmpdir, "job_a.sub"), 'w') as f:
-                  f.write("executable = /bin/echo\n")
-                  f.write("arguments = test\n")
-                  f.write("queue\n")
-              
-              with open(os.path.join(tmpdir, "job_b.sub"), 'w') as f:
-                  f.write("executable = /bin/echo\n")
-                  f.write("arguments = test\n")
-                  f.write("queue\n")
-              
-              slurm = Slurm()
-              script = slurm._dag_to_slurm_script(dag_file)
-              
-              assert "#!/bin/bash" in script
-              assert "sbatch" in script or "srun" in script
-              print("✓ DAG to Slurm translation works")
-          
-          print("✓ All translation tests passed")
+          frame_configs = {
+              ('H', 'H1_LOSC_16_V1'): ['file://$GITHUB_WORKSPACE/tests/test_data/frames/H-H1_GWOSC_16KHZ_R1-1126259447-32.gwf'],
+          }
+
+          server = MockGWDataFindServer(port=8765, frame_configs=frame_configs)
+          server.start()
+          print("MockGWDataFindServer started on port 8765", flush=True)
+
+          try:
+              while True:
+                  time.sleep(1)
+          except KeyboardInterrupt:
+              server.stop()
           EOF
 
-  slurm-integration-local:
-    name: "Slurm Integration Tests (Install Slurm Locally)"
-    runs-on: ubuntu-latest
-    # This job installs Slurm directly on the runner
-    # May be more reliable than container-based approaches
-    
-    steps:
-      - uses: actions/checkout@v5
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8765/api/v1/gwf/H/H1_LOSC_16_V1/1126259460,1126259464/file.json && break || sleep 2
+          done
+
+      - name: Create asimov project
+        run: asimov init "Test Project"
+
+      - name: Configure Slurm scheduler
+        run: asimov configuration update scheduler/type slurm
+
+      - name: Apply project blueprints
+        run: |
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_quick_test.yaml"
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event.yaml"
+
+      - name: Submit gwdata job
+        env:
+          GWDATAFIND_SERVER: http://localhost:8765
+        run: |
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_get_data.yaml" -e GW150914_095045
+          asimov manage build submit
+
+      - name: Wait for frame files
+        uses: ./.github/actions/wait-for-files
         with:
-          fetch-depth: 0
+          patterns: "H*.gwf"
+          directory: "working/GW150914_095045/get-data/frames"
+          timeout: "600"
+          interval: "30"
+          working-directory: .
+          show-condor-q: "false"
 
-      - name: Install Slurm
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y slurm-wlm munge
-          
-          # Configure munge
-          sudo systemctl enable munge
-          sudo systemctl start munge
-          
-          # Create basic Slurm configuration
-          sudo mkdir -p /etc/slurm /var/spool/slurm /var/log/slurm
-          sudo chown slurm:slurm /var/spool/slurm /var/log/slurm
-          
-          # Create minimal slurm.conf
-          sudo tee /etc/slurm/slurm.conf > /dev/null << 'SLURMCONF'
-          ClusterName=test
-          SlurmctldHost=localhost
-          MpiDefault=none
-          ProctrackType=proctrack/linuxproc
-          ReturnToService=2
-          SlurmctldPidFile=/var/run/slurmctld.pid
-          SlurmdPidFile=/var/run/slurmd.pid
-          SlurmdSpoolDir=/var/spool/slurm/d
-          SlurmUser=slurm
-          StateSaveLocation=/var/spool/slurm/ctld
-          SwitchType=switch/none
-          TaskPlugin=task/none
-          InactiveLimit=0
-          KillWait=30
-          MinJobAge=300
-          SlurmctldTimeout=120
-          SlurmdTimeout=300
-          Waittime=0
-          SchedulerType=sched/backfill
-          SelectType=select/linear
-          AccountingStorageType=accounting_storage/none
-          JobCompType=jobcomp/none
-          JobAcctGatherFrequency=30
-          JobAcctGatherType=jobacct_gather/none
-          SlurmctldDebug=info
-          SlurmctldLogFile=/var/log/slurm/slurmctld.log
-          SlurmdDebug=info
-          SlurmdLogFile=/var/log/slurm/slurmd.log
-          NodeName=localhost CPUs=2 State=UNKNOWN
-          PartitionName=debug Nodes=localhost Default=YES MaxTime=INFINITE State=UP
-          SLURMCONF
-          
-          # Start Slurm daemons
-          sudo slurmctld || echo "slurmctld start attempted"
-          sudo slurmd || echo "slurmd start attempted"
-          
-          sleep 5
-          
-          # Check status
-          sinfo || echo "Slurm may still be starting..."
-          squeue || echo "Slurm queue check"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Wait for gwdata cache file
+        uses: ./.github/actions/wait-for-files
         with:
-          python-version: '3.10'
+          patterns: "H1.cache"
+          directory: "working/GW150914_095045/get-data/cache"
+          timeout: "120"
+          interval: "10"
+          working-directory: .
+          show-condor-q: "false"
 
-      - name: Install Python dependencies
+      - name: Monitor gwdata completion
+        run: asimov monitor
+
+      - name: Submit BayesWave PSD job
+        env:
+          GWDATAFIND_SERVER: https://datafind.gwosc.org
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
-          python -m pip install python-crontab
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bayeswave_quick_test.yaml" -e GW150914_095045
+          asimov manage build submit
 
-      - name: Run scheduler unit tests
+      - name: Wait for PSD files
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "trigtime_*/post/clean/glitch_median_PSD_forLI_H1.dat"
+          directory: "working/GW150914_095045/generate-psd"
+          timeout: "600"
+          interval: "30"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Clear scheduler cache
+        run: rm -f .asimov/_cache_jobs.yaml
+
+      - name: Monitor BayesWave completion
+        run: asimov monitor
+
+      - name: Apply and submit Bilby job
+        env:
+          GWDATAFIND_SERVER: http://localhost:8765
         run: |
-          python -m unittest tests.test_scheduler -v
+          asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/bilby_quick_test.yaml" -e GW150914_095045
+          asimov manage build submit
 
-      - name: Test basic Slurm job submission
+      - name: Wait for Bilby result files
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "final_result/*.hdf5"
+          directory: "working/GW150914_095045/bilby-IMRPhenomXPHM"
+          timeout: "1800"
+          interval: "60"
+          working-directory: .
+          show-condor-q: "false"
+
+      - name: Monitor Bilby completion
         run: |
-          # Create a simple test job
-          cat > test_job.sh << 'TESTJOB'
-          #!/bin/bash
-          #SBATCH --job-name=test-asimov
-          #SBATCH --output=test_output.log
-          #SBATCH --error=test_error.log
-          #SBATCH --time=00:01:00
-          
-          echo "Slurm job running successfully"
-          sleep 2
-          echo "Job completed"
-          TESTJOB
-          
-          chmod +x test_job.sh
-          
-          # Try to submit the job
-          if command -v sbatch &> /dev/null; then
-            job_id=$(sbatch --parsable test_job.sh 2>&1 || echo "FAILED")
-            echo "Job submission result: $job_id"
-            
-            if [ "$job_id" != "FAILED" ]; then
-              echo "✓ Successfully submitted Slurm job"
-            else
-              echo "⚠ Slurm job submission failed (Slurm may not be fully configured)"
-            fi
-          else
-            echo "⚠ sbatch command not available"
-          fi
+          asimov monitor
+          python3 <<'EOF'
+          import sys
+          from asimov.monitor_api import get_analysis_status
+          statuses = get_analysis_status()
+          print('Final analysis statuses:')
+          failures = []
+          for name, status in statuses.items():
+              print(f'  {name}: {status}')
+          bilby_status = statuses.get('bilby-IMRPhenomXPHM')
+          if str(bilby_status).lower() != 'complete':
+              failures.append(f'bilby-IMRPhenomXPHM: {bilby_status}')
+          if failures:
+              [print(f'FAIL: {failure}') for failure in failures]
+              sys.exit(1)
+          print('Bilby Slurm end-to-end test completed successfully!')
+          EOF
 
-      - name: Create asimov project and test Slurm detection
-        run: |
-          mkdir -p test_project
-          cd test_project
-          
-          # Initialize project
-          asimov init "Test Project" || echo "Init failed"
-          
-          # Check if Slurm was detected
-          if [ -f .asimov/asimov.conf ]; then
-            cat .asimov/asimov.conf
-            
-            if grep -q "type.*=.*slurm" .asimov/asimov.conf; then
-              echo "✓ Slurm scheduler correctly detected and configured"
-            else
-              echo "⚠ Slurm not detected (expected if sbatch/squeue not in PATH)"
-            fi
-          fi
-
-      - name: Show final status
+      - name: Archive testing artifacts
         if: always()
-        run: |
-          echo "=== Slurm Status ==="
-          sinfo -V || echo "Slurm not available"
-          sinfo || echo "No cluster info"
-          squeue || echo "No queue info"
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilby-slurm-artifacts
+          path: |
+            checkouts/
+            working/
+            .asimov/
+          retention-days: 5
+
+      - name: Stop background server
+        if: always()
+        run: pkill -f "MockGWDataFindServer" || true
