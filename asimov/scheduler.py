@@ -4,13 +4,15 @@ This module contains logic for interacting with a scheduling system.
 Supported Schedulers are:
 
 - HTCondor
-- Slurm (planned)
+- Slurm
 
 """
 
 import os
 import re
+import shlex
 import subprocess
+import tempfile
 import datetime
 import yaml
 import warnings
@@ -663,8 +665,10 @@ class Slurm(Scheduler):
         """
         Convert an HTCondor DAG file to a Slurm orchestrator batch script.
 
-        The generated script submits each job via ``sbatch --wrap`` in
-        dependency order, using bash associative arrays to track job IDs.
+        A per-job wrapper ``.sh`` file is written for each DAG job so that
+        commands are never embedded into the orchestrator via ``--wrap``.
+        The orchestrator submits each wrapper with ``sbatch --parsable``
+        in topological order, using bash associative arrays to track IDs.
         """
         dag_dir = os.path.dirname(os.path.abspath(dag_file))
         jobs = {}
@@ -689,15 +693,33 @@ class Slurm(Scheduler):
                         jobs[job_name] = {"submit_file": submit_file, "dir": job_dir}
                 elif line.startswith("PARENT"):
                     parts = line.split()
-                    if len(parts) >= 4 and parts[2] == "CHILD":
-                        dependencies.setdefault(parts[3], []).append(parts[1])
+                    if "CHILD" in parts:
+                        child_idx = parts.index("CHILD")
+                        parents = parts[1:child_idx]
+                        children = parts[child_idx + 1:]
+                        for child in children:
+                            for parent in parents:
+                                dependencies.setdefault(child, []).append(parent)
+
+        # Write a per-job wrapper script for each DAG job.
+        for job_name, info in jobs.items():
+            wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
+            if os.path.exists(info["submit_file"]):
+                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+            else:
+                cmd = f"echo 'submit file not found for {job_name}'"
+            with open(wrapper_path, "w") as wf:
+                wf.write("#!/bin/bash\n")
+                wf.write(f"{cmd}\n")
+            os.chmod(wrapper_path, 0o755)
+            info["wrapper"] = wrapper_path
 
         dag_base = os.path.splitext(os.path.basename(dag_file))[0]
         lines = [
             "#!/bin/bash",
             f"#SBATCH --job-name={batch_name or 'asimov-dag'}",
-            f"#SBATCH --output={dag_dir}/{dag_base}.out",
-            f"#SBATCH --error={dag_dir}/{dag_base}.err",
+            f"#SBATCH --output={os.path.join(dag_dir, dag_base)}.out",
+            f"#SBATCH --error={os.path.join(dag_dir, dag_base)}.err",
             "#SBATCH --cpus-per-task=1",
             "#SBATCH --mem=1GB",
             "",
@@ -706,20 +728,17 @@ class Slurm(Scheduler):
         ]
         for job_name in self._topological_sort(list(jobs.keys()), dependencies):
             info = jobs[job_name]
-            if os.path.exists(info["submit_file"]):
-                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
-            else:
-                cmd = f"echo 'submit file not found for {job_name}'"
+            wrapper = shlex.quote(info.get("wrapper", "/dev/null"))
             if job_name in dependencies:
                 dep_str = ":".join(
                     f"${{job_ids[{d}]}}" for d in dependencies[job_name]
                 )
                 lines.append(
-                    f'job_ids[{job_name}]=$(sbatch --dependency=afterok:{dep_str} --parsable --wrap "{cmd}")'
+                    f'job_ids[{job_name}]=$(sbatch --dependency=afterok:{dep_str} --parsable {wrapper})'
                 )
             else:
                 lines.append(
-                    f'job_ids[{job_name}]=$(sbatch --parsable --wrap "{cmd}")'
+                    f'job_ids[{job_name}]=$(sbatch --parsable {wrapper})'
                 )
             lines.append(f'echo "Submitted {job_name} as job ${{job_ids[{job_name}]}}"')
             lines.append("")
@@ -750,7 +769,7 @@ class Slurm(Scheduler):
         return result
 
     def _parse_submit_file_for_slurm(self, submit_file, job_dir):
-        """Extract the command from an HTCondor submit file."""
+        """Extract the command from an HTCondor submit file, quoting all values."""
         executable = arguments = None
         with open(submit_file) as f:
             for line in f:
@@ -759,12 +778,20 @@ class Slurm(Scheduler):
                     executable = line.split("=", 1)[1].strip()
                 elif line.startswith("arguments"):
                     arguments = line.split("=", 1)[1].strip().strip('"\'')
+        quoted_dir = shlex.quote(job_dir)
         if not executable:
-            return f"cd {job_dir} && echo 'No executable found in submit file'"
+            return f"cd {quoted_dir} && echo 'No executable found in submit file'"
         if not os.path.isabs(executable):
             executable = os.path.join(job_dir, executable)
-        cmd = executable if not arguments else f"{executable} {arguments}"
-        return f"cd {job_dir} && {cmd}"
+        quoted_exe = shlex.quote(executable)
+        if arguments:
+            try:
+                arg_tokens = shlex.split(arguments)
+                quoted_args = " ".join(shlex.quote(a) for a in arg_tokens)
+            except ValueError:
+                quoted_args = shlex.quote(arguments)
+            return f"cd {quoted_dir} && {quoted_exe} {quoted_args}"
+        return f"cd {quoted_dir} && {quoted_exe}"
 
     def query_all_jobs(self):
         """Return all running jobs for the configured user as a list of dicts."""
