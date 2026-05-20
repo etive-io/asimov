@@ -19,6 +19,9 @@ likelihood:
   segment start: 1126259460.391
   start frequency: 13.333333333333334
   window length: 4
+  minimum frequency:
+    H1: 20
+    L1: 20
 name: GW150914_095045
 priors:
   amplitude order: 1
@@ -34,8 +37,3 @@ priors:
   mass ratio:
     maximum: 1.0
     minimum: 0.05
-# minimum frequency has been moved to the waveform section (v0.7 requirement)
-waveform:
-  minimum frequency:
-    H1: 20
-    L1: 20

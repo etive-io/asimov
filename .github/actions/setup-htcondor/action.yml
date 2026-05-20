@@ -3,9 +3,22 @@ description: 'Start and verify HTCondor service'
 runs:
   using: "composite"
   steps:
+    - name: Configure HTCondor for CI
+      shell: bash
+      run: |
+        # Override the advertised machine memory so jobs with generous default
+        # requests (e.g. bilby_pipe MergeNode = 16 GB) always match the local
+        # slot without touching slot types or structure, which mini configures
+        # via its own role metaknobs.
+        cat > /etc/condor/config.d/10-ci-machine.conf << 'CONDOREOF'
+        MEMORY = 32768
+        CONDOREOF
+
     - name: Start HTCondor
       shell: bash
       run: |
         condor_master &
-        sleep 10
+        for i in $(seq 1 30); do
+          condor_status && break || sleep 3
+        done
         condor_status

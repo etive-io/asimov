@@ -268,9 +268,9 @@ class PESummary(Pipeline):
                         if "reference frequency" in dep_analysis.meta["waveform"]:
                             f_refs.append(str(dep_analysis.meta["waveform"]["reference frequency"]))
                     
-                    if "waveform" in dep_analysis.meta:
-                        if "minimum frequency" in dep_analysis.meta["waveform"]:
-                            min_freq = dep_analysis.meta["waveform"]["minimum frequency"]
+                    if "likelihood" in dep_analysis.meta:
+                        if "minimum frequency" in dep_analysis.meta["likelihood"]:
+                            min_freq = dep_analysis.meta["likelihood"]["minimum frequency"]
                             if isinstance(min_freq, dict) and min_freq:
                                 f_lows.append(str(min(min_freq.values())))
                             else:
@@ -365,8 +365,8 @@ class PESummary(Pipeline):
             # If we have per-analysis f_low values, use them
             command += ["--f_low"]
             command.extend(f_lows)
-        elif "minimum frequency" in waveform_meta:
-            min_freq = waveform_meta["minimum frequency"]
+        elif "minimum frequency" in self.production.meta.get("likelihood", {}):
+            min_freq = self.production.meta["likelihood"]["minimum frequency"]
             if isinstance(min_freq, dict) and min_freq:
                 command += [
                     "--f_low",
@@ -374,7 +374,7 @@ class PESummary(Pipeline):
                 ]
             else:
                 raise ValueError(
-                    "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                    "Minimum frequency in 'likelihood' section must be a non-empty dictionary "
                     "mapping interferometer names to frequency values."
                 )
         

@@ -52,11 +52,11 @@ exemplar = {
         "window length": "71",
     },
     "lalinference": {
-        "minimum frequency": "{ 'H1': 62, 'L1': 92,  'V1': 62  }",
+        "minimum frequency": "{ 'H1': 62,'L1': 92,'V1': 62, }",
         "segment length": "4",
         "ifo list": "['H1', 'L1', 'V1']",
-        "data channels": "{'H1': 'H1:WeirdChannel', 'L1': 'L1:WeirdChannel', 'V1': 'V1:OddChannel'}",
-        "data frames": "{'H1': 'NonstandardFrame', 'L1': 'NonstandardFrameL1', 'V1': 'UnusualFrameType'}",
+        "data channels": "{ 'H1': 'H1:WeirdChannel','L1': 'L1:WeirdChannel','V1': 'V1:OddChannel', }",
+        "data frames": "{ 'H1': 'NonstandardFrame','L1': 'NonstandardFrameL1','V1': 'UnusualFrameType', }",
     }
 }
 

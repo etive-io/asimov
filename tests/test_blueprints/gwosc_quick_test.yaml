@@ -3,12 +3,9 @@
 kind: configuration
 data:
   channels:
-    L1: L1:GWOSC-16KHZ_R1_STRAIN
     H1: H1:GWOSC-16KHZ_R1_STRAIN
-    V1: V1:GWOSC-16KHZ_R1_STRAIN
   frame types:
     H1: H1_LOSC_16_V1
-    L1: L1_LOSC_16_V1
 pipelines:
   bilby:
     quality:
@@ -18,7 +15,7 @@ pipelines:
         V1: V1:DQ_ANALYSIS_STATE_VECTOR
     sampler:
       sampler: dynesty
-      parallel jobs: 2
+      parallel jobs: 1
       sampler kwargs: "{nlive: 50, dlogz: 1, naccept: 5, check_point_delta_t: 1800, 'print_method': 'interval-10', 'sample': 'acceptance-walk'}"
     scheduler:
       accounting group: ligo.dev.o4.cbc.pe.bilby

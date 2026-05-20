@@ -18,6 +18,9 @@ likelihood:
   segment start: 1126259460.391
   start frequency: 13.333333333333334
   window length: 4
+  minimum frequency:
+    H1: 20
+    L1: 20
 name: GW150914_095045
 priors:
   amplitude order: 1
@@ -58,6 +61,9 @@ likelihood:
   segment start: 1135136336.647758
   start frequency: 13.333333333333334
   window length: 16
+  minimum frequency:
+    H1: 20
+    L1: 20
 name: GW151226_033853
 priors:
   amplitude order: 1
@@ -101,6 +107,10 @@ likelihood:
   segment start: 1186741859.52678
   start frequency: 13.333333333333334
   window length: 4
+  minimum frequency:
+    H1: 20
+    L1: 20
+    V1: 20
 name: GW170814_103043
 priors:
   amplitude order: 1

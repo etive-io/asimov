@@ -35,6 +35,8 @@ def update(kwargs):
     key, value = kwargs
     section, key = key.split("/")
     section = section.replace("-", "")
+    if not config.has_section(section):
+        config.add_section(section)
     config.set(section, key, value)
     with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
         config.write(config_file)

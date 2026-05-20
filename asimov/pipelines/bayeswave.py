@@ -169,6 +169,9 @@ class BayesWave(Pipeline):
         ]
 
         self.logger.info(" ".join(command))
+        self.logger.info(f"cache files in meta: {'cache files' in self.production.meta.get('data', {})}")
+        if "cache files" in self.production.meta.get("data", {}):
+            self.logger.info(f"cache files: {self.production.meta['data']['cache files']}")
         if dryrun:
             print(" ".join(command))
             self.logger.info(" ".join(command))
@@ -180,9 +183,8 @@ class BayesWave(Pipeline):
             if "To submit:" not in str(out):
                 self.production.status = "stuck"
                 self.logger.error("Could not create a DAG file")
-                self.logger.info(f"{command}")
-                self.logger.debug(out)
-                self.logger.debug(err)
+                self.logger.error(f"Command: {' '.join(command)}")
+                self.logger.error(f"bayeswave_pipe output:\n{out.decode('utf-8', errors='replace') if isinstance(out, bytes) else out}")
                 raise PipelineException("The DAG file could not be created.")
             else:
                 self.logger.info("DAG file created")
@@ -288,16 +290,16 @@ class BayesWave(Pipeline):
         minimum frequency from the list of interferometer
         lower frequencies.
         """
-        if "waveform" not in self.production.meta or "minimum frequency" not in self.production.meta["waveform"]:
+        if "likelihood" not in self.production.meta or "minimum frequency" not in self.production.meta["likelihood"]:
             raise ValueError(
-                "Minimum frequency must be specified in the 'waveform' section. "
-                "Please update your blueprint to include 'minimum frequency' in 'waveform'."
+                "Minimum frequency must be specified in the 'likelihood' section. "
+                "Please update your blueprint to include 'minimum frequency' in 'likelihood'."
             )
-        
-        min_freq = self.production.meta["waveform"]["minimum frequency"]
+
+        min_freq = self.production.meta["likelihood"]["minimum frequency"]
         if not isinstance(min_freq, dict) or not min_freq:
             raise ValueError(
-                "Minimum frequency in 'waveform' section must be a non-empty dictionary "
+                "Minimum frequency in 'likelihood' section must be a non-empty dictionary "
                 "mapping interferometer names to frequency values."
             )
         

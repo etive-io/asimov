@@ -30,10 +30,10 @@ known_pipelines = {
 for pipeline in discovered_pipelines:
     try:
         known_pipelines[pipeline.name] = pipeline.load()
-    except (ModuleNotFoundError, ImportError) as e:
-        logger.warning(
-            "Could not load pipeline entry point %r: %s. "
-            "This pipeline will not be available.",
-            pipeline.name,
-            e,
+    except Exception as e:
+        import warnings
+        warnings.warn(
+            f"Failed to load pipeline plugin '{pipeline.name}' ({pipeline.value}): {e}",
+            ImportWarning,
+            stacklevel=2,
         )

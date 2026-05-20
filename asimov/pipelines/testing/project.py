@@ -145,12 +145,24 @@ class ProjectTestPipeline(Pipeline):
                     f.write("getenv = True\n")
                     f.write("queue 1\n")
                 
-                # Create a minimal DAG file
+                # Create a minimal DAG file (HTCondor)
                 dag_file = os.path.join(self.production.rundir, "test_project.dag")
                 with open(dag_file, "w") as f:
                     f.write("# Project test pipeline DAG\n")
                     f.write("JOB test_project_job test_project_job.sub\n")
-                    
+
+                # Create an sbatch wrapper (Slurm)
+                sbatch_file = os.path.join(self.production.rundir, "sbatch_submit.sh")
+                with open(sbatch_file, "w") as f:
+                    f.write("#!/bin/bash\n")
+                    f.write(f"#SBATCH --job-name=test-project/{self.production.name}\n")
+                    f.write(f"#SBATCH --output={self.production.rundir}/slurm_%j.out\n")
+                    f.write(f"#SBATCH --error={self.production.rundir}/slurm_%j.err\n")
+                    f.write("#SBATCH --ntasks=1\n")
+                    f.write("#SBATCH --time=00:10:00\n")
+                    f.write(f"\nbash {job_script}\n")
+                os.chmod(sbatch_file, 0o755)
+
                 self.logger.info(f"Built project test DAG in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified, cannot build DAG")
@@ -159,10 +171,7 @@ class ProjectTestPipeline(Pipeline):
         
     def submit_dag(self, dryrun=False):
         """
-        Submit the pipeline job to HTCondor.
-
-        This submits the DAG file to HTCondor so the job actually runs
-        on the scheduler and creates the results file.
+        Submit the pipeline job to the configured scheduler.
 
         Parameters
         ----------
@@ -172,67 +181,53 @@ class ProjectTestPipeline(Pipeline):
         Returns
         -------
         int
-            The HTCondor cluster ID.
+            The scheduler job/cluster ID.
         """
         import subprocess
         import re
+        from asimov.scheduler import Slurm
 
         if not self.production.rundir:
             self.logger.warning("No run directory specified")
             return None
 
-        # Build the DAG first
         self.build_dag(dryrun=dryrun)
-
         self.before_submit(dryrun=dryrun)
-        
-        dag_file = "test_project.dag"
-        
-        command = [
-            "condor_submit_dag",
-            "-batch-name",
-            f"test-project/{self.production.name}",
-            dag_file
-        ]
-        
-        self.logger.info(f"Submitting project DAG: {' '.join(command)}")
-        
+
         if dryrun:
-            print(f"Would run: {' '.join(command)}")
+            self.logger.info("Dry run: would submit project test DAG")
             return 34567
-        else:
-            # Change to run directory before submitting
-            original_dir = os.getcwd()
-            os.chdir(self.production.rundir)
-            
-            try:
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                
-                self.logger.info(f"Project DAG submitted successfully")
+
+        original_dir = os.getcwd()
+        os.chdir(self.production.rundir)
+        try:
+            if isinstance(self.scheduler, Slurm):
+                job_id = self.scheduler.submit("sbatch_submit.sh")
+                self.logger.info(f"Slurm job submitted: {job_id}")
+                return job_id
+            else:
+                command = [
+                    "condor_submit_dag",
+                    "-batch-name",
+                    f"test-project/{self.production.name}",
+                    "test_project.dag",
+                ]
+                self.logger.info(f"Submitting project DAG: {' '.join(command)}")
+                result = subprocess.run(command, capture_output=True, text=True, check=True)
                 self.logger.debug(f"Output: {result.stdout}")
-                
-                # Extract cluster ID from output
-                match = re.search(r'submitted to cluster (\d+)', result.stdout)
+                match = re.search(r"submitted to cluster (\d+)", result.stdout)
                 if match:
                     cluster_id = int(match.group(1))
                     self.logger.info(f"Cluster ID: {cluster_id}")
                     return cluster_id
-                else:
-                    self.logger.warning("Could not extract cluster ID from condor_submit_dag output")
-                    return None
-                    
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to submit project DAG: {e}")
-                self.logger.error(f"stderr: {e.stderr}")
-                raise
-            finally:
-                os.chdir(original_dir)
-        
+                self.logger.warning("Could not extract cluster ID from condor_submit_dag output")
+                return None
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to submit project DAG: {e}\nstderr: {e.stderr}")
+            raise
+        finally:
+            os.chdir(original_dir)
+
     def detect_completion(self):
         """
         Check if the project analysis has completed.
@@ -302,9 +297,11 @@ class ProjectTestPipeline(Pipeline):
                     f.write("population_rate: 10.5\n")
                     f.write("rate_uncertainty: 2.3\n")
                     f.write("selection_effects: 0.85\n")
-                    
+
         super().after_completion()
-        
+        # No post-processing step; mark directly as complete.
+        self.production.status = "complete"
+
     def samples(self, absolute=False):
         """
         Return the location of population samples.
