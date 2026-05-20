@@ -42,10 +42,17 @@ class Ledger:
             engine = config.get("ledger", "engine")
 
         if engine == "yamlfile":
+            if name is None:
+                name = config.get("project", "name", fallback=None)
+            if name is None:
+                raise ValueError("Project name is required when creating a YAML ledger")
             YAMLLedger.create(location=location, name=name)
+            return YAMLLedger(location=location)
 
         elif engine in {"tinydb", "mongodb", "sqlalchemy", "sqlite", "postgresql", "mysql"}:
-            DatabaseLedger.create(engine=engine)
+            return DatabaseLedger.create(engine=engine)
+
+        raise ValueError(f"Unsupported ledger engine: {engine}")
 
 
 class YAMLLedger(Ledger):
@@ -358,20 +365,86 @@ class DatabaseLedger(Ledger):
 
         if isinstance(payload, Event):
             data = payload.to_dict(productions=False)
+            if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+                data = self._prepare_sql_event_data(data)
             id_number = self.db.insert("event", data)
         elif isinstance(payload, Production):
             data = payload.to_dict(event=False)
-            # Ensure event_name is set for SQL database
-            if "event" not in data and hasattr(payload, "event"):
-                data["event_name"] = payload.event.name
+            if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+                if "event" not in data and hasattr(payload, "event"):
+                    data["event"] = payload.event.name
+                data = self._prepare_sql_production_data(data)
             id_number = self.db.insert("production", data)
         elif isinstance(payload, ProjectAnalysis):
             data = payload.to_dict()
+            if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+                data = self._prepare_sql_project_analysis_data(data)
             id_number = self.db.insert("project_analysis", data)
         else:
             raise ValueError(f"Unknown payload type: {type(payload)}")
 
         return id_number
+
+    @staticmethod
+    def _normalize_nested_analysis_dict(data):
+        if (
+            isinstance(data, dict)
+            and len(data) == 1
+            and isinstance(next(iter(data.values())), dict)
+        ):
+            name, payload = next(iter(data.items()))
+            normalized = dict(payload)
+            normalized.setdefault("name", name)
+            return normalized
+        return dict(data)
+
+    def _prepare_sql_event_data(self, data):
+        data = dict(data)
+        meta = {}
+        if isinstance(data.get("meta"), dict):
+            meta.update(data["meta"])
+        for key, value in data.items():
+            if key not in {"name", "repository", "working_directory", "working directory", "meta", "productions"}:
+                meta[key] = value
+        return {
+            "name": data.get("name"),
+            "repository": data.get("repository"),
+            "working_directory": data.get("working_directory", data.get("working directory")),
+            "meta": meta,
+        }
+
+    def _prepare_sql_production_data(self, data):
+        data = self._normalize_nested_analysis_dict(data)
+        meta = {}
+        if isinstance(data.get("meta"), dict):
+            meta.update(data["meta"])
+        for key, value in data.items():
+            if key not in {"name", "event", "event_name", "pipeline", "status", "comment", "meta"}:
+                meta[key] = value
+        return {
+            "name": data.get("name"),
+            "event_name": data.get("event_name", data.get("event")),
+            "pipeline": data.get("pipeline"),
+            "status": data.get("status"),
+            "comment": data.get("comment"),
+            "meta": meta,
+        }
+
+    def _prepare_sql_project_analysis_data(self, data):
+        data = self._normalize_nested_analysis_dict(data)
+        meta = {}
+        if isinstance(data.get("meta"), dict):
+            meta.update(data["meta"])
+        for key, value in data.items():
+            if key not in {"name", "pipeline", "status", "comment", "meta"}:
+                meta[key] = value
+        return {
+            "name": data.get("name"),
+            "pipeline": data.get("pipeline"),
+            "status": data.get("status"),
+            "comment": data.get("comment"),
+            "meta": meta,
+        }
 
     @property
     def events(self):
@@ -383,7 +456,12 @@ class DatabaseLedger(Ledger):
         list of Event
             All events.
         """
-        return [Event.from_dict(event_dict, ledger=self) for event_dict in self.db.query("event")]
+        return [self._event_from_dict(event_dict) for event_dict in self.db.query("event")]
+
+    def _event_from_dict(self, event_dict):
+        kwargs = dict(event_dict)
+        kwargs.pop("ledger", None)
+        return Event(**kwargs, ledger=self)
 
     @property
     def project_analyses(self):
@@ -437,7 +515,7 @@ class DatabaseLedger(Ledger):
             if not event_dicts:
                 raise ValueError(f"Event '{event}' not found in ledger")
             event_dict = event_dicts[0]
-            return Event.from_dict(event_dict, ledger=self)
+            return [self._event_from_dict(event_dict)]
         else:
             return self.events
 
@@ -494,16 +572,17 @@ class DatabaseLedger(Ledger):
 
         # Get the parent event
         if event:
-            event_obj = self.get_event(event)
+            event_obj = self.get_event(event)[0]
         else:
             event_obj = None
 
         # Convert to Production objects
         productions = []
         for prod_dict in production_dicts:
-            if not event_obj and "event" in prod_dict:
-                event_obj = self.get_event(prod_dict["event"])
-            productions.append(Production.from_dict(prod_dict, event_obj, ledger=self))
+            production_event = event_obj
+            if production_event is None and "event" in prod_dict:
+                production_event = self.get_event(prod_dict["event"])[0]
+            productions.append(Production.from_dict(prod_dict, production_event, ledger=self))
 
         return productions
 

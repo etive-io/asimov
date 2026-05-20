@@ -29,11 +29,13 @@ The YAML file backend stores the ledger as a human-readable YAML file. This is t
    location = .asimov/ledger.yml
 
 **Advantages:**
+
 - Human-readable and easy to edit
 - No external dependencies
 - Simple backup and version control
 
 **Limitations:**
+
 - Limited concurrency support (uses file locking)
 - Performance degrades with large ledgers
 - Not suitable for multi-user concurrent access
@@ -52,11 +54,13 @@ The database backend uses SQLAlchemy to provide robust, transactional storage wi
    location = /path/to/ledger.db
 
 **Supported Databases:**
+
 - SQLite (default, no additional setup required)
 - PostgreSQL (for production deployments)
 - MySQL/MariaDB (for production deployments)
 
 **Advantages:**
+
 - **ACID transactions** ensure data integrity
 - **Thread-safe** operations with proper locking
 - **Concurrent access** support for multi-user environments
@@ -161,6 +165,7 @@ Transaction Safety
 ^^^^^^^^^^^^^^^^^^
 
 All database operations are wrapped in transactions, ensuring:
+
 - **Atomicity**: Operations either complete fully or are rolled back
 - **Consistency**: Database constraints are enforced
 - **Isolation**: Concurrent operations don't interfere

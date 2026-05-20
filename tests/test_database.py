@@ -376,6 +376,52 @@ class TestAsimovSQLDatabase(unittest.TestCase):
         self.assertEqual(results[0]["name"], "GW150914")
         # Note: productions are not included in to_dict by default
 
+    def test_query_supports_falsy_values(self):
+        """Test that query() applies filters for falsy values."""
+        self.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {},
+        })
+        self.db.insert_production({
+            "name": "prod-empty-status",
+            "event_name": "GW150914",
+            "pipeline": "bilby",
+            "status": "",
+            "meta": {},
+        })
+
+        results = self.db.query("production", "status", "")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["name"], "prod-empty-status")
+
+    def test_update_event_with_flat_metadata(self):
+        """Test updating event metadata when metadata fields are flattened."""
+        self.db.insert_event({
+            "name": "GW150914",
+            "repository": "old_repo",
+            "working_directory": None,
+            "meta": {"existing": "value"},
+        })
+
+        self.db.update_event("GW150914", {"gps": 1126259462.4})
+        event = self.db.query_events(filters={"name": "GW150914"})[0]
+        self.assertEqual(event.meta["existing"], "value")
+        self.assertEqual(event.meta["gps"], 1126259462.4)
+
+    def test_init_uses_database_url_from_config(self):
+        """Test SQLAlchemy URLs from config are not rewritten as sqlite paths."""
+        with patch("asimov.database.config") as mock_config:
+            mock_config.get.return_value = "postgresql://user:pass@host/dbname"
+            with patch("asimov.database.create_engine") as mock_create_engine:
+                mock_create_engine.return_value = Mock()
+                AsimovSQLDatabase()
+                self.assertEqual(
+                    mock_create_engine.call_args.args[0],
+                    "postgresql://user:pass@host/dbname",
+                )
+
 
 class TestAsimovTinyDatabase(unittest.TestCase):
     """Tests for TinyDB backend (for backward compatibility)."""
@@ -409,6 +455,13 @@ class TestAsimovTinyDatabase(unittest.TestCase):
         results = self.db.query("event", "name", "GW150914")
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["name"], "GW150914")
+
+    def test_query_all(self):
+        """Test querying all rows from a table."""
+        self.db.insert("event", {"name": "GW150914", "meta": {}})
+        self.db.insert("event", {"name": "GW151226", "meta": {}})
+        results = self.db.query("event")
+        self.assertEqual(len(results), 2)
 
 
 class TestDatabaseLedger(unittest.TestCase):
@@ -487,6 +540,53 @@ class TestDatabaseLedger(unittest.TestCase):
         # Should find only prod-0 which is ready and bilby
         self.assertEqual(len(prods), 1)
         self.assertEqual(prods[0].name, "prod-0")
+
+    def test_get_event_returns_list_for_compatibility(self):
+        """Test get_event returns a one-element list for compatibility."""
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {},
+        })
+
+        events = self.ledger.get_event("GW150914")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].name, "GW150914")
+
+    def test_get_productions_maps_events_per_production(self):
+        """Test get_productions resolves the parent event for each production."""
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {},
+        })
+        self.ledger.db.insert_event({
+            "name": "GW151226",
+            "repository": None,
+            "working_directory": None,
+            "meta": {},
+        })
+        self.ledger.db.insert_production({
+            "name": "prod-a",
+            "event_name": "GW150914",
+            "pipeline": "bilby",
+            "status": "ready",
+            "meta": {},
+        })
+        self.ledger.db.insert_production({
+            "name": "prod-b",
+            "event_name": "GW151226",
+            "pipeline": "bilby",
+            "status": "ready",
+            "meta": {},
+        })
+
+        productions = self.ledger.get_productions()
+        events_by_production = {p.name: p.event.name for p in productions}
+        self.assertEqual(events_by_production["prod-a"], "GW150914")
+        self.assertEqual(events_by_production["prod-b"], "GW151226")
 
     def test_get_all_events_from_db(self):
         """Test retrieving all events."""

@@ -6,7 +6,7 @@ for the asimov database backend.
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import (
     Column,
@@ -15,10 +15,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
-    create_engine,
 )
-from sqlalchemy.orm import declarative_base, relationship, Session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -141,7 +139,7 @@ class ProjectAnalysisModel(Base):
 class EventSchema(BaseModel):
     """Pydantic schema for Event validation."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     name: str = Field(..., min_length=1, description="Event identifier")
     repository: Optional[str] = None

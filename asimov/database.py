@@ -91,7 +91,9 @@ class AsimovTinyDatabase(AsimovDatabase):
         doc_id = self.tables[table].insert(dictionary)
         return doc_id
 
-    def query(self, table, parameter, value):
+    def query(self, table, parameter=None, value=None):
+        if parameter is None and value is None:
+            return self.tables[table].all()
         pages = self.tables[table].search(Query()[parameter] == value)
         return pages
 
@@ -120,12 +122,15 @@ class AsimovSQLDatabase(AsimovDatabase):
         """
         if database_url is None:
             # Get from config or use default SQLite
-            database_path = config.get("ledger", "location", fallback=".asimov/ledger.db")
-            # Ensure directory exists
-            db_dir = os.path.dirname(database_path)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir, exist_ok=True)
-            database_url = f"sqlite:///{database_path}"
+            database_location = config.get("ledger", "location", fallback=".asimov/ledger.db")
+            if "://" in database_location:
+                database_url = database_location
+            else:
+                # Ensure directory exists for SQLite file paths
+                db_dir = os.path.dirname(database_location)
+                if db_dir and not os.path.exists(db_dir):
+                    os.makedirs(db_dir, exist_ok=True)
+                database_url = f"sqlite:///{database_location}"
 
         # Configure engine based on database type
         if "sqlite" in database_url.lower():
@@ -449,7 +454,11 @@ class AsimovSQLDatabase(AsimovDatabase):
         list of dict
             Matching records as dictionaries.
         """
-        filters = {parameter: value} if parameter and value else None
+        filters = (
+            {parameter: value}
+            if parameter is not None and value is not None
+            else None
+        )
         
         if table == "event":
             results = self.query_events(filters)
@@ -489,7 +498,17 @@ class AsimovSQLDatabase(AsimovDatabase):
                 event.repository = data["repository"]
             if "working_directory" in data or "working directory" in data:
                 event.working_directory = data.get("working_directory") or data.get("working directory")
-            if "meta" in data:
+            meta_updates = {}
+            if isinstance(data.get("meta"), dict):
+                meta_updates.update(data["meta"])
+            for key, value in data.items():
+                if key not in {"name", "repository", "working_directory", "working directory", "meta", "productions"}:
+                    meta_updates[key] = value
+            if meta_updates:
+                merged_meta = dict(event.meta or {})
+                merged_meta.update(meta_updates)
+                event.meta = merged_meta
+            elif "meta" in data and data["meta"] is not None:
                 event.meta = data["meta"]
             
             return True
