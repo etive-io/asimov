@@ -140,7 +140,7 @@ jobs:
       - name: Wait for frame files
         uses: ./.github/actions/wait-for-files
         with:
-          patterns: "H*.gwf L*.gwf"
+          patterns: "H*.gwf"
           directory: "working/GW150914_095045/get-data/frames"
           timeout: "600"
           interval: "30"
@@ -205,7 +205,7 @@ jobs:
       - name: Wait for PSD files
         uses: ./.github/actions/wait-for-files
         with:
-          patterns: "trigtime_*/post/clean/glitch_median_PSD_forLI_H1.dat trigtime_*/post/clean/glitch_median_PSD_forLI_L1.dat"
+          patterns: "trigtime_*/post/clean/glitch_median_PSD_forLI_H1.dat"
           directory: "working/GW150914_095045/generate-psd"
           timeout: "600"
           interval: "30"

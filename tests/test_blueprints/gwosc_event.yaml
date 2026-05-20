@@ -4,7 +4,6 @@ event time: 1126259462.391
 gid: G190047
 interferometers:
 - H1
-- L1
 kind: event
 likelihood:
   psd length: 4
@@ -15,7 +14,6 @@ likelihood:
   window length: 4
   minimum frequency:
     H1: 20
-    L1: 20
 name: GW150914_095045
 priors:
   amplitude order: 1
