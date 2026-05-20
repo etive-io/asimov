@@ -568,6 +568,10 @@ class Slurm(Scheduler):
                     mem = int(mem[:-2]) * 1024
                 elif mem.endswith("MB"):
                     mem = int(mem[:-2])
+                else:
+                    raise ValueError(
+                        f"Unrecognised memory unit in {mem!r}. Use 'MB' or 'GB'."
+                    )
             lines.append(f"#SBATCH --mem={mem}")
         if "time" in submit_dict:
             lines.append(f"#SBATCH --time={submit_dict['time']}")
