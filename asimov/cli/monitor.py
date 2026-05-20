@@ -184,14 +184,20 @@ def monitor(ctx, event, update, dry_run, chain):
         logger.warning(f"Failed to use new JobList, falling back to legacy: {e}")
         try:
             job_list = condor.CondorJobList()
-        except condor.htcondor.HTCondorLocateError:
-            click.echo(click.style("Could not find the scheduler", bold=True))
-            click.echo(
-                "You need to run asimov on a machine which has access to a"
-                "scheduler in order to work correctly, or to specify"
-                "the address of a valid scheduler."
-            )
-            sys.exit()
+        except Exception as locate_error:
+            # Handle both HTCondor 1 and 2 exceptions
+            error_name = type(locate_error).__name__
+            if "Locate" in error_name or "locate" in str(locate_error).lower():
+                click.echo(click.style("Could not find the scheduler", bold=True))
+                click.echo(
+                    "You need to run asimov on a machine which has access to a"
+                    "scheduler in order to work correctly, or to specify"
+                    "the address of a valid scheduler."
+                )
+                sys.exit()
+            else:
+                # Re-raise if it's not a locate error
+                raise
 
     # also check the analyses in the project analyses
     for analysis in ledger.project_analyses:

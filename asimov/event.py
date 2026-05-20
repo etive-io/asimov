@@ -287,6 +287,9 @@ class Event:
         for production in self.productions:
             if isinstance(production, SubjectAnalysis):
                 production.resolve_analyses()
+                # Note: We don't add graph edges for SubjectAnalysis to avoid disrupting
+                # the topological layout. Instead, they'll be manually placed in the last
+                # layer during HTML generation (see html() method below)
 
     def __repr__(self):
         return f"<Event {self.name}>"

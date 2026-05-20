@@ -1,3 +1,4 @@
+import logging
 import sys
 
 if sys.version_info < (3, 10):
@@ -13,6 +14,8 @@ from asimov.pipelines.rift import Rift
 from asimov.pipelines.pesummary import PESummary
 
 discovered_pipelines = entry_points(group="asimov.pipelines")
+
+logger = logging.getLogger(__name__)
 
 
 known_pipelines = {

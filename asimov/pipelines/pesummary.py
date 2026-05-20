@@ -602,3 +602,27 @@ class PESummary(Pipeline):
             cluster_id = 0
 
         return cluster_id
+
+    def html(self):
+        """Return the HTML representation of this pipeline."""
+        pages_dir = os.path.join(
+            self.production.subject.name, self.production.name, "pesummary"
+        )
+        out = ""
+        if self.production.status in {"finished", "uploaded"}:
+            out += """<div class="asimov-pipeline">"""
+            out += f"""<p><a href="{pages_dir}/home.html">PESummary Results</a></p>"""
+
+            # Add common plot images that PESummary generates
+            # Corner plot
+            out += f"""<img height=200 src="{pages_dir}/plots/corner.png" alt="Corner plot" />"""
+
+            # Skymap
+            out += f"""<img height=200 src="{pages_dir}/plots/skymap.png" alt="Sky localization" />"""
+
+            # Waveform plots
+            out += f"""<img height=200 src="{pages_dir}/plots/waveform_time_domain_H1L1.png" alt="Waveform" />"""
+
+            out += """</div>"""
+
+        return out
