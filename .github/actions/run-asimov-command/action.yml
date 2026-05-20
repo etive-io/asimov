@@ -13,8 +13,11 @@ runs:
       shell: bash -el {0}
       run: |
         CONDA_EXE="${CONDA_EXE:-$(which conda)}"
+        CONDA_BASE="$($CONDA_EXE info --base)"
         su - submituser <<SUBMITUSER
         set -euo pipefail
+        source "${CONDA_BASE}/etc/profile.d/conda.sh"
+        conda activate asimov
         cd "$GITHUB_WORKSPACE"
-        $CONDA_EXE run -n asimov --no-capture-output ${{ inputs.script }}
+        ${{ inputs.script }}
         SUBMITUSER
