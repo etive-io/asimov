@@ -686,7 +686,7 @@ class Bilby(Pipeline):
             self.production.event.name, self.production.name, "pesummary"
         )
         out = ""
-        if self.production.status in {"uploaded"}:
+        if self.production.status in {"finished", "uploaded"}:
             out += """<div class="asimov-pipeline">"""
             out += f"""<p><a href="{pages_dir}/home.html">Summary Pages</a></p>"""
             out += f"""<img height=200 src="{pages_dir}/plots/{self.production.name}_psd_plot.png"</src>"""

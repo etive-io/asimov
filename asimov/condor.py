@@ -456,17 +456,20 @@ class CondorJobList:
 
         for datum in retdat:
             if not datum.dag:
-                self.jobs[datum.idno] = datum
+                self.jobs[datum.idno] = datum.to_dict()
                 # # Now search for subjobs
         for datum in retdat:
             if datum.dag:
                 if datum.dag in self.jobs:
-                    self.jobs[datum.dag].add_subjob(datum)
+                    # Reconstruct the parent job to add subjob
+                    parent_job = CondorJob.from_dict(self.jobs[datum.dag])
+                    parent_job.add_subjob(datum)
+                    self.jobs[datum.dag] = parent_job.to_dict()
                 else:
                     self.jobs[datum.idno] = datum.to_dict()
 
         with open(os.path.join(".asimov", "_cache_jobs.yaml"), "w") as f:
-            f.write(yaml.dump({k: v.to_dict() if isinstance(v, CondorJob) else v for k, v in self.jobs.items()}))
+            f.write(yaml.safe_dump(self.jobs))
 
 
 def get_job_priority(job_id):

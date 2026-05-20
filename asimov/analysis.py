@@ -24,6 +24,8 @@ Project analyses
 """
 
 import os
+import html
+import urllib.parse
 import configparser
 from copy import deepcopy
 import pathlib
@@ -701,7 +703,7 @@ class Analysis:
                 template_file = str(files("asimov").joinpath(f"configs/{template}"))
 
         liq = Liquid(template_file)
-        rendered = liq.render(production=self, analysis=self, config=config)
+        rendered = liq.render(production=self, analysis=self, pipeline=pipeline, config=config)
         with open(filename, "w") as output_file:
             output_file.write(rendered)
 
@@ -973,10 +975,8 @@ class SimpleAnalysis(Analysis):
         self.pipeline = pipeline.lower()
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
-        if "needs" in self.meta:
-            self._needs = cast(List[Any], self.meta.pop("needs"))
-        else:
-            self._needs = []
+        needs_value = self.meta.pop("needs", None)
+        self._needs = cast(List[Any], needs_value) if needs_value is not None else []
 
         self.comment = kwargs.get("comment", None)
 
@@ -1358,16 +1358,16 @@ class ProjectAnalysis(Analysis):
         
         self.pipeline = pipeline  # .lower()
         if isinstance(pipeline, str):
-            # try:
-            self.pipeline = known_pipelines[str(pipeline).lower()](self)
-            # except KeyError:
-            self.logger.warning(f"The pipeline {pipeline} could not be found.")
+            try:
+                self.pipeline = known_pipelines[str(pipeline).lower()](self)
+            except KeyError:
+                self.logger.warning(f"The pipeline {pipeline} could not be found.")
         
-        if "needs" in self.meta:
-            self._needs = cast(List[Any], self.meta.pop("needs"))
-        else:
-            self._needs = []
-        
+        # Read 'needs' from kwargs before it gets merged into self.meta so we
+        # don't accidentally mutate the class-level meta_defaults dict.
+        needs_value = kwargs.pop("needs", None)
+        self._needs = cast(List[Any], needs_value) if needs_value is not None else []
+
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
         else:
@@ -1386,6 +1386,9 @@ class ProjectAnalysis(Analysis):
                 )
 
         self.meta = update(self.meta, deepcopy(kwargs))
+        # Restore 'needs' into self.meta for backward compatibility with callers
+        # such as asimov/cli/manage.py that read analysis.meta['needs'].
+        self.meta["needs"] = self._needs
         
 
     def __repr__(self):
@@ -1647,6 +1650,86 @@ class ProjectAnalysis(Analysis):
             self.meta["rundir"] = value
         else:
             self.meta["rundir"] = value
+
+    def html(self):
+        """
+        Generate HTML card for this project analysis.
+
+        This method creates an HTML representation of the project analysis
+        for display in the asimov HTML report. It includes status information,
+        subject and analysis counts, and pipeline-specific content.
+
+        Returns
+        -------
+        str
+            HTML string representing this project analysis as a card.
+        """
+        from asimov.event import status_map
+
+        # Status badge mapping
+        status_badge = status_map.get(self.status, "secondary")
+
+        safe_name = html.escape(self.name)
+        card = f"""
+<div class='project-analysis-card card event-data' id='project-{safe_name}'>
+    <div class='card-header'>
+        <h3 class='card-title'>{safe_name}</h3>
+"""
+
+        if self.comment:
+            card += f"        <p class='text-muted'>{html.escape(self.comment)}</p>\n"
+
+        # Status badge
+        card += f"""        <span class='badge badge-{status_badge}'>{html.escape(self.status)}</span>
+    </div>
+    <div class='card-body'>
+"""
+
+        # Show pipeline info
+        if self.pipeline:
+            pipeline_name = self.pipeline.name if hasattr(self.pipeline, 'name') else str(self.pipeline)
+            card += f"        <p><strong>Pipeline:</strong> {html.escape(pipeline_name)}</p>\n"
+
+        # Show number of subjects
+        if hasattr(self, '_subjects') and self._subjects:
+            card += f"        <p><strong>Subjects:</strong> {len(self._subjects)}</p>\n"
+
+        # Show number of analyses
+        if hasattr(self, 'analyses') and self.analyses:
+            card += f"        <p><strong>Analyses:</strong> {len(self.analyses)}</p>\n"
+
+        # List subjects with links to event cards
+        if hasattr(self, '_subjects') and self._subjects:
+            card += """        <details>
+            <summary>View Subjects</summary>
+            <ul>
+"""
+            for subject in self._subjects:
+                subject_name = subject.name if hasattr(subject, 'name') else str(subject)
+                safe_subject_name = html.escape(subject_name)
+                safe_subject_href = urllib.parse.quote(subject_name, safe="")
+                card += f"                <li><a href='#card-{safe_subject_href}'>{safe_subject_name}</a></li>\n"
+
+            card += """            </ul>
+        </details>
+"""
+
+        # Pipeline-specific content (e.g., plots for CatalogPlotter)
+        if self.pipeline and hasattr(self.pipeline, 'html'):
+            try:
+                pipeline_html = self.pipeline.html()
+                card += pipeline_html
+            except Exception as e:
+                # Log but don't fail if pipeline HTML generation has issues
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to generate pipeline HTML for {self.name}: {e}")
+
+        card += """    </div>
+</div>
+"""
+
+        return card
 
 
 class GravitationalWaveTransient(SimpleAnalysis):

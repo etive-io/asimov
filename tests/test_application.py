@@ -293,3 +293,75 @@ class StrategyTests(AsimovTestCase):
                 self.assertEqual(prod.meta["sampler"]["sampler"], "dynesty")
             elif "emcee" in prod.name:
                 self.assertEqual(prod.meta["sampler"]["sampler"], "emcee")
+
+
+class NameIterateTests(AsimovTestCase):
+    """
+    Tests for the --name and --iterate options of apply_page.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Apply the event YAML so the event exists for subsequent analysis applications
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_event.yaml",
+            ledger=self.ledger,
+        )
+
+    def test_name_overrides_blueprint_name(self):
+        """--name should replace the name field in the blueprint."""
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_analysis_S000000.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            name="my-custom-name",
+        )
+        event = self.ledger.get_event("S000000")[0]
+        analysis_names = {prod.name for prod in event.productions}
+        self.assertIn("my-custom-name", analysis_names)
+        self.assertNotIn("bilby-IMRPhenomXPHM-QuickTest", analysis_names)
+
+    def test_iterate_increments_name_when_collision(self):
+        """--iterate should produce a -2 suffix when the base name is already taken."""
+        # Apply the analysis once to register the base name
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_analysis_S000000.yaml",
+            event="S000000",
+            ledger=self.ledger,
+        )
+        # Apply again with --iterate; a -2 suffix should be chosen
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_analysis_S000000.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            iterate=True,
+        )
+        event = self.ledger.get_event("S000000")[0]
+        analysis_names = {prod.name for prod in event.productions}
+        self.assertIn("bilby-IMRPhenomXPHM-QuickTest", analysis_names)
+        self.assertIn("bilby-IMRPhenomXPHM-QuickTest-2", analysis_names)
+
+    def test_iterate_increments_correctly_for_strategy(self):
+        """--iterate with a strategy should give deterministic -2, -3, ... names."""
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_strategy_single.yaml",
+            event="S000000",
+            ledger=self.ledger,
+        )
+        # Apply the same strategy again with --iterate
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_strategy_single.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            iterate=True,
+        )
+        event = self.ledger.get_event("S000000")[0]
+        analysis_names = {prod.name for prod in event.productions}
+        # First pass
+        self.assertIn("bilby-IMRPhenomXPHM", analysis_names)
+        self.assertIn("bilby-SEOBNRv4PHM", analysis_names)
+        self.assertIn("bilby-IMRPhenomD", analysis_names)
+        # Second pass - iterated names
+        self.assertIn("bilby-IMRPhenomXPHM-2", analysis_names)
+        self.assertIn("bilby-SEOBNRv4PHM-2", analysis_names)
+        self.assertIn("bilby-IMRPhenomD-2", analysis_names)

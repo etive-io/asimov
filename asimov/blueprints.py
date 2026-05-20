@@ -317,7 +317,41 @@ class Subject(Blueprint):
         default=None,
         description="A dictionary of prior configurations for the subject."
     )
-    
+
     model_config = ConfigDict(extra='forbid')
+
+
+class ProjectAnalysis(Blueprint):
+    """
+    A blueprint defining the configuration for a project-level analysis.
+
+    Project analyses operate across multiple subjects/events, useful for
+    population studies, catalog plots, or any analysis requiring data from
+    multiple events.
+    """
+    name: str = pydantic.Field(
+        description="The name of the project analysis."
+    )
+    pipeline: str = pydantic.Field(
+        description="The pipeline to use for this project analysis."
+    )
+    status: str = pydantic.Field(
+        default="ready",
+        description="The initial status of the project analysis."
+    )
+    comment: str | None = pydantic.Field(
+        default=None,
+        description="A comment describing this project analysis."
+    )
+    subjects: list[str] | None = pydantic.Field(
+        default=None,
+        description="List of subject names to include in this project analysis."
+    )
+    analyses: list[dict | str] | None = pydantic.Field(
+        default=None,
+        description="Smart dependency specifications for which analyses to include."
+    )
+
+    model_config = ConfigDict(extra='allow')
 
 
