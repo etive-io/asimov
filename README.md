@@ -149,6 +149,10 @@ For a full description of the workflow management process see the documentation.
 Great! We're always looking for help with developing asimov!
 Please take a look at our [contributors' guide](CONTRIBUTING.rst) to get started!
 
+## Testing Status
+
+[![Bilby Pipeline CI](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml)
+[![Bilby Pipeline CI (Slurm)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml)
 
 ## Roadmap
 
