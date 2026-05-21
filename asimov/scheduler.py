@@ -634,20 +634,84 @@ class Slurm(Scheduler):
         if os.path.exists(wrapper):
             return self._sbatch(wrapper)
 
-        # Fall back: convert HTCondor DAG → Slurm orchestrator script
-        slurm_script = self._convert_dag_to_slurm(dag_file, batch_name, **kwargs)
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".sh", delete=False
-        ) as f:
-            f.write(slurm_script)
-            script_path = f.name
-        try:
-            return self._sbatch(script_path)
-        finally:
-            try:
-                os.unlink(script_path)
-            except OSError:
-                pass
+        # Fall back: submit HTCondor DAG jobs directly from Python.
+        # Submitting from inside a Slurm job (orchestrator approach) inherits
+        # SLURM_ACCOUNT from the parent environment which causes InvalidAccount
+        # failures on clusters that don't recognise that account.
+        return self._submit_dag_jobs(dag_file)
+
+    def _submit_dag_jobs(self, dag_file):
+        """
+        Submit all jobs in an HTCondor DAG file directly via sbatch.
+
+        Jobs are submitted from the current Python process in topological order
+        with ``--dependency=afterok:`` chaining.  This avoids the orchestrator
+        job approach where inner ``sbatch`` calls inherit ``SLURM_ACCOUNT`` from
+        the parent Slurm environment, causing ``InvalidAccount`` failures on
+        clusters with minimal accounting configuration.
+
+        Returns the job ID of the last submitted job.
+        """
+        dag_dir = os.path.dirname(os.path.abspath(dag_file))
+        jobs = {}
+        dependencies = {}
+
+        with open(dag_file) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("JOB"):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        job_name, submit_file = parts[1], parts[2]
+                        job_dir = dag_dir
+                        if "DIR" in parts:
+                            idx = parts.index("DIR")
+                            if idx + 1 < len(parts):
+                                job_dir = parts[idx + 1]
+                                if not os.path.isabs(job_dir):
+                                    job_dir = os.path.join(dag_dir, job_dir)
+                        if not os.path.isabs(submit_file):
+                            submit_file = os.path.join(job_dir, submit_file)
+                        jobs[job_name] = {"submit_file": submit_file, "dir": job_dir}
+                elif line.startswith("PARENT"):
+                    parts = line.split()
+                    if "CHILD" in parts:
+                        child_idx = parts.index("CHILD")
+                        parents = parts[1:child_idx]
+                        children = parts[child_idx + 1:]
+                        for child in children:
+                            for parent in parents:
+                                dependencies.setdefault(child, []).append(parent)
+
+        for job_name, info in jobs.items():
+            wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
+            if os.path.exists(info["submit_file"]):
+                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+            else:
+                cmd = f"echo 'submit file not found for {job_name}'"
+            with open(wrapper_path, "w") as wf:
+                wf.write("#!/bin/bash\n")
+                wf.write(f"{cmd}\n")
+            os.chmod(wrapper_path, 0o755)
+            info["wrapper"] = wrapper_path
+
+        job_ids = {}
+        last_id = None
+        for job_name in self._topological_sort(list(jobs.keys()), dependencies):
+            info = jobs[job_name]
+            wrapper = shlex.quote(info.get("wrapper", "/dev/null"))
+            args = ["sbatch", "--parsable"]
+            if self.partition:
+                args += ["--partition", self.partition]
+            if job_name in dependencies:
+                dep_str = ":".join(str(job_ids[d]) for d in dependencies[job_name])
+                args.append(f"--dependency=afterok:{dep_str}")
+            args.append(info.get("wrapper", "/dev/null"))
+            result = subprocess.run(args, capture_output=True, text=True, check=True)
+            last_id = int(result.stdout.strip())
+            job_ids[job_name] = last_id
+
+        return last_id or 0
 
     def _convert_dag_to_slurm(self, dag_file, batch_name=None, **kwargs):
         """
