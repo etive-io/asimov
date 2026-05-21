@@ -161,6 +161,25 @@ jobs:
           interval: "30"
           working-directory: .
           show-condor-q: "false"
+          show-squeue: "true"
+
+      - name: BayesWave diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Slurm job history ==="
+          squeue --format="%.10i %.30j %.8T %.10M %.10R" --all || true
+          echo "=== BayesWave run scripts ==="
+          find working/GW150914_095045/generate-psd -name "*_run.sh" | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== BayesWave log files ==="
+          find working/GW150914_095045/generate-psd/logs -type f | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== asimov log ==="
+          cat .asimov/asimov.log 2>/dev/null || true
 
       - name: Cancel BayesWave megaplot job and clear cache
         run: |

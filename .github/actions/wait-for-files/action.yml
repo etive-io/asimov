@@ -27,6 +27,10 @@ inputs:
     description: 'Show condor_q output during wait'
     default: 'true'
     required: false
+  show-squeue:
+    description: 'Show squeue output during wait'
+    default: 'false'
+    required: false
 runs:
   using: "composite"
   steps:
@@ -41,6 +45,7 @@ runs:
         INTERVAL="${{ inputs.interval }}"
         REQUIRE_ALL="${{ inputs.require-all }}"
         SHOW_Q="${{ inputs.show-condor-q }}"
+        SHOW_SQUEUE="${{ inputs.show-squeue }}"
         PATTERNS_INPUT='${{ inputs.patterns }}'
 
         cd "$WORKDIR" || { echo "No such directory: $WORKDIR" >&2; exit 1; }
@@ -67,6 +72,10 @@ runs:
           if [ "$SHOW_Q" = "true" ]; then
             su - submituser -s /bin/bash -c 'condor_q' || true
             su - submituser -s /bin/bash -c 'condor_q -hold' || true
+          fi
+          # Show Slurm queue if requested
+          if [ "$SHOW_SQUEUE" = "true" ]; then
+            squeue --format="%.10i %.30j %.8T %.10M %.10R" --all || true
           fi
 
           FOUND_COUNT=0
@@ -101,4 +110,13 @@ runs:
 
         echo "Timeout waiting for files in $DIRECTORY"
         ls -R "$DIRECTORY"/ || true
+        if [ "$SHOW_SQUEUE" = "true" ]; then
+          echo "=== Final Slurm queue state ==="
+          squeue --format="%.10i %.30j %.8T %.10M %.10R" --all || true
+          echo "=== Slurm log files ==="
+          find "$DIRECTORY" -name "*.out" -o -name "*.err" -o -name "slurm-*.log" | while read -r f; do
+            echo "--- $f ---"
+            cat "$f" || true
+          done
+        fi
         exit 1
