@@ -22,6 +22,7 @@ runs:
       shell: bash
       run: |
         CPUS=$(nproc)
+        MEMORY_MB=$(free -m | awk '/^Mem:/{print $2}')
         HOSTNAME=$(hostname -s)
         sudo mkdir -p /var/spool/slurmd /var/spool/slurmctld /var/log/slurm
         sudo chown slurm: /var/spool/slurmd /var/spool/slurmctld /var/log/slurm
@@ -53,7 +54,7 @@ runs:
           echo "JobAcctGatherType=jobacct_gather/none"
           echo "SlurmctldDebug=info"
           echo "SlurmdDebug=info"
-          echo "NodeName=${HOSTNAME} CPUs=${CPUS} State=UNKNOWN"
+          echo "NodeName=${HOSTNAME} CPUs=${CPUS} RealMemory=${MEMORY_MB} State=UNKNOWN"
           echo "PartitionName=debug Nodes=ALL Default=YES MaxTime=INFINITE State=UP"
         } | sudo tee /etc/slurm/slurm.conf > /dev/null
 
