@@ -369,6 +369,29 @@ class SlurmSchedulerTests(unittest.TestCase):
         finally:
             os.unlink(submit_file)
 
+    def test_parse_submit_file_dag_vars(self):
+        """Test that VARS macros from the DAG file are expanded in arguments."""
+        scheduler = Slurm()
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sub", delete=False) as f:
+            f.write("executable = /bin/myapp\n")
+            f.write("arguments = --trigtime $(macrotrigtime) --srate $(macrosrate)\n")
+            f.write("request_memory = 512\n")
+            f.write("queue 1\n")
+            submit_file = f.name
+
+        try:
+            extra = {"macrotrigtime": "1126259462.391", "macrosrate": "2048"}
+            cmd, mem_mb = scheduler._parse_submit_file_for_slurm(
+                submit_file, "/tmp", extra_macros=extra
+            )
+            self.assertIn("1126259462.391", cmd)
+            self.assertIn("2048", cmd)
+            self.assertNotIn("$(macro", cmd)
+            self.assertEqual(mem_mb, 512)
+        finally:
+            os.unlink(submit_file)
+
     def test_convert_dag_to_slurm(self):
         """Test converting HTCondor DAG to Slurm script."""
         scheduler = Slurm()

@@ -655,6 +655,7 @@ class Slurm(Scheduler):
         dag_dir = os.path.dirname(os.path.abspath(dag_file))
         jobs = {}
         dependencies = {}
+        dag_vars = {}  # job_name -> {macro: value} from VARS lines
 
         with open(dag_file) as f:
             for line in f:
@@ -673,6 +674,16 @@ class Slurm(Scheduler):
                         if not os.path.isabs(submit_file):
                             submit_file = os.path.join(job_dir, submit_file)
                         jobs[job_name] = {"submit_file": submit_file, "dir": job_dir}
+                elif line.upper().startswith("VARS"):
+                    # VARS jobname macroname="value" macroname2="value2" ...
+                    parts = line.split(None, 2)
+                    if len(parts) >= 3:
+                        var_job = parts[1]
+                        var_str = parts[2]
+                        job_macros = {}
+                        for m in re.finditer(r'(\w+)\s*=\s*"([^"]*)"', var_str):
+                            job_macros[m.group(1).lower()] = m.group(2)
+                        dag_vars.setdefault(var_job, {}).update(job_macros)
                 elif line.startswith("PARENT"):
                     parts = line.split()
                     if "CHILD" in parts:
@@ -686,7 +697,10 @@ class Slurm(Scheduler):
         for job_name, info in jobs.items():
             wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
             if os.path.exists(info["submit_file"]):
-                cmd, mem_mb = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+                cmd, mem_mb = self._parse_submit_file_for_slurm(
+                    info["submit_file"], info["dir"],
+                    extra_macros=dag_vars.get(job_name, {}),
+                )
             else:
                 cmd = f"echo 'submit file not found for {job_name}'"
                 mem_mb = None
@@ -841,16 +855,14 @@ class Slurm(Scheduler):
         "hold", "hold_reason",
     })
 
-    def _parse_submit_file_for_slurm(self, submit_file, job_dir):
+    def _parse_submit_file_for_slurm(self, submit_file, job_dir, extra_macros=None):
         """Extract command and resource requests from an HTCondor submit file.
 
         Returns a tuple of (cmd_string, mem_mb) where mem_mb is an int or None.
 
-        HTCondor submit files can define macros as ``name = value`` lines and
-        reference them as ``$(name)`` in the ``arguments`` line.  This method
-        collects those definitions and expands them before building the shell
-        command so that BayesWave (and similar pipelines) receive real values
-        instead of the literal macro-reference strings.
+        HTCondor macros are resolved from two sources, with ``extra_macros``
+        (from the DAG file's ``VARS`` lines) taking precedence over macro
+        definitions embedded in the submit file itself.
         """
         executable = arguments = None
         request_memory = None
@@ -877,8 +889,11 @@ class Slurm(Scheduler):
                     except (ValueError, IndexError):
                         pass
                 elif key_lower not in self._CONDOR_DIRECTIVES:
-                    # Store as macro for $(name) substitution
                     macros[key_lower] = value
+
+        # DAG VARS take precedence over inline submit-file macros
+        if extra_macros:
+            macros.update({k.lower(): v for k, v in extra_macros.items()})
 
         # Expand HTCondor $(macroname) references in arguments
         if arguments and macros:
