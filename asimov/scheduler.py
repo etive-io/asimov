@@ -686,23 +686,30 @@ class Slurm(Scheduler):
         for job_name, info in jobs.items():
             wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
             if os.path.exists(info["submit_file"]):
-                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+                cmd, mem_mb = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
             else:
                 cmd = f"echo 'submit file not found for {job_name}'"
+                mem_mb = None
             with open(wrapper_path, "w") as wf:
                 wf.write("#!/bin/bash\n")
+                wf.write("set -e\n")
                 wf.write(f"{cmd}\n")
             os.chmod(wrapper_path, 0o755)
             info["wrapper"] = wrapper_path
+            info["mem_mb"] = mem_mb
 
         job_ids = {}
         last_id = None
         for job_name in self._topological_sort(list(jobs.keys()), dependencies):
             info = jobs[job_name]
-            wrapper = shlex.quote(info.get("wrapper", "/dev/null"))
-            args = ["sbatch", "--parsable"]
+            out_path = os.path.join(dag_dir, f"{job_name}_%j.out")
+            err_path = os.path.join(dag_dir, f"{job_name}_%j.err")
+            args = ["sbatch", "--parsable", "--export=ALL",
+                    f"--output={out_path}", f"--error={err_path}"]
             if self.partition:
                 args += ["--partition", self.partition]
+            if info.get("mem_mb"):
+                args += [f"--mem={info['mem_mb']}M"]
             if job_name in dependencies:
                 dep_str = ":".join(str(job_ids[d]) for d in dependencies[job_name])
                 args.append(f"--dependency=afterok:{dep_str}")
@@ -757,7 +764,7 @@ class Slurm(Scheduler):
         for job_name, info in jobs.items():
             wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
             if os.path.exists(info["submit_file"]):
-                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+                cmd, _ = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
             else:
                 cmd = f"echo 'submit file not found for {job_name}'"
             with open(wrapper_path, "w") as wf:
@@ -822,18 +829,31 @@ class Slurm(Scheduler):
         return result
 
     def _parse_submit_file_for_slurm(self, submit_file, job_dir):
-        """Extract the command from an HTCondor submit file, quoting all values."""
+        """Extract command and resource requests from an HTCondor submit file.
+
+        Returns a tuple of (cmd_string, mem_mb) where mem_mb is an int or None.
+        """
         executable = arguments = None
+        request_memory = None
         with open(submit_file) as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("executable"):
+                if line.startswith("#"):
+                    continue
+                if line.lower().startswith("executable"):
                     executable = line.split("=", 1)[1].strip()
-                elif line.startswith("arguments"):
+                elif line.lower().startswith("arguments"):
                     arguments = line.split("=", 1)[1].strip().strip('"\'')
+                elif line.lower().startswith("request_memory"):
+                    raw = line.split("=", 1)[1].strip()
+                    # HTCondor allows "1024 MB" or just "1024" (in MB)
+                    try:
+                        request_memory = int(raw.split()[0])
+                    except (ValueError, IndexError):
+                        pass
         quoted_dir = shlex.quote(job_dir)
         if not executable:
-            return f"cd {quoted_dir} && echo 'No executable found in submit file'"
+            return (f"cd {quoted_dir} && echo 'No executable found in submit file'", None)
         if not os.path.isabs(executable):
             executable = os.path.join(job_dir, executable)
         quoted_exe = shlex.quote(executable)
@@ -843,8 +863,8 @@ class Slurm(Scheduler):
                 quoted_args = " ".join(shlex.quote(a) for a in arg_tokens)
             except ValueError:
                 quoted_args = shlex.quote(arguments)
-            return f"cd {quoted_dir} && {quoted_exe} {quoted_args}"
-        return f"cd {quoted_dir} && {quoted_exe}"
+            return (f"cd {quoted_dir} && {quoted_exe} {quoted_args}", request_memory)
+        return (f"cd {quoted_dir} && {quoted_exe}", request_memory)
 
     def query_all_jobs(self):
         """Return all running jobs for the configured user as a list of dicts."""

@@ -189,9 +189,16 @@ class LALInference(Pipeline):
                 print(" ".join(command))
             else:
                 self.logger.info(" ".join(command))
-                pipe = subprocess.Popen(
-                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-                )
+                try:
+                    pipe = subprocess.Popen(
+                        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                    )
+                except FileNotFoundError as e:
+                    raise PipelineException(
+                        f"lalinference_pipe not found at {command[0]}. "
+                        "Check that [pipelines] environment is set correctly.",
+                        production=self.production.name,
+                    ) from e
                 out, err = pipe.communicate()
                 if err or "Successfully created DAG file." not in str(out):
                     self.production.status = "stuck"
