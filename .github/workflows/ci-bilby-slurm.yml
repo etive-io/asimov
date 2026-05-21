@@ -212,20 +212,26 @@ jobs:
 
       - name: Monitor Bilby completion
         run: |
-          asimov monitor
-          python3 <<'EOF'
-          import sys
+          check_status() {
+            python3 - <<PYEOF
           from asimov.monitor_api import get_analysis_status
-          statuses = get_analysis_status()
-          print('Final analysis statuses:')
-          for name, status in statuses.items():
-              print(f'  {name}: {status}')
-          bilby_status = statuses.get('bilby-IMRPhenomXPHM')
-          if str(bilby_status).lower() != 'complete':
-              print(f'FAIL: bilby-IMRPhenomXPHM: {bilby_status}')
-              sys.exit(1)
-          print('Bilby Slurm end-to-end test completed successfully!')
-          EOF
+          print(get_analysis_status().get('bilby-IMRPhenomXPHM', 'unknown'))
+          PYEOF
+          }
+          for attempt in $(seq 1 15); do
+            asimov monitor
+            status=$(check_status)
+            echo "Attempt ${attempt}/15: bilby-IMRPhenomXPHM = ${status}"
+            squeue --format="%.10i %.30j %.8T %.10M %.20R" --all || true
+            if [ "${status}" = "complete" ]; then
+              echo "Bilby Slurm end-to-end test completed successfully!"
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "Timeout: bilby-IMRPhenomXPHM did not reach complete within 15 minutes"
+          check_status
+          exit 1
 
       - name: Archive testing artifacts
         if: always()
