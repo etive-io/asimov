@@ -195,14 +195,12 @@ class HTCondor(Scheduler):
         int
             The cluster ID of the submitted job.
         """
-        # Convert JobDescription to dict if needed
-        if isinstance(job_description, JobDescription):
-            submit_dict = job_description.to_htcondor()
+        if isinstance(job_description, htcondor.Submit):
+            submit_obj = job_description
+        elif isinstance(job_description, JobDescription):
+            submit_obj = htcondor.Submit(job_description.to_htcondor())
         else:
-            submit_dict = job_description
-            
-        # Create HTCondor Submit object
-        submit_obj = htcondor.Submit(submit_dict)
+            submit_obj = htcondor.Submit(job_description)
         
         # Submit the job
         try:
