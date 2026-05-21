@@ -1,10 +1,15 @@
-name: LALInference Pipeline CI
+name: LALInference Pipeline CI (htcondor)
 on:
   push:
     branches:
       - master
       - "v*-preview"
       - "v*-release"
+  pull_request:
+    branches:
+      - master
+      - "v*-preview"
+      - "v*-release"      
   workflow_dispatch:
     inputs:
       gwdata-version:
