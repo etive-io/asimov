@@ -91,6 +91,7 @@ jobs:
         run: |
           asimov configuration update scheduler/type slurm
           asimov configuration update scheduler/cache_time 30
+          asimov configuration update slurm/partition debug
 
       - name: Apply project blueprints
         run: |

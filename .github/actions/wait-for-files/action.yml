@@ -75,7 +75,7 @@ runs:
           fi
           # Show Slurm queue if requested
           if [ "$SHOW_SQUEUE" = "true" ]; then
-            squeue --format="%.10i %.30j %.8T %.10M %.10R" --all || true
+            squeue --format="%.10i %.30j %.8T %.10M %.40R" --all || true
           fi
 
           FOUND_COUNT=0
@@ -112,7 +112,7 @@ runs:
         ls -R "$DIRECTORY"/ || true
         if [ "$SHOW_SQUEUE" = "true" ]; then
           echo "=== Final Slurm queue state ==="
-          squeue --format="%.10i %.30j %.8T %.10M %.10R" --all || true
+          squeue --format="%.10i %.30j %.8T %.10M %.40R" --all || true
           echo "=== Slurm log files ==="
           find "$DIRECTORY" -name "*.out" -o -name "*.err" -o -name "slurm-*.log" | while read -r f; do
             echo "--- $f ---"

@@ -714,6 +714,7 @@ class Slurm(Scheduler):
             "declare -A job_ids",
             "",
         ]
+        partition_flag = f"--partition={self.partition} " if self.partition else ""
         for job_name in self._topological_sort(list(jobs.keys()), dependencies):
             info = jobs[job_name]
             wrapper = shlex.quote(info.get("wrapper", "/dev/null"))
@@ -722,11 +723,11 @@ class Slurm(Scheduler):
                     f"${{job_ids[{d}]}}" for d in dependencies[job_name]
                 )
                 lines.append(
-                    f'job_ids[{job_name}]=$(sbatch --dependency=afterok:{dep_str} --parsable {wrapper})'
+                    f'job_ids[{job_name}]=$(sbatch {partition_flag}--dependency=afterok:{dep_str} --parsable {wrapper})'
                 )
             else:
                 lines.append(
-                    f'job_ids[{job_name}]=$(sbatch --parsable {wrapper})'
+                    f'job_ids[{job_name}]=$(sbatch {partition_flag}--parsable {wrapper})'
                 )
             lines.append(f'echo "Submitted {job_name} as job ${{job_ids[{job_name}]}}"')
             lines.append("")
