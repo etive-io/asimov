@@ -361,10 +361,11 @@ class SlurmSchedulerTests(unittest.TestCase):
             submit_file = f.name
 
         try:
-            cmd = scheduler._parse_submit_file_for_slurm(submit_file, "/tmp")
+            cmd, mem_mb = scheduler._parse_submit_file_for_slurm(submit_file, "/tmp")
             self.assertIn("/bin/echo", cmd)
             self.assertIn("Hello World", cmd)
             self.assertIn("cd /tmp", cmd)
+            self.assertIsNone(mem_mb)
         finally:
             os.unlink(submit_file)
 
