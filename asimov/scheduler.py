@@ -541,7 +541,9 @@ class Slurm(Scheduler):
             lines.append(f"#SBATCH --partition={self.partition}")
         job_name = submit_dict.get("job_name") or submit_dict.get("batch_name")
         if job_name:
-            lines.append(f"#SBATCH --job-name={job_name}")
+            # Slurm job names must not contain whitespace or slashes
+            safe_name = re.sub(r"[\s/]+", "_", str(job_name))
+            lines.append(f"#SBATCH --job-name={safe_name}")
         for key in ("output", "error"):
             if key in submit_dict:
                 lines.append(f"#SBATCH --{'output' if key == 'output' else 'error'}={submit_dict[key]}")
