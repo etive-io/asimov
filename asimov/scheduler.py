@@ -828,29 +828,66 @@ class Slurm(Scheduler):
             raise RuntimeError("Circular dependency detected in DAG")
         return result
 
+    # HTCondor directives that are NOT macro definitions
+    _CONDOR_DIRECTIVES = frozenset({
+        "executable", "arguments", "output", "error", "log", "universe",
+        "getenv", "environment", "request_memory", "request_cpus",
+        "request_disk", "queue", "accounting_group", "accounting_group_user",
+        "notification", "should_transfer_files", "transfer_input_files",
+        "transfer_output_files", "when_to_transfer_output",
+        "on_exit_remove", "on_exit_hold", "periodic_remove", "periodic_hold",
+        "checkpoint", "stream_output", "stream_error", "priority",
+        "rank", "requirements", "concurrency_limits", "batch_name",
+        "hold", "hold_reason",
+    })
+
     def _parse_submit_file_for_slurm(self, submit_file, job_dir):
         """Extract command and resource requests from an HTCondor submit file.
 
         Returns a tuple of (cmd_string, mem_mb) where mem_mb is an int or None.
+
+        HTCondor submit files can define macros as ``name = value`` lines and
+        reference them as ``$(name)`` in the ``arguments`` line.  This method
+        collects those definitions and expands them before building the shell
+        command so that BayesWave (and similar pipelines) receive real values
+        instead of the literal macro-reference strings.
         """
         executable = arguments = None
         request_memory = None
+        macros = {}
+
         with open(submit_file) as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("#"):
+                if not line or line.startswith("#"):
                     continue
-                if line.lower().startswith("executable"):
-                    executable = line.split("=", 1)[1].strip()
-                elif line.lower().startswith("arguments"):
-                    arguments = line.split("=", 1)[1].strip().strip('"\'')
-                elif line.lower().startswith("request_memory"):
-                    raw = line.split("=", 1)[1].strip()
-                    # HTCondor allows "1024 MB" or just "1024" (in MB)
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key_lower = key.strip().lower()
+                value = value.strip()
+
+                if key_lower == "executable":
+                    executable = value
+                elif key_lower == "arguments":
+                    arguments = value.strip('"\'')
+                elif key_lower == "request_memory":
                     try:
-                        request_memory = int(raw.split()[0])
+                        request_memory = int(value.split()[0])
                     except (ValueError, IndexError):
                         pass
+                elif key_lower not in self._CONDOR_DIRECTIVES:
+                    # Store as macro for $(name) substitution
+                    macros[key_lower] = value
+
+        # Expand HTCondor $(macroname) references in arguments
+        if arguments and macros:
+            arguments = re.sub(
+                r'\$\(([^)]+)\)',
+                lambda m: macros.get(m.group(1).lower(), m.group(0)),
+                arguments,
+            )
+
         quoted_dir = shlex.quote(job_dir)
         if not executable:
             return (f"cd {quoted_dir} && echo 'No executable found in submit file'", None)
