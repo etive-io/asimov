@@ -32,6 +32,9 @@ jobs:
   bilby:
     name: "Bilby end-to-end test (Slurm)"
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,17 +42,15 @@ jobs:
 
       - uses: ./.github/actions/setup-slurm
 
-      - uses: actions/setup-python@v5
+      - name: Setup Asimov Environment
+        uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
-
-      - name: Install dependencies
-        run: |
-          pip install .
-          pip install -U \
-            ${{ inputs.bilby-version || 'bilby' }} \
-            ${{ inputs.bilby-pipe-version || 'bilby_pipe==1.4.0' }} \
-            "${{ inputs.gwdata-version || 'git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache' }}" \
+          extra-packages: >-
+            -U
+            ${{ inputs.bilby-version || 'bilby' }}
+            ${{ inputs.bilby-pipe-version || 'bilby_pipe==1.4.0' }}
+            "${{ inputs.gwdata-version || 'git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache' }}"
             pesummary
 
       - name: Set up git
