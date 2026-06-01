@@ -688,9 +688,7 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                     dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                     dependencies_str = ', '.join(dependencies) if dependencies else ''
                     dependencies_str_escaped = _html.escape(dependencies_str, quote=True)
-                    review_message_escaped = (review_message
-                                              .replace('"', '&quot;')
-                                              .replace("'", '&#39;'))
+                    review_message_escaped = _html.escape(review_message, quote=True)
 
                     card += f"""<div id="{data_id}" style="display:none;"
                          data-name="{node.name}"
