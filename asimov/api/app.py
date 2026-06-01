@@ -24,7 +24,7 @@ def create_app():
 
     # Configuration
     secret_key = config.get('api', 'secret_key', fallback=None)
-    if not secret_key and not os.environ.get('ASIMOV_API_TESTING'):
+    if not secret_key and not os.environ.get('ASIMOV_TESTING'):
         raise RuntimeError(
             "SECRET_KEY is not configured. Please set the 'api.secret_key' configuration "
             "to a strong, unpredictable value before starting the application."

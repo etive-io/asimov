@@ -9,9 +9,8 @@ from asimov.api.app import create_app
 from asimov.testing import AsimovTestCase
 from asimov.event import Event
 
-# Set testing flags to avoid RuntimeError when no API keys / secret key configured
+# Set testing flag to avoid RuntimeError when no API keys / secret key configured
 os.environ['ASIMOV_TESTING'] = '1'
-os.environ['ASIMOV_API_TESTING'] = '1'
 
 
 class APIHealthTestCase(unittest.TestCase):
