@@ -139,7 +139,7 @@ class TestingPipelineTests(unittest.TestCase):
             rundir=os.path.join(self.test_dir, "simple_run")
         )
         analysis.pipeline._scheduler = Slurm()
-        analysis.pipeline._scheduler.submit_dag = MagicMock(return_value=45678)
+        analysis.pipeline._scheduler.submit = MagicMock(return_value=45678)
 
         job_id = analysis.pipeline.submit_dag(dryrun=False)
 
@@ -147,7 +147,7 @@ class TestingPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
         )
-        analysis.pipeline._scheduler.submit_dag.assert_called_once()
+        analysis.pipeline._scheduler.submit.assert_called_once_with("sbatch_submit.sh")
 
     def test_simple_pipeline_completion(self):
         """Test that SimpleTestPipeline can detect completion."""
@@ -342,7 +342,7 @@ class SubjectPipelineTests(unittest.TestCase):
             rundir=os.path.join(self.test_dir, "subject_run")
         )
         analysis.pipeline._scheduler = Slurm()
-        analysis.pipeline._scheduler.submit_dag = MagicMock(return_value=56789)
+        analysis.pipeline._scheduler.submit = MagicMock(return_value=56789)
 
         job_id = analysis.pipeline.submit_dag(dryrun=False)
 
@@ -350,7 +350,7 @@ class SubjectPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
         )
-        analysis.pipeline._scheduler.submit_dag.assert_called_once()
+        analysis.pipeline._scheduler.submit.assert_called_once_with("sbatch_submit.sh")
 
 
 class ProjectPipelineTests(unittest.TestCase):
@@ -437,7 +437,7 @@ class ProjectPipelineTests(unittest.TestCase):
             working_directory=os.path.join(self.test_dir, "project_run")
         )
         analysis.pipeline._scheduler = Slurm()
-        analysis.pipeline._scheduler.submit_dag = MagicMock(return_value=67890)
+        analysis.pipeline._scheduler.submit = MagicMock(return_value=67890)
 
         job_id = analysis.pipeline.submit_dag(dryrun=False)
 
@@ -445,7 +445,7 @@ class ProjectPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
         )
-        analysis.pipeline._scheduler.submit_dag.assert_called_once()
+        analysis.pipeline._scheduler.submit.assert_called_once_with("sbatch_submit.sh")
 
 
 if __name__ == '__main__':
