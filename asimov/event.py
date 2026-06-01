@@ -681,11 +681,13 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                         modal_plot_labels_str = ' '.join(source_labels)
 
                     result_pages_str = ';;'.join(result_pages)
+                    result_pages_str_escaped = _html.escape(result_pages_str, quote=True)
                     pages_dir_escaped = _html.escape(pages_dir, quote=True)
                     modal_plots_str_escaped = _html.escape(modal_plots_str, quote=True)
                     modal_plot_labels_str_escaped = _html.escape(modal_plot_labels_str, quote=True)
                     dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                     dependencies_str = ', '.join(dependencies) if dependencies else ''
+                    dependencies_str_escaped = _html.escape(dependencies_str, quote=True)
                     review_message_escaped = (review_message
                                               .replace('"', '&quot;')
                                               .replace("'", '&#39;'))
@@ -698,10 +700,10 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-rundir="{rundir}"
                          data-approximant="{approximant}"
                          data-comment="{comment}"
-                         data-dependencies="{dependencies_str}"
+                         data-dependencies="{dependencies_str_escaped}"
                          data-review-status="{review_status}"
                          data-review-message="{review_message_escaped}"
-                         data-result-pages="{result_pages_str}"
+                         data-result-pages="{result_pages_str_escaped}"
                          data-pages-dir="{pages_dir_escaped}"
                          data-modal-plots="{modal_plots_str_escaped}"
                          data-modal-plot-labels="{modal_plot_labels_str_escaped}"></div>"""
