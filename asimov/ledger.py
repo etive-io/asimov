@@ -587,7 +587,13 @@ class DatabaseLedger(Ledger):
             production_event = event_obj
             if production_event is None and "event" in prod_dict:
                 production_event = self.get_event(prod_dict["event"])[0]
-            productions.append(Production.from_dict(prod_dict, production_event, ledger=self))
+            # Remove ledger from event.meta before deepcopy inside Production.__init__
+            ledger_backup = production_event.meta.pop('ledger', None) if production_event else None
+            try:
+                productions.append(Production.from_dict(prod_dict, production_event, ledger=self))
+            finally:
+                if ledger_backup is not None and production_event:
+                    production_event.meta['ledger'] = ledger_backup
 
         return productions
 
