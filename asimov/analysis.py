@@ -37,7 +37,6 @@ from typing import TYPE_CHECKING, Any, Optional, List, cast
 from liquid import Liquid
 
 from . import config, logger, LOGGER_LEVEL
-from .pipelines import known_pipelines
 from .utils import update, diff_dict
 from .storage import Store
 
@@ -977,6 +976,7 @@ class SimpleAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self.pipeline = pipeline.lower()
+        from asimov.pipelines import known_pipelines
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
         needs_value = self.meta.pop("needs", None)
@@ -1088,6 +1088,7 @@ class SubjectAnalysis(Analysis):
             self.resolve_analyses()
 
         self.pipeline = pipeline.lower()
+        from asimov.pipelines import known_pipelines
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
         if "comment" in kwargs:
@@ -1364,6 +1365,7 @@ class ProjectAnalysis(Analysis):
         self.pipeline = pipeline  # .lower()
         if isinstance(pipeline, str):
             try:
+                from asimov.pipelines import known_pipelines
                 self.pipeline = known_pipelines[str(pipeline).lower()](self)
             except KeyError:
                 self.logger.warning(f"The pipeline {pipeline} could not be found.")
