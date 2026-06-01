@@ -584,14 +584,18 @@ class Analysis:
         elif attribute[0] == "name":
             is_name = match == self.name
         elif attribute[0] == "pipeline":
-            # Check pipeline.name attribute first
+            # Check pipeline object first; metadata is a fallback only when the
+            # object gives no answer (avoids SubjectAnalysis inheriting the event's
+            # pipeline meta and incorrectly matching its parent's pipeline name).
+            pipeline_obj_checked = False
             if hasattr(self, 'pipeline'):
                 if hasattr(self.pipeline, 'name'):
                     is_pipeline = match.lower() == self.pipeline.name.lower()
+                    pipeline_obj_checked = True
                 elif isinstance(self.pipeline, str):
                     is_pipeline = match.lower() == self.pipeline.lower()
-            # Also check in metadata as fallback
-            if not is_pipeline and 'pipeline' in self.meta:
+                    pipeline_obj_checked = True
+            if not pipeline_obj_checked and 'pipeline' in self.meta:
                 is_pipeline = match.lower() == self.meta['pipeline'].lower()
         else:
             try:
@@ -1131,9 +1135,9 @@ class SubjectAnalysis(Analysis):
                         )
                     )
                     and_matches = set(filtered_analyses)
-                # Add all matches from this AND group
+                # Add all matches from this AND group (never include self)
                 for analysis in and_matches:
-                    if analysis not in self.analyses:
+                    if analysis is not self and analysis not in self.analyses:
                         self.analyses.append(analysis)
             else:
                 # Single condition
@@ -1145,7 +1149,8 @@ class SubjectAnalysis(Analysis):
                     optional = False
                 filtered_analyses = list(
                     filter(
-                        lambda x: x.matches_filter(attribute, match, negate), self.subject.analyses
+                        lambda x: x is not self and x.matches_filter(attribute, match, negate),
+                        self.subject.analyses
                     )
                 )
                 # Add all matches from this single condition
