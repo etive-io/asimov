@@ -625,6 +625,7 @@ Object.assign(window.asimovNodeMap, {node_map_js});
 
             # Hidden data containers for modal — one per analysis node
             try:
+                import html as _html
                 import os as _os
 
                 for node in self.graph.nodes():
@@ -680,6 +681,9 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                         modal_plot_labels_str = ' '.join(source_labels)
 
                     result_pages_str = ';;'.join(result_pages)
+                    pages_dir_escaped = _html.escape(pages_dir, quote=True)
+                    modal_plots_str_escaped = _html.escape(modal_plots_str, quote=True)
+                    modal_plot_labels_str_escaped = _html.escape(modal_plot_labels_str, quote=True)
                     dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                     dependencies_str = ', '.join(dependencies) if dependencies else ''
                     review_message_escaped = (review_message
@@ -698,9 +702,9 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-review-status="{review_status}"
                          data-review-message="{review_message_escaped}"
                          data-result-pages="{result_pages_str}"
-                         data-pages-dir="{pages_dir}"
-                         data-modal-plots="{modal_plots_str}"
-                         data-modal-plot-labels="{modal_plot_labels_str}"></div>"""
+                         data-pages-dir="{pages_dir_escaped}"
+                         data-modal-plots="{modal_plots_str_escaped}"
+                         data-modal-plot-labels="{modal_plot_labels_str_escaped}"></div>"""
 
             except Exception as e:
                 card += f'<p class="text-muted">Error generating modal data: {str(e)}</p>'
