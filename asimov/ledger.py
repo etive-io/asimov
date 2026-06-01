@@ -328,6 +328,12 @@ class DatabaseLedger(Ledger):
             # Default to SQL database
             self.db = asimov.database.AsimovSQLDatabase()
 
+    def __deepcopy__(self, memo):
+        # Ledgers are shared singletons; deep-copying one would try to duplicate
+        # the underlying database engine (which contains unpicklable module state).
+        memo[id(self)] = self
+        return self
+
     @property
     def data(self):
         """Minimal dict compatible with YAMLLedger.data for analysis.py guards."""

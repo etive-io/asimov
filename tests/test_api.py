@@ -533,9 +533,10 @@ class APICORSTestCase(unittest.TestCase):
 
     def test_cors_headers_present(self):
         """Test CORS headers are present in responses when configured."""
-        response = self.client.get('/api/v1/health')
+        # Flask-CORS 4.x only adds Access-Control-Allow-Origin when the request
+        # includes an Origin header.
+        response = self.client.get('/api/v1/health', headers={'Origin': 'http://localhost'})
         self.assertEqual(response.status_code, 200)
-        # Flask-CORS should add CORS headers when configured
         self.assertIn('Access-Control-Allow-Origin', response.headers)
 
 
