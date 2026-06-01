@@ -181,10 +181,10 @@ def delete_event(name):
     return '', 204
 
 
-@bp.route('/<name>/productions', methods=['GET'])
-def list_productions(name):
+@bp.route('/<name>/analyses', methods=['GET'])
+def list_analyses(name):
     """
-    List all productions for an event.
+    List all analyses for an event.
 
     Parameters
     ----------
@@ -194,7 +194,7 @@ def list_productions(name):
     Returns
     -------
     json
-        List of productions for the event.
+        List of analyses for the event.
     """
     ledger = get_ledger()
     try:
@@ -204,5 +204,5 @@ def list_productions(name):
 
     event = events[0]
     return jsonify({
-        'productions': [p.to_dict() for p in event.productions]
+        'analyses': [p.to_dict() for p in event.productions]
     })

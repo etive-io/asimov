@@ -7,7 +7,7 @@ import secrets
 from flask import Flask
 from flask_cors import CORS
 from asimov import config
-from .blueprints import events, productions
+from .blueprints import events, analyses
 from .errors import register_error_handlers
 
 
@@ -47,7 +47,7 @@ def create_app():
 
     # Register blueprints
     app.register_blueprint(events.bp, url_prefix='/api/v1/events')
-    app.register_blueprint(productions.bp, url_prefix='/api/v1/productions')
+    app.register_blueprint(analyses.bp, url_prefix='/api/v1/analyses')
 
     # Register error handlers
     register_error_handlers(app)
