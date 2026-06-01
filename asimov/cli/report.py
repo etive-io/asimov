@@ -782,6 +782,10 @@ def html(event, webdir):
 <script type="text/javascript">
     // Mermaid graph state ---------------------------------------------------
 
+    if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
+    }
+
     window.asimovNodeMap = window.asimovNodeMap || {};
     window.asimovGraphs  = window.asimovGraphs  || {};
 
@@ -1151,7 +1155,7 @@ def html(event, webdir):
             if (analysisData.dataset.resultPages) {
                 var resultPagesStr = analysisData.dataset.resultPages;
                 var resultPages = resultPagesStr.split(';;').filter(function(p) { return p.trim(); });
-                
+
                 if (resultPages.length > 0) {
                     var linksHtml = '<ul>';
                     resultPages.forEach(function(page) {
@@ -1171,7 +1175,40 @@ def html(event, webdir):
             } else {
                 document.getElementById('modal-results-section').style.display = 'none';
             }
-            
+
+            // Handle inline posterior plots
+            var pagesDir = analysisData.dataset.pagesDir || '';
+            var modalPlotsStr = analysisData.dataset.modalPlots || '';
+            var modalPlotLabelsStr = analysisData.dataset.modalPlotLabels || '';
+            var plotsContainer = document.getElementById('modal-plots-container');
+            var plotsSection = document.getElementById('modal-plots-section');
+            plotsContainer.innerHTML = '';
+            if (pagesDir && modalPlotsStr && modalPlotLabelsStr) {
+                var params = modalPlotsStr.split(' ').filter(Boolean);
+                var labels = modalPlotLabelsStr.split(' ').filter(Boolean);
+                labels.forEach(function(label) {
+                    params.forEach(function(param) {
+                        var imgUrl = pagesDir + '/plots/' + label + '_1d_posterior_' + param + '.png';
+                        var wrapper = document.createElement('div');
+                        wrapper.style.cssText = 'text-align:center;';
+                        var img = document.createElement('img');
+                        img.src = imgUrl;
+                        img.alt = label + ' ' + param;
+                        img.title = label + ': ' + param;
+                        img.style.cssText = 'height:180px;max-width:100%;object-fit:contain;border:1px solid #e1e4e8;border-radius:4px;';
+                        var caption = document.createElement('div');
+                        caption.textContent = (labels.length > 1 ? label + ': ' : '') + param.replace(/_/g, ' ');
+                        caption.style.cssText = 'font-size:0.75rem;color:#586069;margin-top:0.25rem;';
+                        wrapper.appendChild(img);
+                        wrapper.appendChild(caption);
+                        plotsContainer.appendChild(wrapper);
+                    });
+                });
+                plotsSection.style.display = 'block';
+            } else {
+                plotsSection.style.display = 'none';
+            }
+
             modal.classList.add('show');
             backdrop.classList.add('show');
         }
@@ -1185,422 +1222,6 @@ def html(event, webdir):
             modal.classList.remove('show');
             backdrop.classList.remove('show');
         }
-    }
-
-    // Subject search functionality
-    function initializeSearch() {
-        var searchBox = document.getElementById('subject-search');
-        if (searchBox) {
-            searchBox.addEventListener('input', function() {
-                var searchTerm = this.value.toLowerCase();
-                document.querySelectorAll('.event-data').forEach(function(event) {
-                    var eventName = event.dataset.eventName.toLowerCase();
-                    if (eventName.includes(searchTerm)) {
-                        event.style.display = '';
-                    } else {
-                        event.style.display = 'none';
-                    }
-                });
-            });
-        }
-    }
-
-    // Review status filters
-    function initializeReviewFilters() {
-        document.querySelectorAll('.filter-review').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var reviewStatus = this.dataset.review;
-                var analyses = document.querySelectorAll('.graph-node, .asimov-analysis');
-                
-                if (this.classList.contains('active')) {
-                    // Deactivate filter - show all
-                    analyses.forEach(function(analysis) {
-                        if (!analysis.classList.contains('hidden')) {
-                            analysis.style.display = '';
-                            analysis.classList.remove('filtered-hidden');
-                        }
-                    });
-                    this.classList.remove('active');
-                } else {
-                    // Activate filter
-                    document.querySelectorAll('.filter-review').forEach(function(b) {
-                        b.classList.remove('active');
-                    });
-                    this.classList.add('active');
-                    
-                    analyses.forEach(function(analysis) {
-                        var analysisReview = analysis.dataset.review || 'none';
-                        if (analysisReview === reviewStatus) {
-                            analysis.style.display = '';
-                            analysis.classList.remove('filtered-hidden');
-                        } else {
-                            analysis.style.display = 'none';
-                            analysis.classList.add('filtered-hidden');
-                            // Hide downstream dependencies
-                            hideDownstreamDependencies(analysis);
-                        }
-                    });
-                }
-                
-                // Redraw connections after review filter
-                setTimeout(drawGraphConnections, 50);
-                checkEventVisibility();
-            });
-        });
-    }
-
-    // Check and collapse events with no visible analyses
-    function checkEventVisibility() {
-        document.querySelectorAll('.event-data').forEach(function(event) {
-            var visibleAnalyses = 0;
-            event.querySelectorAll('.graph-node, .asimov-analysis').forEach(function(analysis) {
-                if (analysis.style.display !== 'none' && !analysis.classList.contains('hidden')) {
-                    visibleAnalyses++;
-                }
-            });
-            
-            if (visibleAnalyses === 0) {
-                event.classList.add('collapsed');
-            } else {
-                event.classList.remove('collapsed');
-            }
-        });
-    }
-
-    // Create octilinear (tube-map style) path between two points with rounded corners
-    // Only uses horizontal, vertical, and 45-degree diagonal segments
-    // Route a skip-layer connection below the graph so it doesn't pass through
-    // intermediate nodes.  The path drops to a horizontal "bus" below all nodes,
-    // crosses the graph at that level, then rises back up to the target.
-    function createBypassPath(x1, y1, x2, y2, containerHeight) {
-        var busY = containerHeight + 24;  // 24px below the lowest node
-        var cornerRadius = 8;
-        var exitX = x1 + 20;  // short horizontal segment before dropping
-        var path = 'M ' + x1 + ' ' + y1;
-
-        // Short horizontal exit so the path leaves the node cleanly rightward
-        path += ' L ' + (exitX - cornerRadius) + ' ' + y1;
-        path += ' Q ' + exitX + ' ' + y1 + ' ' + exitX + ' ' + (y1 + cornerRadius);
-
-        // Drop down to bus level
-        path += ' L ' + exitX + ' ' + (busY - cornerRadius);
-        path += ' Q ' + exitX + ' ' + busY + ' ' + (exitX + cornerRadius) + ' ' + busY;
-
-        // Horizontal bus segment
-        path += ' L ' + (x2 - cornerRadius) + ' ' + busY;
-
-        // Rise up to target
-        path += ' Q ' + x2 + ' ' + busY + ' ' + x2 + ' ' + (busY - cornerRadius);
-        path += ' L ' + x2 + ' ' + y2;
-
-        return path;
-    }
-
-    function createOctilinearPath(x1, y1, x2, y2, verticalOffset) {
-        verticalOffset = verticalOffset || 0;
-        var yStart = y1 + verticalOffset;
-        var yEnd = y2;  // Don't apply offset to end point for cleaner convergence
-
-        var path = 'M ' + x1 + ' ' + yStart;
-        var dx = x2 - x1;
-        var dy = yEnd - yStart;
-
-        // Radius for rounded corners
-        var cornerRadius = 8;
-
-        // Minimum horizontal segment length before diagonal
-        var minHorizontal = 30;
-
-        if (Math.abs(dy) < 3) {
-            // Nearly horizontal - just draw a straight line
-            path += ' L ' + x2 + ' ' + yEnd;
-        } else if (Math.abs(dy) < 40) {
-            // Small vertical distance - use simple single diagonal path WITHOUT rounded corners
-            // to avoid kinks from imperfect bezier curves
-            var diagStart = x1 + minHorizontal;
-            path += ' L ' + diagStart + ' ' + yStart;
-
-            // Single diagonal to reach target height (no rounded corners)
-            var diagEnd = x2 - minHorizontal;
-            var diagDist = Math.min(Math.abs(dy), diagEnd - diagStart);
-
-            if (diagDist > 0) {
-                var diagonalSign = dy > 0 ? 1 : -1;
-                path += ' L ' + (diagStart + diagDist) + ' ' + (yStart + diagonalSign * diagDist);
-
-                // Final horizontal segment
-                path += ' L ' + x2 + ' ' + yEnd;
-            } else {
-                // Not enough space for diagonal, just connect directly
-                path += ' L ' + x2 + ' ' + yEnd;
-            }
-        } else {
-            // Use octilinear routing with 45-degree diagonals and rounded corners
-            var midX = x1 + dx / 2;
-
-            // Determine the diagonal distance we can cover
-            var diagonalDist = Math.min(Math.abs(dy), Math.abs(dx / 2 - minHorizontal));
-
-            if (diagonalDist > cornerRadius * 2) {
-                // First horizontal segment
-                var x1End = x1 + minHorizontal;
-                path += ' L ' + (x1End - cornerRadius) + ' ' + yStart;
-
-                // First rounded corner into diagonal
-                var diagonalSign = dy > 0 ? 1 : -1;
-                path += ' Q ' + x1End + ' ' + yStart + ' ' +
-                       (x1End + cornerRadius) + ' ' + (yStart + diagonalSign * cornerRadius);
-
-                // First diagonal (45 degrees)
-                var x1Diag = x1End + diagonalDist;
-                var y1Diag = yStart + diagonalSign * diagonalDist;
-                path += ' L ' + (x1Diag - cornerRadius) + ' ' + (y1Diag - diagonalSign * cornerRadius);
-
-                // Check if we need a second diagonal or can go straight to target
-                var remainingDy = dy - diagonalSign * diagonalDist;
-
-                if (Math.abs(remainingDy) > cornerRadius * 2 + 10) {
-                    // Check whether there is enough horizontal room for a proper middle
-                    // segment between the two diagonals.  When dx is small relative to dy
-                    // the middle segment degenerates to a few pixels, producing a kinked
-                    // path that looks like it doubles back on itself.
-                    var x2Start = x2 - minHorizontal - Math.abs(remainingDy);
-                    var middleLength = x2Start - x1Diag;
-
-                    if (middleLength >= cornerRadius * 3) {
-                        // Enough room: use the standard two-diagonal routing.
-                        // Rounded corner out of first diagonal
-                        path += ' Q ' + x1Diag + ' ' + y1Diag + ' ' +
-                               (x1Diag + cornerRadius) + ' ' + y1Diag;
-
-                        // Middle horizontal segment
-                        path += ' L ' + (x2Start - cornerRadius) + ' ' + y1Diag;
-
-                        // Rounded corner into second diagonal
-                        path += ' Q ' + x2Start + ' ' + y1Diag + ' ' +
-                               (x2Start + cornerRadius) + ' ' + (y1Diag + diagonalSign * cornerRadius);
-
-                        // Second diagonal
-                        var x2Diag = x2 - minHorizontal;
-                        path += ' L ' + (x2Diag - cornerRadius) + ' ' + (yEnd - diagonalSign * cornerRadius);
-
-                        // Rounded corner out of second diagonal
-                        path += ' Q ' + x2Diag + ' ' + yEnd + ' ' +
-                               (x2Diag + cornerRadius) + ' ' + yEnd;
-
-                        // Final horizontal segment
-                        path += ' L ' + x2 + ' ' + yEnd;
-                    } else {
-                        // Not enough room for two diagonals — use a single diagonal
-                        // that covers the full dy.  Rebuild the path from scratch to
-                        // discard the partial first diagonal already accumulated.
-                        var fullDiagDist = Math.min(Math.abs(dy), x2 - x1 - 2 * minHorizontal);
-                        path = 'M ' + x1 + ' ' + yStart;
-                        path += ' L ' + (x1End - cornerRadius) + ' ' + yStart;
-                        path += ' Q ' + x1End + ' ' + yStart + ' ' +
-                               (x1End + cornerRadius) + ' ' + (yStart + diagonalSign * cornerRadius);
-                        var xDiagEnd = x1End + fullDiagDist;
-                        var yDiagEnd = yStart + diagonalSign * fullDiagDist;
-                        path += ' L ' + (xDiagEnd - cornerRadius) + ' ' + (yDiagEnd - diagonalSign * cornerRadius);
-                        path += ' Q ' + xDiagEnd + ' ' + yDiagEnd + ' ' +
-                               (xDiagEnd + cornerRadius) + ' ' + yDiagEnd;
-                        path += ' L ' + x2 + ' ' + yEnd;
-                    }
-                } else {
-                    // Rounded corner out of diagonal, then to target
-                    path += ' Q ' + x1Diag + ' ' + y1Diag + ' ' +
-                           (x1Diag + cornerRadius) + ' ' + y1Diag;
-
-                    if (Math.abs(remainingDy) > cornerRadius) {
-                        // There is a small vertical offset still to cover (cornerRadius <
-                        // |remainingDy| < cornerRadius*2+10).  The corner-based approach
-                        // breaks here because the first Q already overshoots the "stop
-                        // cornerRadius before yEnd" point.  Use a cubic bezier instead for
-                        // a smooth, kink-free final approach to the target.
-                        path += ' L ' + (x2 - cornerRadius * 3) + ' ' + y1Diag;
-                        path += ' C ' + (x2 - cornerRadius) + ' ' + y1Diag + ' ' +
-                               x2 + ' ' + (y1Diag + diagonalSign * Math.abs(remainingDy)) + ' ' +
-                               x2 + ' ' + yEnd;
-                    } else {
-                        path += ' L ' + x2 + ' ' + yEnd;
-                    }
-                }
-            } else {
-                // Not enough space for proper diagonals, use simpler orthogonal path with rounded corners
-                path += ' L ' + (midX - cornerRadius) + ' ' + yStart;
-
-                var verticalSign = dy > 0 ? 1 : -1;
-                path += ' Q ' + midX + ' ' + yStart + ' ' +
-                       midX + ' ' + (yStart + verticalSign * cornerRadius);
-
-                path += ' L ' + midX + ' ' + (yEnd - verticalSign * cornerRadius);
-
-                path += ' Q ' + midX + ' ' + yEnd + ' ' +
-                       (midX + cornerRadius) + ' ' + yEnd;
-
-                path += ' L ' + x2 + ' ' + yEnd;
-            }
-        }
-
-        return path;
-    }
-
-    // Draw SVG connections between graph layers
-    function drawGraphConnections() {
-        document.querySelectorAll('.workflow-graph').forEach(function(graphContainer) {
-            // Create or get SVG element
-            var existingSvg = graphContainer.querySelector('.graph-connections');
-            if (existingSvg) {
-                existingSvg.remove();
-            }
-
-            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.classList.add('graph-connections');
-
-            var container = graphContainer.querySelector('.graph-container');
-            if (!container) return;
-
-            // Get all graph nodes (not layers, since we need actual dependencies)
-            var allNodes = container.querySelectorAll('.graph-node');
-            if (allNodes.length === 0) return;
-
-            // Calculate SVG dimensions
-            var containerRect = container.getBoundingClientRect();
-            svg.setAttribute('width', containerRect.width);
-            svg.setAttribute('height', containerRect.height + 48);  // Extra space for bypass paths below nodes
-            svg.setAttribute('overflow', 'visible');
-            
-            // Draw regular connections based on actual dependencies
-            allNodes.forEach(function(sourceNode) {
-                // Skip if source node is hidden
-                if (sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
-                    return;
-                }
-                
-                // Get successors from data attribute
-                var successors = sourceNode.dataset.successors;
-                if (!successors || !successors.trim()) return;
-                
-                var successorNames = successors.split(',').map(function(name) { return name.trim(); }).filter(function(name) { return name; });
-                
-                // Get event name for scoped lookups
-                var eventName = sourceNode.dataset.eventName || '';
-                
-                successorNames.forEach(function(successorName) {
-                    // Create scoped node ID using event name
-                    var targetNodeId = 'node-' + eventName + '-' + successorName;
-                    var targetNode = document.getElementById(targetNodeId);
-                    
-                    // Skip if target node doesn't exist or is hidden
-                    if (!targetNode || targetNode.style.display === 'none' || targetNode.classList.contains('hidden') || targetNode.classList.contains('filtered-hidden')) {
-                        return;
-                    }
-
-                    // Skip connections to subject analyses - they'll be drawn by the special subject analysis code below
-                    var isTargetSubject = targetNode.dataset.isSubject === 'true';
-                    if (isTargetSubject) {
-                        return;
-                    }
-
-                    var sourceRect = sourceNode.getBoundingClientRect();
-                    var targetRect = targetNode.getBoundingClientRect();
-
-                    // Calculate connection points (center right of source, center left of target)
-                    var x1 = sourceRect.right - containerRect.left;
-                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
-                    var x2 = targetRect.left - containerRect.left;
-                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-
-                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-
-                    // Use bypass routing for skip-layer connections (span > 1 layer) so
-                    // the path doesn't cut visually through intermediate nodes.
-                    var sourceLayerIndex = parseInt(sourceNode.dataset.layerIndex || '0');
-                    var targetLayerIndex = parseInt(targetNode.dataset.layerIndex || '0');
-                    var d;
-                    if (targetLayerIndex - sourceLayerIndex > 1) {
-                        d = createBypassPath(x1, y1, x2, y2, containerRect.height);
-                    } else {
-                        d = createOctilinearPath(x1, y1, x2, y2, 0);
-                    }
-
-                    path.setAttribute('d', d);
-
-                    // Regular connections (non-subject)
-                    path.classList.add('connection-line');
-                    
-                    svg.appendChild(path);
-                });
-            });
-            
-            // Draw subject analysis source dependencies with status-based styling
-            allNodes.forEach(function(subjectNode) {
-                // Only process subject analyses
-                if (subjectNode.dataset.isSubject !== 'true') return;
-                
-                var sourceAnalyses = subjectNode.dataset.sourceAnalyses;
-                if (!sourceAnalyses || !sourceAnalyses.trim()) return;
-                
-                // Parse source analyses: "name1:status1|name2:status2|..."
-                var sourceSpecs = sourceAnalyses.split('|').filter(function(spec) { return spec.trim(); });
-                var eventName = subjectNode.dataset.eventName || '';
-                
-                sourceSpecs.forEach(function(spec) {
-                    var parts = spec.split(':');
-                    var sourceName = parts[0];
-                    var sourceStatus = parts[1] || 'unknown';
-                    
-                    // Find the source analysis node
-                    var sourceNodeId = 'node-' + eventName + '-' + sourceName;
-                    var sourceNode = document.getElementById(sourceNodeId);
-                    
-                    if (!sourceNode || sourceNode.style.display === 'none' || sourceNode.classList.contains('hidden') || sourceNode.classList.contains('filtered-hidden')) {
-                        return;
-                    }
-                    
-                    var sourceRect = sourceNode.getBoundingClientRect();
-                    var targetRect = subjectNode.getBoundingClientRect();
-
-                    // Calculate connection points
-                    var x1 = sourceRect.right - containerRect.left;
-                    var y1 = sourceRect.top + sourceRect.height / 2 - containerRect.top;
-                    var x2 = targetRect.left - containerRect.left;
-                    var y2 = targetRect.top + targetRect.height / 2 - containerRect.top;
-
-                    // Create path for source analysis dependency
-                    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-
-                    // Add vertical offset based on index to prevent overlap
-                    var sourceIndex = Array.from(sourceSpecs).indexOf(spec);
-                    var totalSources = sourceSpecs.length;
-                    var verticalOffset = (sourceIndex - (totalSources - 1) / 2) * 8;
-
-                    // Create octilinear (tube-map style) path
-                    var d = createOctilinearPath(x1, y1, x2, y2, verticalOffset);
-
-                    path.setAttribute('d', d);
-                    
-                    // Determine path styling based on source analysis status
-                    if (sourceStatus === 'finished' || sourceStatus === 'uploaded') {
-                        path.classList.add('connection-included');
-                    } else if (sourceStatus === 'processing' || sourceStatus === 'running') {
-                        path.classList.add('connection-pending');
-                    } else {
-                        path.classList.add('connection-waiting');
-                    }
-                    
-                    // Add title for hover tooltip
-                    var title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                    title.textContent = subjectNode.dataset.nodeName + ' uses ' + sourceName + ' (' + sourceStatus + ')';
-                    path.appendChild(title);
-                    
-                    svg.appendChild(path);
-                });
-            });
-            
-            // Insert SVG at the beginning of container so it's behind nodes
-            container.insertBefore(svg, container.firstChild);
-        });
     }
 
     // Enhanced initialization
@@ -1784,6 +1405,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-results-section" style="display:none;">
             <h5>Results</h5>
             <div id="modal-results-links"></div>
+        </div>
+        <div class="modal-section" id="modal-plots-section" style="display:none;">
+            <h5>Posterior Plots</h5>
+            <div id="modal-plots-container" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;"></div>
         </div>
     </div>
 </div>

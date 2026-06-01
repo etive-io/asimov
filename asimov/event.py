@@ -588,7 +588,7 @@ class Event:
                     pipeline_name = (node.pipeline.name
                                      if hasattr(node, 'pipeline') and node.pipeline else '')
                     prefix = _REVIEW_PREFIX.get(review_status, '')
-                    label = _escape_mermaid_label(f'{prefix}{node.name}\\n{pipeline_name}')
+                    label = _escape_mermaid_label(f'{prefix}{node.name}') + ('<br/><small>' + _escape_mermaid_label(pipeline_name) + '</small>' if pipeline_name else '')
                     is_subject = (getattr(node, 'category', '') == 'subject_analyses')
                     nodes_data.append({
                         'id': mid,
@@ -637,8 +637,11 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                         node, _safe_dom_id('analysis-data', self.name, node.name)
                     )
 
-                    comment = node.comment if hasattr(node, 'comment') and node.comment else ''
-                    rundir = node.rundir if hasattr(node, 'rundir') and node.rundir else ''
+                    def _node_attr(attr, fallback=''):
+                        return getattr(node, attr, None) or fallback
+
+                    comment = _node_attr('comment')
+                    rundir = _node_attr('rundir')
                     approximant = (node.meta.get('approximant', '')
                                    if hasattr(node, 'meta') else '')
 
@@ -647,6 +650,9 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                         webdir = node.event.webdir
 
                     result_pages = []
+                    pages_dir = ''
+                    modal_plots_str = ''
+                    modal_plot_labels_str = ''
                     if webdir and rundir:
                         rundir_name = _os.path.basename(rundir.rstrip('/'))
                         base_url = f"{webdir}/{rundir_name}"
@@ -657,6 +663,21 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                             result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
                         elif pipeline_name.lower() == 'pesummary':
                             result_pages.append(f"{base_url}/home.html|PESummary Results")
+
+                    default_plots = ['luminosity_distance', 'chirp_mass']
+                    modal_plots = (self.meta.get('report', {}).get('modal_plots', default_plots)
+                                   if hasattr(self, 'meta') and self.meta else default_plots)
+
+                    if pipeline_name.lower() in ('bilby', 'pesummary') and status in ('finished', 'uploaded'):
+                        pages_dir = f"{self.name}/{node.name}/pesummary"
+                        result_pages.append(f"{pages_dir}/home.html|Summary Pages")
+                        modal_plots_str = ' '.join(modal_plots)
+                        # bilby: label is the analysis name itself
+                        # pesummary: labels are the resolved source analyses (combined page)
+                        source_labels = ([a.name for a in node.analyses]
+                                         if hasattr(node, 'analyses') and node.analyses
+                                         else [node.name])
+                        modal_plot_labels_str = ' '.join(source_labels)
 
                     result_pages_str = ';;'.join(result_pages)
                     dependencies = node.dependencies if hasattr(node, 'dependencies') else []
@@ -676,16 +697,15 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-dependencies="{dependencies_str}"
                          data-review-status="{review_status}"
                          data-review-message="{review_message_escaped}"
-                         data-result-pages="{result_pages_str}"></div>"""
+                         data-result-pages="{result_pages_str}"
+                         data-pages-dir="{pages_dir}"
+                         data-modal-plots="{modal_plots_str}"
+                         data-modal-plot-labels="{modal_plot_labels_str}"></div>"""
 
             except Exception as e:
                 card += f'<p class="text-muted">Error generating modal data: {str(e)}</p>'
 
             card += '</div>'
-
-        # card += """
-        # </div></div>
-        # """
 
         return card
 
