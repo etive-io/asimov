@@ -84,34 +84,23 @@ def create_analysis(event_name):
         if any(p.name == data.name for p in event.productions):
             return jsonify({'error': 'Analysis already exists'}), 409
 
-        # Workaround for deepcopy issue: temporarily remove ledger from event.meta
-        # This prevents FileLock pickling errors when Production.__init__ and to_dict()
-        # do deepcopy(event.meta)
-        # NOTE: This may be redundant now that YAMLLedger implements __getstate__/__setstate__,
-        # but kept for safety until thoroughly tested.
-        ledger_backup = event.meta.pop('ledger', None)
+        analysis = Production(
+            subject=event,
+            name=data.name,
+            pipeline=data.pipeline,
+            comment=data.comment or '',
+        )
 
-        try:
-            analysis = Production(
-                subject=event,
-                name=data.name,
-                pipeline=data.pipeline,
-                comment=data.comment or '',
-            )
+        if data.dependencies:
+            analysis.dependencies = data.dependencies
 
-            if data.dependencies:
-                analysis.dependencies = data.dependencies
+        if data.meta:
+            analysis.meta.update(data.meta)
 
-            if data.meta:
-                analysis.meta.update(data.meta)
+        event.add_production(analysis)
+        ledger.update_event(event)
 
-            event.add_production(analysis)
-            ledger.update_event(event)
-
-            return jsonify({'analysis': analysis.to_dict(event=False)}), 201
-        finally:
-            if ledger_backup is not None:
-                event.meta['ledger'] = ledger_backup
+        return jsonify({'analysis': analysis.to_dict(event=False)}), 201
 
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400
@@ -159,24 +148,15 @@ def update_analysis(event_name, analysis_name):
         if not analysis:
             return jsonify({'error': 'Analysis not found'}), 404
 
-        # Workaround for deepcopy issue: temporarily remove ledger from event.meta
-        # NOTE: This may be redundant now that YAMLLedger implements __getstate__/__setstate__,
-        # but kept for safety until thoroughly tested.
-        ledger_backup = event.meta.pop('ledger', None)
+        if data.status is not None:
+            analysis.status = data.status
+        if data.comment is not None:
+            analysis.comment = data.comment
+        if data.meta:
+            analysis.meta.update(data.meta)
 
-        try:
-            if data.status is not None:
-                analysis.status = data.status
-            if data.comment is not None:
-                analysis.comment = data.comment
-            if data.meta:
-                analysis.meta.update(data.meta)
-
-            ledger.update_event(event)
-            return jsonify({'analysis': analysis.to_dict(event=False)})
-        finally:
-            if ledger_backup is not None:
-                event.meta['ledger'] = ledger_backup
+        ledger.update_event(event)
+        return jsonify({'analysis': analysis.to_dict(event=False)})
 
     except ValidationError as e:
         return jsonify({'error': 'Validation error', 'details': e.errors()}), 400

@@ -40,14 +40,14 @@ def create_app():
         # Pass wildcard as a string so Flask-CORS sends Access-Control-Allow-Origin: *
         # unconditionally; ['*'] as a list only responds when an Origin header is present.
         if cors_origins.strip() == '*':
-            CORS(app, resources={r"/api/*": {"origins": "*"}})
+            CORS(app, resources={r"/api/.*": {"origins": "*"}})
         else:
             allowed_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
-            CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+            CORS(app, resources={r"/api/.*": {"origins": allowed_origins}})
     elif app.config.get("ENV") == "development" or app.debug:
         # Only open permissive CORS in explicit development/debug mode.
         # Test suites use the Flask test client directly and don't need CORS.
-        CORS(app, resources={r"/api/*": {"origins": "*"}})
+        CORS(app, resources={r"/api/.*": {"origins": "*"}})
 
     # Register blueprints
     app.register_blueprint(events.bp, url_prefix='/api/v1/events')
