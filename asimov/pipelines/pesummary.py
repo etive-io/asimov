@@ -574,7 +574,7 @@ class PESummary(Pipeline):
             "request_disk": "8192MB",
         }
         if "accounting group" in self.meta:
-            submit_description["accounting_group_user"] = config.get("condor", "user")
+            submit_description["accounting_group_user"] = config.get("condor", "user", fallback=None)
             submit_description["accounting_group"] = self.meta["accounting group"]
 
         if dryrun:

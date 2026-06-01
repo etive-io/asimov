@@ -156,21 +156,23 @@ class LALInference(Pipeline):
            Raised if the construction of the DAG fails.
         """
 
+        # Resolve rundir to an absolute path before changing CWD so that
+        # the same path is used both here and in submit_dag.
+        if self.production.rundir:
+            self.production.rundir = os.path.abspath(self.production.rundir)
+        else:
+            self.production.rundir = os.path.join(
+                os.path.expanduser("~"),
+                self.production.event.name,
+                self.production.name,
+            )
+        rundir = self.production.rundir
+
         # Change to the location of the ini file.
         with set_directory(
             os.path.join(self.production.event.repository.directory, self.category)
         ):
             gps_file = self.production.get_timefile()
-
-            if self.production.rundir:
-                rundir = self.production.rundir
-            else:
-                rundir = os.path.join(
-                    os.path.expanduser("~"),
-                    self.production.event.name,
-                    self.production.name,
-                )
-                self.production.rundir = rundir
 
             # os.mkdir(self.production.rundir, exist_ok=True)
             ini = f"{self.production.name}.ini"
@@ -181,7 +183,7 @@ class LALInference(Pipeline):
                 "-g",
                 f"{gps_file}",
                 "-r",
-                self.production.rundir,
+                rundir,
                 ini,
             ]
 
@@ -189,9 +191,16 @@ class LALInference(Pipeline):
                 print(" ".join(command))
             else:
                 self.logger.info(" ".join(command))
-                pipe = subprocess.Popen(
-                    command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-                )
+                try:
+                    pipe = subprocess.Popen(
+                        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                    )
+                except FileNotFoundError as e:
+                    raise PipelineException(
+                        f"lalinference_pipe not found at {command[0]}. "
+                        "Check that [pipelines] environment is set correctly.",
+                        production=self.production.name,
+                    ) from e
                 out, err = pipe.communicate()
                 if err or "Successfully created DAG file." not in str(out):
                     self.production.status = "stuck"

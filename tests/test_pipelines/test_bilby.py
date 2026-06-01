@@ -71,12 +71,12 @@ class BilbyTests(unittest.TestCase):
         
     def test_read_ini(self):
         """Check that a bilby ini file can be read correctly."""
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml", event=None, ledger=self.ledger)
-        apply_page(file = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml", event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
+        apply_page(file=DEFAULTS_PE_PRIORS, event=None, ledger=self.ledger)
         event = "GW150914_095045"
         pipeline = "bilby"
-        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{event}.yaml", event=None, ledger=self.ledger)
-        apply_page(file = f"https://git.ligo.org/asimov/data/-/raw/main/tests/{pipeline}.yaml", event=event, ledger=self.ledger)
+        apply_page(file=BLUEPRINT_EVENTS[event], event=None, ledger=self.ledger)
+        apply_page(file=PIPELINES[pipeline], event=event, ledger=self.ledger)
 
         if not config.has_section("scheduler"):
             config.add_section("scheduler")

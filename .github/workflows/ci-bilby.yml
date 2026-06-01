@@ -1,4 +1,4 @@
-name: Bilby Pipeline CI
+name: Bilby Pipeline CI (htcondor)
 on:
   push:
     branches:

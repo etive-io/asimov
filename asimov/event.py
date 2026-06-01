@@ -2,6 +2,7 @@
 Trigger handling code.
 """
 
+import html
 import os
 import subprocess
 
@@ -680,11 +681,14 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                         modal_plot_labels_str = ' '.join(source_labels)
 
                     result_pages_str = ';;'.join(result_pages)
+                    result_pages_str_escaped = html.escape(result_pages_str, quote=True)
+                    pages_dir_escaped = html.escape(pages_dir, quote=True)
+                    modal_plots_str_escaped = html.escape(modal_plots_str, quote=True)
+                    modal_plot_labels_str_escaped = html.escape(modal_plot_labels_str, quote=True)
                     dependencies = node.dependencies if hasattr(node, 'dependencies') else []
                     dependencies_str = ', '.join(dependencies) if dependencies else ''
-                    review_message_escaped = (review_message
-                                              .replace('"', '&quot;')
-                                              .replace("'", '&#39;'))
+                    dependencies_str_escaped = html.escape(dependencies_str, quote=True)
+                    review_message_escaped = html.escape(review_message, quote=True)
 
                     card += f"""<div id="{data_id}" style="display:none;"
                          data-name="{node.name}"
@@ -694,13 +698,13 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-rundir="{rundir}"
                          data-approximant="{approximant}"
                          data-comment="{comment}"
-                         data-dependencies="{dependencies_str}"
+                         data-dependencies="{dependencies_str_escaped}"
                          data-review-status="{review_status}"
                          data-review-message="{review_message_escaped}"
-                         data-result-pages="{result_pages_str}"
-                         data-pages-dir="{pages_dir}"
-                         data-modal-plots="{modal_plots_str}"
-                         data-modal-plot-labels="{modal_plot_labels_str}"></div>"""
+                         data-result-pages="{result_pages_str_escaped}"
+                         data-pages-dir="{pages_dir_escaped}"
+                         data-modal-plots="{modal_plots_str_escaped}"
+                         data-modal-plot-labels="{modal_plot_labels_str_escaped}"></div>"""
 
             except Exception as e:
                 card += f'<p class="text-muted">Error generating modal data: {str(e)}</p>'

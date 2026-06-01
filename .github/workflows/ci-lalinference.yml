@@ -1,10 +1,15 @@
-name: LALInference Pipeline CI
+name: LALInference Pipeline CI (htcondor)
 on:
   push:
     branches:
       - master
       - "v*-preview"
       - "v*-release"
+  pull_request:
+    branches:
+      - master
+      - "v*-preview"
+      - "v*-release"      
   workflow_dispatch:
     inputs:
       gwdata-version:
@@ -106,6 +111,7 @@ jobs:
             asimov configuration update condor/user submituser
             asimov configuration update condor/cache_time 30
             asimov configuration update condor/cron_minute '*/1'
+            asimov configuration update general/webroot /tmp/public_html/results
 
       - name: Apply project blueprints
         uses: ./.github/actions/run-asimov-command
@@ -183,6 +189,9 @@ jobs:
           script: |
             asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/lalinference_quick_test.yaml" -e GW150914_095045
             asimov manage build submit
+
+      - name: Show generated LALInference INI
+        run: find checkouts/ -name "lalinference-IMRPhenomXPHM.ini" -exec cat {} \; 2>/dev/null || echo "No lalinference INI found"
 
       - name: Wait for LALInference result files
         continue-on-error: true

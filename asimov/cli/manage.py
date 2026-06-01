@@ -473,8 +473,10 @@ def submit(event, update, dryrun):
             else:
                 pipe = production.pipeline
                 
+                dag_built = False
                 try:
                     pipe.build_dag(dryrun=dryrun)
+                    dag_built = True
                 except PipelineException as e:
                     logger.error(
                         "failed to build a DAG file.",
@@ -491,6 +493,8 @@ def submit(event, update, dryrun):
                         + f" Unable to submit {production.name} as it hasn't been built yet."
                     )
                     click.echo("Try running `asimov manage build` first.")
+                if not dag_built:
+                    continue
                 try:
                     cluster_id = pipe.submit_dag(dryrun=dryrun)
                     if not dryrun:
