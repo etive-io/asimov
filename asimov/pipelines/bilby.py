@@ -478,7 +478,12 @@ class Bilby(Pipeline):
             out, err = pipe.communicate()
             self.logger.info(out)
 
-            if err or "DAG generation complete, to submit jobs" not in str(out):
+            out_str = str(out)
+            dag_created = (
+                "DAG generation complete, to submit jobs" in out_str
+                or "slurm scripts written, to run jobs submit" in out_str
+            )
+            if err or not dag_created:
                 self.production.status = "stuck"
                 self.logger.error(err)
                 raise PipelineException(

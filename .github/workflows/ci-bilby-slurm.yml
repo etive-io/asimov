@@ -32,6 +32,9 @@ jobs:
   bilby:
     name: "Bilby end-to-end test (Slurm)"
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,17 +42,15 @@ jobs:
 
       - uses: ./.github/actions/setup-slurm
 
-      - uses: actions/setup-python@v5
+      - name: Setup Asimov Environment
+        uses: ./.github/actions/setup-asimov-env
         with:
           python-version: "3.10"
-
-      - name: Install dependencies
-        run: |
-          pip install .
-          pip install -U \
-            ${{ inputs.bilby-version || 'bilby' }} \
-            ${{ inputs.bilby-pipe-version || 'bilby_pipe==1.4.0' }} \
-            "${{ inputs.gwdata-version || 'git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache' }}" \
+          extra-packages: >-
+            -U
+            ${{ inputs.bilby-version || 'bilby' }}
+            ${{ inputs.bilby-pipe-version || 'bilby_pipe==1.4.0' }}
+            "${{ inputs.gwdata-version || 'git+https://git.ligo.org/asimov/pipelines/gwdata.git@fix-gwosc-cache' }}"
             pesummary
 
       - name: Set up git
@@ -90,6 +91,7 @@ jobs:
         run: |
           asimov configuration update scheduler/type slurm
           asimov configuration update scheduler/cache_time 30
+          asimov configuration update slurm/partition debug
 
       - name: Apply project blueprints
         run: |
@@ -160,6 +162,28 @@ jobs:
           interval: "30"
           working-directory: .
           show-condor-q: "false"
+          show-squeue: "true"
+
+      - name: BayesWave diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Slurm job history ==="
+          squeue --format="%.10i %.30j %.8T %.10M %.10R" --all || true
+          sacct --format="JobID,JobName%30,State,ExitCode,MaxRSS,Elapsed" --allusers 2>/dev/null || true
+          echo "=== BayesWave run scripts ==="
+          find working/GW150914_095045/generate-psd -name "*_run.sh" | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== BayesWave Slurm job output ==="
+          find working/GW150914_095045/generate-psd -name "*.out" -o -name "*.err" | while read -r f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo "=== BayesWave INI ==="
+          find checkouts/GW150914_095045 -name "generate-psd.ini" -exec cat {} \; 2>/dev/null || true
+          echo "=== asimov log ==="
+          cat .asimov/asimov.log 2>/dev/null || true
 
       - name: Cancel BayesWave megaplot job and clear cache
         run: |
@@ -188,20 +212,26 @@ jobs:
 
       - name: Monitor Bilby completion
         run: |
-          asimov monitor
-          python3 <<'EOF'
-          import sys
+          check_status() {
+            python3 - <<PYEOF
           from asimov.monitor_api import get_analysis_status
-          statuses = get_analysis_status()
-          print('Final analysis statuses:')
-          for name, status in statuses.items():
-              print(f'  {name}: {status}')
-          bilby_status = statuses.get('bilby-IMRPhenomXPHM')
-          if str(bilby_status).lower() != 'complete':
-              print(f'FAIL: bilby-IMRPhenomXPHM: {bilby_status}')
-              sys.exit(1)
-          print('Bilby Slurm end-to-end test completed successfully!')
-          EOF
+          print(get_analysis_status().get('bilby-IMRPhenomXPHM', 'unknown'))
+          PYEOF
+          }
+          for attempt in $(seq 1 15); do
+            asimov monitor
+            status=$(check_status)
+            echo "Attempt ${attempt}/15: bilby-IMRPhenomXPHM = ${status}"
+            squeue --format="%.10i %.30j %.8T %.10M %.20R" --all || true
+            if [ "${status}" = "complete" ]; then
+              echo "Bilby Slurm end-to-end test completed successfully!"
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "Timeout: bilby-IMRPhenomXPHM did not reach complete within 15 minutes"
+          check_status
+          exit 1
 
       - name: Archive testing artifacts
         if: always()

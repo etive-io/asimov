@@ -195,14 +195,12 @@ class HTCondor(Scheduler):
         int
             The cluster ID of the submitted job.
         """
-        # Convert JobDescription to dict if needed
-        if isinstance(job_description, JobDescription):
-            submit_dict = job_description.to_htcondor()
+        if isinstance(job_description, htcondor.Submit):
+            submit_obj = job_description
+        elif isinstance(job_description, JobDescription):
+            submit_obj = htcondor.Submit(job_description.to_htcondor())
         else:
-            submit_dict = job_description
-            
-        # Create HTCondor Submit object
-        submit_obj = htcondor.Submit(submit_dict)
+            submit_obj = htcondor.Submit(job_description)
         
         # Submit the job
         try:
@@ -543,7 +541,9 @@ class Slurm(Scheduler):
             lines.append(f"#SBATCH --partition={self.partition}")
         job_name = submit_dict.get("job_name") or submit_dict.get("batch_name")
         if job_name:
-            lines.append(f"#SBATCH --job-name={job_name}")
+            # Slurm job names must not contain whitespace or slashes
+            safe_name = re.sub(r"[\s/]+", "_", str(job_name))
+            lines.append(f"#SBATCH --job-name={safe_name}")
         for key in ("output", "error"):
             if key in submit_dict:
                 lines.append(f"#SBATCH --{'output' if key == 'output' else 'error'}={submit_dict[key]}")
@@ -636,20 +636,105 @@ class Slurm(Scheduler):
         if os.path.exists(wrapper):
             return self._sbatch(wrapper)
 
-        # Fall back: convert HTCondor DAG → Slurm orchestrator script
-        slurm_script = self._convert_dag_to_slurm(dag_file, batch_name, **kwargs)
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".sh", delete=False
-        ) as f:
-            f.write(slurm_script)
-            script_path = f.name
-        try:
-            return self._sbatch(script_path)
-        finally:
-            try:
-                os.unlink(script_path)
-            except OSError:
-                pass
+        # Fall back: submit HTCondor DAG jobs directly from Python.
+        # Submitting from inside a Slurm job (orchestrator approach) inherits
+        # SLURM_ACCOUNT from the parent environment which causes InvalidAccount
+        # failures on clusters that don't recognise that account.
+        return self._submit_dag_jobs(dag_file)
+
+    def _submit_dag_jobs(self, dag_file):
+        """
+        Submit all jobs in an HTCondor DAG file directly via sbatch.
+
+        Jobs are submitted from the current Python process in topological order
+        with ``--dependency=afterok:`` chaining.  This avoids the orchestrator
+        job approach where inner ``sbatch`` calls inherit ``SLURM_ACCOUNT`` from
+        the parent Slurm environment, causing ``InvalidAccount`` failures on
+        clusters with minimal accounting configuration.
+
+        Returns the job ID of the last submitted job.
+        """
+        dag_dir = os.path.dirname(os.path.abspath(dag_file))
+        jobs = {}
+        dependencies = {}
+        dag_vars = {}  # job_name -> {macro: value} from VARS lines
+
+        with open(dag_file) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("JOB"):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        job_name, submit_file = parts[1], parts[2]
+                        job_dir = dag_dir
+                        if "DIR" in parts:
+                            idx = parts.index("DIR")
+                            if idx + 1 < len(parts):
+                                job_dir = parts[idx + 1]
+                                if not os.path.isabs(job_dir):
+                                    job_dir = os.path.join(dag_dir, job_dir)
+                        if not os.path.isabs(submit_file):
+                            submit_file = os.path.join(job_dir, submit_file)
+                        jobs[job_name] = {"submit_file": submit_file, "dir": job_dir}
+                elif line.upper().startswith("VARS"):
+                    # VARS jobname macroname="value" macroname2="value2" ...
+                    parts = line.split(None, 2)
+                    if len(parts) >= 3:
+                        var_job = parts[1]
+                        var_str = parts[2]
+                        job_macros = {}
+                        for m in re.finditer(r'(\w+)\s*=\s*"([^"]*)"', var_str):
+                            job_macros[m.group(1).lower()] = m.group(2)
+                        dag_vars.setdefault(var_job, {}).update(job_macros)
+                elif line.startswith("PARENT"):
+                    parts = line.split()
+                    if "CHILD" in parts:
+                        child_idx = parts.index("CHILD")
+                        parents = parts[1:child_idx]
+                        children = parts[child_idx + 1:]
+                        for child in children:
+                            for parent in parents:
+                                dependencies.setdefault(child, []).append(parent)
+
+        for job_name, info in jobs.items():
+            wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
+            if os.path.exists(info["submit_file"]):
+                cmd, mem_mb = self._parse_submit_file_for_slurm(
+                    info["submit_file"], info["dir"],
+                    extra_macros=dag_vars.get(job_name, {}),
+                )
+            else:
+                cmd = f"echo 'submit file not found for {job_name}'"
+                mem_mb = None
+            with open(wrapper_path, "w") as wf:
+                wf.write("#!/bin/bash\n")
+                wf.write("set -e\n")
+                wf.write(f"{cmd}\n")
+            os.chmod(wrapper_path, 0o755)
+            info["wrapper"] = wrapper_path
+            info["mem_mb"] = mem_mb
+
+        job_ids = {}
+        last_id = None
+        for job_name in self._topological_sort(list(jobs.keys()), dependencies):
+            info = jobs[job_name]
+            out_path = os.path.join(dag_dir, f"{job_name}_%j.out")
+            err_path = os.path.join(dag_dir, f"{job_name}_%j.err")
+            args = ["sbatch", "--parsable", "--export=ALL",
+                    f"--output={out_path}", f"--error={err_path}"]
+            if self.partition:
+                args += ["--partition", self.partition]
+            if info.get("mem_mb"):
+                args += [f"--mem={info['mem_mb']}M"]
+            if job_name in dependencies:
+                dep_str = ":".join(str(job_ids[d]) for d in dependencies[job_name])
+                args.append(f"--dependency=afterok:{dep_str}")
+            args.append(info.get("wrapper", "/dev/null"))
+            result = subprocess.run(args, capture_output=True, text=True, check=True)
+            last_id = int(result.stdout.strip())
+            job_ids[job_name] = last_id
+
+        return last_id or 0
 
     def _convert_dag_to_slurm(self, dag_file, batch_name=None, **kwargs):
         """
@@ -695,7 +780,7 @@ class Slurm(Scheduler):
         for job_name, info in jobs.items():
             wrapper_path = os.path.join(dag_dir, f"{job_name}_run.sh")
             if os.path.exists(info["submit_file"]):
-                cmd = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
+                cmd, _ = self._parse_submit_file_for_slurm(info["submit_file"], info["dir"])
             else:
                 cmd = f"echo 'submit file not found for {job_name}'"
             with open(wrapper_path, "w") as wf:
@@ -716,6 +801,7 @@ class Slurm(Scheduler):
             "declare -A job_ids",
             "",
         ]
+        partition_flag = f"--partition={self.partition} " if self.partition else ""
         for job_name in self._topological_sort(list(jobs.keys()), dependencies):
             info = jobs[job_name]
             wrapper = shlex.quote(info.get("wrapper", "/dev/null"))
@@ -724,11 +810,11 @@ class Slurm(Scheduler):
                     f"${{job_ids[{d}]}}" for d in dependencies[job_name]
                 )
                 lines.append(
-                    f'job_ids[{job_name}]=$(sbatch --dependency=afterok:{dep_str} --parsable {wrapper})'
+                    f'job_ids[{job_name}]=$(sbatch {partition_flag}--dependency=afterok:{dep_str} --parsable {wrapper})'
                 )
             else:
                 lines.append(
-                    f'job_ids[{job_name}]=$(sbatch --parsable {wrapper})'
+                    f'job_ids[{job_name}]=$(sbatch {partition_flag}--parsable {wrapper})'
                 )
             lines.append(f'echo "Submitted {job_name} as job ${{job_ids[{job_name}]}}"')
             lines.append("")
@@ -758,19 +844,70 @@ class Slurm(Scheduler):
             raise RuntimeError("Circular dependency detected in DAG")
         return result
 
-    def _parse_submit_file_for_slurm(self, submit_file, job_dir):
-        """Extract the command from an HTCondor submit file, quoting all values."""
+    # HTCondor directives that are NOT macro definitions
+    _CONDOR_DIRECTIVES = frozenset({
+        "executable", "arguments", "output", "error", "log", "universe",
+        "getenv", "environment", "request_memory", "request_cpus",
+        "request_disk", "queue", "accounting_group", "accounting_group_user",
+        "notification", "should_transfer_files", "transfer_input_files",
+        "transfer_output_files", "when_to_transfer_output",
+        "on_exit_remove", "on_exit_hold", "periodic_remove", "periodic_hold",
+        "checkpoint", "stream_output", "stream_error", "priority",
+        "rank", "requirements", "concurrency_limits", "batch_name",
+        "hold", "hold_reason",
+    })
+
+    def _parse_submit_file_for_slurm(self, submit_file, job_dir, extra_macros=None):
+        """Extract command and resource requests from an HTCondor submit file.
+
+        Returns a tuple of (cmd_string, mem_mb) where mem_mb is an int or None.
+
+        HTCondor macros are resolved from two sources, with ``extra_macros``
+        (from the DAG file's ``VARS`` lines) taking precedence over macro
+        definitions embedded in the submit file itself.
+        """
         executable = arguments = None
+        request_memory = None
+        macros = {}
+
         with open(submit_file) as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("executable"):
-                    executable = line.split("=", 1)[1].strip()
-                elif line.startswith("arguments"):
-                    arguments = line.split("=", 1)[1].strip().strip('"\'')
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key_lower = key.strip().lower()
+                value = value.strip()
+
+                if key_lower == "executable":
+                    executable = value
+                elif key_lower == "arguments":
+                    arguments = value.strip('"\'')
+                elif key_lower == "request_memory":
+                    try:
+                        request_memory = int(value.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif key_lower not in self._CONDOR_DIRECTIVES:
+                    macros[key_lower] = value
+
+        # DAG VARS take precedence over inline submit-file macros
+        if extra_macros:
+            macros.update({k.lower(): v for k, v in extra_macros.items()})
+
+        # Expand HTCondor $(macroname) references in arguments
+        if arguments and macros:
+            arguments = re.sub(
+                r'\$\(([^)]+)\)',
+                lambda m: macros.get(m.group(1).lower(), m.group(0)),
+                arguments,
+            )
+
         quoted_dir = shlex.quote(job_dir)
         if not executable:
-            return f"cd {quoted_dir} && echo 'No executable found in submit file'"
+            return (f"cd {quoted_dir} && echo 'No executable found in submit file'", None)
         if not os.path.isabs(executable):
             executable = os.path.join(job_dir, executable)
         quoted_exe = shlex.quote(executable)
@@ -780,8 +917,8 @@ class Slurm(Scheduler):
                 quoted_args = " ".join(shlex.quote(a) for a in arg_tokens)
             except ValueError:
                 quoted_args = shlex.quote(arguments)
-            return f"cd {quoted_dir} && {quoted_exe} {quoted_args}"
-        return f"cd {quoted_dir} && {quoted_exe}"
+            return (f"cd {quoted_dir} && {quoted_exe} {quoted_args}", request_memory)
+        return (f"cd {quoted_dir} && {quoted_exe}", request_memory)
 
     def query_all_jobs(self):
         """Return all running jobs for the configured user as a list of dicts."""

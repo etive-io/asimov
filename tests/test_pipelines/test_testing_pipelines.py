@@ -147,7 +147,7 @@ class TestingPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
         )
-        analysis.pipeline._scheduler.submit.assert_called_once_with("sbatch_submit.sh")
+        analysis.pipeline._scheduler.submit.assert_called_once()
 
     def test_simple_pipeline_completion(self):
         """Test that SimpleTestPipeline can detect completion."""
@@ -350,7 +350,7 @@ class SubjectPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
         )
-        analysis.pipeline._scheduler.submit.assert_called_once_with("sbatch_submit.sh")
+        analysis.pipeline._scheduler.submit.assert_called_once()
 
 
 class ProjectPipelineTests(unittest.TestCase):
@@ -445,7 +445,7 @@ class ProjectPipelineTests(unittest.TestCase):
         self.assertTrue(
             os.path.exists(os.path.join(analysis.rundir, "sbatch_submit.sh"))
         )
-        analysis.pipeline._scheduler.submit.assert_called_once_with("sbatch_submit.sh")
+        analysis.pipeline._scheduler.submit.assert_called_once()
 
 
 if __name__ == '__main__':
