@@ -783,7 +783,7 @@ def html(event, webdir):
     // Mermaid graph state ---------------------------------------------------
 
     if (window.mermaid) {
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'antiscript' });
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
     }
 
     window.asimovNodeMap = window.asimovNodeMap || {};
