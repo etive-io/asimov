@@ -116,7 +116,7 @@ def verify_token(token):
     keys = get_api_keys()
     # Use constant-time comparison to prevent timing attacks
     for valid_token, username in keys.items():
-        if secrets.compare_digest(token, valid_token):
+        if secrets.compare_digest(token, str(valid_token)):
             return username
     return None
 

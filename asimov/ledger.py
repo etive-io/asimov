@@ -59,7 +59,7 @@ class YAMLLedger(Ledger):
     def __init__(self, location=None):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
-        self.location = location
+        self.location = os.path.abspath(location)
         lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
         self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
         with open(location, "r") as ledger_file:
@@ -327,6 +327,11 @@ class DatabaseLedger(Ledger):
         else:
             # Default to SQL database
             self.db = asimov.database.AsimovSQLDatabase()
+
+    @property
+    def data(self):
+        """Minimal dict compatible with YAMLLedger.data for analysis.py guards."""
+        return {"project": {}, "pipelines": {}}
 
     @classmethod
     def create(cls, engine=None):

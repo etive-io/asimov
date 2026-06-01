@@ -54,7 +54,7 @@ def get_event(name):
         if not events:
             return jsonify({'error': 'Event not found'}), 404
         return jsonify({'event': events[0].to_dict()})
-    except KeyError:
+    except (KeyError, ValueError):
         return jsonify({'error': 'Event not found'}), 404
 
 
@@ -83,7 +83,7 @@ def create_event():
             existing = ledger.get_event(data.name)
             if existing:
                 return jsonify({'error': 'Event already exists'}), 409
-        except KeyError:
+        except (KeyError, ValueError):
             # Event doesn't exist, which is what we want
             pass
 
@@ -132,7 +132,7 @@ def update_event(name):
 
         try:
             events = ledger.get_event(name)
-        except KeyError:
+        except (KeyError, ValueError):
             return jsonify({'error': 'Event not found'}), 404
 
         event = events[0]

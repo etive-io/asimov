@@ -76,7 +76,7 @@ def create_production(event_name):
 
         try:
             events = ledger.get_event(event_name)
-        except KeyError:
+        except (KeyError, ValueError):
             return jsonify({'error': 'Event not found'}), 404
 
         event = events[0]
@@ -158,7 +158,7 @@ def update_production(event_name, production_name):
 
         try:
             events = ledger.get_event(event_name)
-        except KeyError:
+        except (KeyError, ValueError):
             return jsonify({'error': 'Event not found'}), 404
 
         event = events[0]
@@ -173,9 +173,9 @@ def update_production(event_name, production_name):
         ledger_backup = event.meta.pop('ledger', None)
         
         try:
-            if data.status:
+            if data.status is not None:
                 production.status = data.status
-            if data.comment:
+            if data.comment is not None:
                 production.comment = data.comment
             if data.meta:
                 production.meta.update(data.meta)

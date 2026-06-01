@@ -4,25 +4,23 @@ Utility functions for the API.
 
 from flask import g
 from asimov import config
-from asimov.ledger import YAMLLedger
 
 
 def get_ledger():
     """
-    Get request-scoped ledger instance with proper cleanup.
-
-    Note: This creates a new YAMLLedger instance for each request, which loads
-    the entire ledger from disk. In a multi-worker deployment, each worker will
-    have its own ledger instance, and changes made by one worker won't be
-    immediately visible to others until they reload. The FileLock mechanism
-    ensures data consistency during concurrent writes.
+    Get request-scoped ledger instance for the configured backend.
 
     Returns
     -------
-    YAMLLedger
+    YAMLLedger or DatabaseLedger
         The ledger instance for the current request.
     """
     if 'ledger' not in g:
-        ledger_path = config.get("ledger", "location")
-        g.ledger = YAMLLedger(ledger_path)
+        engine = config.get("ledger", "engine", fallback="yamlfile")
+        if engine == "yamlfile":
+            from asimov.ledger import YAMLLedger
+            g.ledger = YAMLLedger(config.get("ledger", "location"))
+        else:
+            from asimov.ledger import DatabaseLedger
+            g.ledger = DatabaseLedger(engine=engine)
     return g.ledger
