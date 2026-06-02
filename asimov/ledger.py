@@ -725,9 +725,12 @@ class DatabaseLedger(Ledger):
             The analysis to update.
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
-            data = analysis.to_dict()
-            # Need to implement project analysis update
-            raise NotImplementedError("Project analysis update not yet implemented")
+            data = self._prepare_sql_project_analysis_data(analysis.to_dict())
+            data["status"] = analysis.status
+            try:
+                self.db.update_project_analysis(analysis.name, data)
+            except ValueError:
+                self.db.insert_project_analysis(data)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
 

@@ -562,6 +562,43 @@ class AsimovSQLDatabase(AsimovDatabase):
             
             return True
 
+    def update_project_analysis(self, name: str, data: Dict[str, Any]) -> bool:
+        """
+        Update a project analysis in the database.
+
+        Parameters
+        ----------
+        name : str
+            Project analysis name.
+        data : dict
+            Updated data.
+
+        Returns
+        -------
+        bool
+            True if successful.
+
+        Raises
+        ------
+        ValueError
+            If the project analysis is not found.
+        """
+        with self.get_session() as session:
+            analysis = (
+                session.query(ProjectAnalysisModel)
+                .filter(ProjectAnalysisModel.name == name)
+                .first()
+            )
+            if not analysis:
+                raise ValueError(f"Project analysis '{name}' not found")
+            if "status" in data:
+                analysis.status = data["status"]
+            if "comment" in data:
+                analysis.comment = data["comment"]
+            if "meta" in data:
+                analysis.meta = data["meta"]
+            return True
+
     def delete_event(self, name: str) -> bool:
         """
         Delete an event from the database.
