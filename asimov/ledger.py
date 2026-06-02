@@ -472,7 +472,23 @@ class DatabaseLedger(Ledger):
     def _event_from_dict(self, event_dict):
         kwargs = dict(event_dict)
         kwargs.pop("ledger", None)
-        return Event(**kwargs, ledger=self)
+        event = Event(**kwargs, ledger=self)
+
+        # Load productions from the separate productions table.
+        for prod_dict in self.db.query("production", "event_name", event.name):
+            ledger_backup = event.meta.pop("ledger", None)
+            try:
+                production = Production.from_dict(prod_dict, event, ledger=self)
+                if production.name not in [p.name for p in event.productions]:
+                    event.productions.append(production)
+            except Exception:
+                pass
+            finally:
+                if ledger_backup is not None:
+                    event.meta["ledger"] = ledger_backup
+
+        event.update_graph()
+        return event
 
     @property
     def project_analyses(self):
