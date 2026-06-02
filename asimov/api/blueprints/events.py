@@ -54,7 +54,7 @@ def get_event(name):
         if not events:
             return jsonify({'error': 'Event not found'}), 404
         return jsonify({'event': events[0].to_dict()})
-    except KeyError:
+    except (KeyError, ValueError):
         return jsonify({'error': 'Event not found'}), 404
 
 
@@ -83,7 +83,7 @@ def create_event():
             existing = ledger.get_event(data.name)
             if existing:
                 return jsonify({'error': 'Event already exists'}), 409
-        except KeyError:
+        except (KeyError, ValueError):
             # Event doesn't exist, which is what we want
             pass
 
@@ -132,7 +132,7 @@ def update_event(name):
 
         try:
             events = ledger.get_event(name)
-        except KeyError:
+        except (KeyError, ValueError):
             return jsonify({'error': 'Event not found'}), 404
 
         event = events[0]
@@ -181,10 +181,10 @@ def delete_event(name):
     return '', 204
 
 
-@bp.route('/<name>/productions', methods=['GET'])
-def list_productions(name):
+@bp.route('/<name>/analyses', methods=['GET'])
+def list_analyses(name):
     """
-    List all productions for an event.
+    List all analyses for an event.
 
     Parameters
     ----------
@@ -194,7 +194,7 @@ def list_productions(name):
     Returns
     -------
     json
-        List of productions for the event.
+        List of analyses for the event.
     """
     ledger = get_ledger()
     try:
@@ -204,5 +204,5 @@ def list_productions(name):
 
     event = events[0]
     return jsonify({
-        'productions': [p.to_dict() for p in event.productions]
+        'analyses': [p.to_dict() for p in event.productions]
     })

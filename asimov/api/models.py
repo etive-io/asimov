@@ -21,17 +21,17 @@ class EventUpdate(BaseModel):
     meta: Optional[Dict[str, Any]] = None
 
 
-class ProductionCreate(BaseModel):
-    """Model for creating a new production."""
-    name: str = Field(..., min_length=1, description="Production name")
+class AnalysisCreate(BaseModel):
+    """Model for creating a new analysis."""
+    name: str = Field(..., min_length=1, description="Analysis name")
     pipeline: str = Field(..., description="Pipeline type: bilby, rift, bayeswave, etc.")
     comment: Optional[str] = None
     dependencies: List[str] = Field(default_factory=list)
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
-class ProductionUpdate(BaseModel):
-    """Model for updating an existing production."""
+class AnalysisUpdate(BaseModel):
+    """Model for updating an existing analysis."""
     status: Optional[str] = None
     comment: Optional[str] = None
     meta: Optional[Dict[str, Any]] = None

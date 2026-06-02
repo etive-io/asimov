@@ -9,7 +9,7 @@ from asimov.api.app import create_app
 from asimov.testing import AsimovTestCase
 from asimov.event import Event
 
-# Set testing flag to avoid RuntimeError when no API keys configured
+# Set testing flag to avoid RuntimeError when no API keys / secret key configured
 os.environ['ASIMOV_TESTING'] = '1'
 
 
@@ -120,9 +120,9 @@ class APIEventsTestCase(AsimovTestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_list_productions_nonexistent_event(self):
-        """Test listing productions for non-existent event returns 404."""
-        response = self.client.get('/api/v1/events/NonExistent/productions')
+    def test_list_analyses_nonexistent_event(self):
+        """Test listing analyses for non-existent event returns 404."""
+        response = self.client.get('/api/v1/events/NonExistent/analyses')
         self.assertEqual(response.status_code, 404)
 
     def test_create_event_success(self):
@@ -225,8 +225,8 @@ class APIEventsTestCase(AsimovTestCase):
         self.assertEqual(data['events'][0]['name'], 'GW150914')
 
 
-class APIProductionsTestCase(AsimovTestCase):
-    """Tests for Productions API endpoints."""
+class APIAnalysesTestCase(AsimovTestCase):
+    """Tests for Analyses API endpoints."""
 
     def setUp(self):
         """Set up test environment with an event."""
@@ -261,10 +261,10 @@ class APIProductionsTestCase(AsimovTestCase):
         auth_module._api_keys_cache = None
         super().tearDown()
 
-    def test_create_production_no_auth(self):
-        """Test creating production without authentication fails."""
+    def test_create_analysis_no_auth(self):
+        """Test creating analysis without authentication fails."""
         response = self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -273,20 +273,20 @@ class APIProductionsTestCase(AsimovTestCase):
         )
         self.assertEqual(response.status_code, 401)
 
-    def test_create_production_invalid_data(self):
-        """Test creating production with invalid data fails."""
+    def test_create_analysis_invalid_data(self):
+        """Test creating analysis with invalid data fails."""
         response = self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({'name': 'Prod_A'}),  # Missing required 'pipeline'
             headers=self.auth_headers,
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 400)
 
-    def test_create_production_nonexistent_event(self):
-        """Test creating production for non-existent event fails."""
+    def test_create_analysis_nonexistent_event(self):
+        """Test creating analysis for non-existent event fails."""
         response = self.client.post(
-            '/api/v1/productions/NonExistent',
+            '/api/v1/analyses/NonExistent',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -296,10 +296,10 @@ class APIProductionsTestCase(AsimovTestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_create_production_success(self):
-        """Test creating production successfully."""
+    def test_create_analysis_success(self):
+        """Test creating analysis successfully."""
         response = self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby',
@@ -311,15 +311,15 @@ class APIProductionsTestCase(AsimovTestCase):
         )
         self.assertEqual(response.status_code, 201)
         data = json.loads(response.data)
-        self.assertIn('production', data)
-        self.assertEqual(data['production']['name'], 'Prod_A')
-        self.assertEqual(data['production']['pipeline'], 'bilby')
+        self.assertIn('analysis', data)
+        self.assertEqual(data['analysis']['name'], 'Prod_A')
+        self.assertEqual(data['analysis']['pipeline'], 'bilby')
 
-    def test_create_duplicate_production(self):
-        """Test creating duplicate production fails."""
-        # Create first production
+    def test_create_duplicate_analysis(self):
+        """Test creating duplicate analysis fails."""
+        # Create first analysis
         self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -330,7 +330,7 @@ class APIProductionsTestCase(AsimovTestCase):
 
         # Try to create duplicate
         response = self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -340,11 +340,11 @@ class APIProductionsTestCase(AsimovTestCase):
         )
         self.assertEqual(response.status_code, 409)
 
-    def test_get_production(self):
-        """Test getting a production."""
-        # Create production first
+    def test_get_analysis(self):
+        """Test getting an analysis."""
+        # Create analysis first
         self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -353,22 +353,22 @@ class APIProductionsTestCase(AsimovTestCase):
             content_type='application/json'
         )
 
-        # Get production
-        response = self.client.get('/api/v1/productions/GW150914/Prod_A')
+        # Get analysis
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A')
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
-        self.assertEqual(data['production']['name'], 'Prod_A')
+        self.assertEqual(data['analysis']['name'], 'Prod_A')
 
-    def test_get_nonexistent_production(self):
-        """Test getting non-existent production returns 404."""
-        response = self.client.get('/api/v1/productions/GW150914/NonExistent')
+    def test_get_nonexistent_analysis(self):
+        """Test getting non-existent analysis returns 404."""
+        response = self.client.get('/api/v1/analyses/GW150914/NonExistent')
         self.assertEqual(response.status_code, 404)
 
-    def test_update_production(self):
-        """Test updating a production."""
-        # Create production first
+    def test_update_analysis(self):
+        """Test updating an analysis."""
+        # Create analysis first
         self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -377,9 +377,9 @@ class APIProductionsTestCase(AsimovTestCase):
             content_type='application/json'
         )
 
-        # Update production
+        # Update analysis
         response = self.client.put(
-            '/api/v1/productions/GW150914/Prod_A',
+            '/api/v1/analyses/GW150914/Prod_A',
             data=json.dumps({
                 'status': 'ready',
                 'comment': 'Updated comment'
@@ -389,23 +389,23 @@ class APIProductionsTestCase(AsimovTestCase):
         )
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
-        self.assertEqual(data['production']['status'], 'ready')
+        self.assertEqual(data['analysis']['status'], 'ready')
 
-    def test_update_nonexistent_production(self):
-        """Test updating non-existent production returns 404."""
+    def test_update_nonexistent_analysis(self):
+        """Test updating non-existent analysis returns 404."""
         response = self.client.put(
-            '/api/v1/productions/GW150914/NonExistent',
+            '/api/v1/analyses/GW150914/NonExistent',
             data=json.dumps({'status': 'ready'}),
             headers=self.auth_headers,
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_delete_production(self):
-        """Test deleting a production."""
-        # Create production first
+    def test_delete_analysis(self):
+        """Test deleting an analysis."""
+        # Create analysis first
         self.client.post(
-            '/api/v1/productions/GW150914',
+            '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
                 'pipeline': 'bilby'
@@ -414,38 +414,38 @@ class APIProductionsTestCase(AsimovTestCase):
             content_type='application/json'
         )
 
-        # Delete production
+        # Delete analysis
         response = self.client.delete(
-            '/api/v1/productions/GW150914/Prod_A',
+            '/api/v1/analyses/GW150914/Prod_A',
             headers=self.auth_headers
         )
         self.assertEqual(response.status_code, 204)
 
         # Verify deletion
-        response = self.client.get('/api/v1/productions/GW150914/Prod_A')
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A')
         self.assertEqual(response.status_code, 404)
 
-    def test_delete_nonexistent_production(self):
-        """Test deleting non-existent production returns 404."""
+    def test_delete_nonexistent_analysis(self):
+        """Test deleting non-existent analysis returns 404."""
         response = self.client.delete(
-            '/api/v1/productions/GW150914/NonExistent',
+            '/api/v1/analyses/GW150914/NonExistent',
             headers=self.auth_headers
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_list_productions_empty(self):
-        """Test listing productions when none exist."""
-        response = self.client.get('/api/v1/events/GW150914/productions')
+    def test_list_analyses_empty(self):
+        """Test listing analyses when none exist."""
+        response = self.client.get('/api/v1/events/GW150914/analyses')
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
-        self.assertEqual(len(data['productions']), 0)
+        self.assertEqual(len(data['analyses']), 0)
 
-    def test_list_productions(self):
-        """Test listing productions."""
-        # Create multiple productions
+    def test_list_analyses(self):
+        """Test listing analyses."""
+        # Create multiple analyses
         for i in range(3):
             self.client.post(
-                '/api/v1/productions/GW150914',
+                '/api/v1/analyses/GW150914',
                 data=json.dumps({
                     'name': f'Prod_{i}',
                     'pipeline': 'bilby'
@@ -454,11 +454,11 @@ class APIProductionsTestCase(AsimovTestCase):
                 content_type='application/json'
             )
 
-        # List productions
-        response = self.client.get('/api/v1/events/GW150914/productions')
+        # List analyses
+        response = self.client.get('/api/v1/events/GW150914/analyses')
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
-        self.assertEqual(len(data['productions']), 3)
+        self.assertEqual(len(data['analyses']), 3)
 
 
 class APIAuthenticationTestCase(unittest.TestCase):
@@ -517,26 +517,47 @@ class APIAuthenticationTestCase(unittest.TestCase):
 
 
 class APICORSTestCase(unittest.TestCase):
-    """Tests for CORS headers."""
+    """Tests for CORS configuration."""
 
-    def setUp(self):
-        """Set up test client with CORS enabled."""
-        # Need to configure CORS origins for the test
-        from asimov import config
-        if not config.has_section('api'):
-            config.add_section('api')
-        config.set('api', 'cors_origins', '*')
-        
-        self.app = create_app()
-        self.app.config['TESTING'] = True
-        self.client = self.app.test_client()
+    def _make_mock_config(self, cors_origins):
+        """Return a mock config that returns known values for api options."""
+        from unittest.mock import MagicMock
+        mock = MagicMock()
+        mock.get.side_effect = lambda section, option, **kw: {
+            ('api', 'secret_key'): None,
+            ('api', 'cors_origins'): cors_origins,
+        }.get((section, option), kw.get('fallback'))
+        return mock
 
-    def test_cors_headers_present(self):
-        """Test CORS headers are present in responses when configured."""
-        response = self.client.get('/api/v1/health')
-        self.assertEqual(response.status_code, 200)
-        # Flask-CORS should add CORS headers when configured
-        self.assertIn('Access-Control-Allow-Origin', response.headers)
+    def test_cors_initialised_with_wildcard(self):
+        """CORS(app) is called with origins='*' when cors_origins is set to '*'."""
+        from unittest.mock import patch
+        with patch('asimov.api.app.config', self._make_mock_config('*')), \
+             patch('asimov.api.app.CORS') as mock_cors:
+            create_app()
+            mock_cors.assert_called_once()
+            _, kwargs = mock_cors.call_args
+            self.assertEqual(kwargs.get('origins'), '*')
+
+    def test_cors_initialised_with_specific_origins(self):
+        """CORS(app) is called with the configured origin list."""
+        from unittest.mock import patch
+        origins_str = 'https://example.com, https://other.com'
+        with patch('asimov.api.app.config', self._make_mock_config(origins_str)), \
+             patch('asimov.api.app.CORS') as mock_cors:
+            create_app()
+            mock_cors.assert_called_once()
+            _, kwargs = mock_cors.call_args
+            self.assertIn('https://example.com', kwargs.get('origins', []))
+            self.assertIn('https://other.com', kwargs.get('origins', []))
+
+    def test_cors_not_initialised_without_config(self):
+        """CORS(app) is not called when cors_origins is not configured."""
+        from unittest.mock import patch
+        with patch('asimov.api.app.config', self._make_mock_config(None)), \
+             patch('asimov.api.app.CORS') as mock_cors:
+            create_app()
+            mock_cors.assert_not_called()
 
 
 class APIErrorHandlingTestCase(unittest.TestCase):

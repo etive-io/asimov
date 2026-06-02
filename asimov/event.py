@@ -132,6 +132,7 @@ class Event:
             self.psds = {}
 
         self.meta = kwargs
+        self.meta.pop('ledger', None)
 
         self.productions = []
         self.graph = nx.DiGraph()

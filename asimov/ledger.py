@@ -22,23 +22,44 @@ class Ledger:
     def create(cls, name=None, engine=None, location=None):
         """
         Create a ledger.
-        """
 
+        Parameters
+        ----------
+        name : str, optional
+            Project name (for YAML ledgers).
+        engine : str, optional
+            Ledger engine ('yamlfile', 'tinydb', 'sqlalchemy', 'sqlite', 'postgresql').
+            If not provided, uses config value.
+        location : str, optional
+            Ledger file location.
+
+        Returns
+        -------
+        Ledger
+            The created ledger instance.
+        """
         if not engine:
             engine = config.get("ledger", "engine")
 
         if engine == "yamlfile":
+            if name is None:
+                name = config.get("project", "name", fallback=None)
+            if name is None:
+                raise ValueError("Project name is required when creating a YAML ledger")
             YAMLLedger.create(location=location, name=name)
+            return YAMLLedger(location=location)
 
-        elif engine in {"tinydb", "mongodb"}:
-            DatabaseLedger.create()
+        elif engine in {"tinydb", "mongodb", "sqlalchemy", "sqlite", "postgresql", "mysql"}:
+            return DatabaseLedger.create(engine=engine)
+
+        raise ValueError(f"Unsupported ledger engine: {engine}")
 
 
 class YAMLLedger(Ledger):
     def __init__(self, location=None):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
-        self.location = location
+        self.location = os.path.abspath(location)
         lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
         self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
         with open(location, "r") as ledger_file:
@@ -277,68 +298,462 @@ class YAMLLedger(Ledger):
 
 class DatabaseLedger(Ledger):
     """
-    Use a document database to store the ledger.
+    Use a database to store the ledger with transaction support.
+
+    This ledger implementation provides:
+    - ACID transactions for data integrity
+    - Thread-safe operations
+    - Advanced querying capabilities
+    - Support for concurrent access
     """
 
-    def __init__(self):
-        if config.get("ledger", "engine") == "tinydb":
+    def __init__(self, engine=None):
+        """
+        Initialize the database ledger.
+
+        Parameters
+        ----------
+        engine : str, optional
+            Database engine ('tinydb', 'sqlalchemy', 'mongodb').
+            Defaults to the value in the config.
+        """
+        if engine is None:
+            engine = config.get("ledger", "engine")
+
+        if engine == "tinydb":
             self.db = asimov.database.AsimovTinyDatabase()
+        elif engine in {"sqlalchemy", "sqlite", "postgresql", "mysql"}:
+            self.db = asimov.database.AsimovSQLDatabase()
         else:
-            self.db = asimov.database.AsimovTinyDatabase()
+            # Default to SQL database
+            self.db = asimov.database.AsimovSQLDatabase()
+
+    def __deepcopy__(self, memo):
+        # Ledgers are shared singletons; deep-copying one would try to duplicate
+        # the underlying database engine (which contains unpicklable module state).
+        memo[id(self)] = self
+        return self
+
+    @property
+    def data(self):
+        """Minimal dict compatible with YAMLLedger.data for analysis.py guards."""
+        return {"project": {}, "pipelines": {}}
 
     @classmethod
-    def create(cls):
-        ledger = cls()
+    def create(cls, engine=None):
+        """
+        Create a new database ledger.
+
+        Parameters
+        ----------
+        engine : str, optional
+            Database engine to use.
+
+        Returns
+        -------
+        DatabaseLedger
+            Initialized ledger instance.
+        """
+        ledger = cls(engine=engine)
         ledger.db._create()
         return ledger
 
     def _insert(self, payload):
         """
         Store the payload in the correct database table.
+
+        Parameters
+        ----------
+        payload : Event or Production or ProjectAnalysis
+            The object to insert.
+
+        Returns
+        -------
+        int
+            The ID of the inserted record.
         """
+        from asimov.analysis import ProjectAnalysis
 
         if isinstance(payload, Event):
-            id_number = self.db.insert("event", payload.to_dict(productions=False))
+            data = payload.to_dict(productions=False)
+            if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+                data = self._prepare_sql_event_data(data)
+            id_number = self.db.insert("event", data)
         elif isinstance(payload, Production):
-            id_number = self.db.insert("production", payload.to_dict(event=False))
+            data = payload.to_dict(event=False)
+            if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+                if "event" not in data and hasattr(payload, "event"):
+                    data["event"] = payload.event.name
+                data = self._prepare_sql_production_data(data)
+            id_number = self.db.insert("production", data)
+        elif isinstance(payload, ProjectAnalysis):
+            data = payload.to_dict()
+            if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+                data = self._prepare_sql_project_analysis_data(data)
+            id_number = self.db.insert("project_analysis", data)
+        else:
+            raise ValueError(f"Unknown payload type: {type(payload)}")
 
         return id_number
+
+    @staticmethod
+    def _normalize_nested_analysis_dict(data):
+        if (
+            isinstance(data, dict)
+            and len(data) == 1
+            and isinstance(next(iter(data.values())), dict)
+        ):
+            name, payload = next(iter(data.items()))
+            normalized = dict(payload)
+            normalized.setdefault("name", name)
+            return normalized
+        return dict(data)
+
+    # Keys that are Python objects and must not be written to the database as JSON.
+    _DB_EXCLUDED_META_KEYS = {"ledger", "pipelines"}
+
+    def _prepare_sql_event_data(self, data):
+        data = dict(data)
+        meta = {}
+        if isinstance(data.get("meta"), dict):
+            for k, v in data["meta"].items():
+                if k not in self._DB_EXCLUDED_META_KEYS:
+                    meta[k] = v
+        for key, value in data.items():
+            if key not in {"name", "repository", "working_directory", "working directory",
+                           "meta", "productions"} | self._DB_EXCLUDED_META_KEYS:
+                meta[key] = value
+        return {
+            "name": data.get("name"),
+            "repository": data.get("repository"),
+            "working_directory": data.get("working_directory", data.get("working directory")),
+            "meta": meta,
+        }
+
+    def _prepare_sql_production_data(self, data):
+        data = self._normalize_nested_analysis_dict(data)
+        meta = {}
+        if isinstance(data.get("meta"), dict):
+            for k, v in data["meta"].items():
+                if k not in self._DB_EXCLUDED_META_KEYS:
+                    meta[k] = v
+        for key, value in data.items():
+            if key not in {"name", "event", "event_name", "pipeline", "status", "comment",
+                           "meta"} | self._DB_EXCLUDED_META_KEYS:
+                meta[key] = value
+        return {
+            "name": data.get("name"),
+            "event_name": data.get("event_name", data.get("event")),
+            "pipeline": data.get("pipeline"),
+            "status": data.get("status"),
+            "comment": data.get("comment"),
+            "meta": meta,
+        }
+
+    def _prepare_sql_project_analysis_data(self, data):
+        data = self._normalize_nested_analysis_dict(data)
+        meta = {}
+        if isinstance(data.get("meta"), dict):
+            for k, v in data["meta"].items():
+                if k not in self._DB_EXCLUDED_META_KEYS:
+                    meta[k] = v
+        for key, value in data.items():
+            if key not in {"name", "pipeline", "status", "comment",
+                           "meta"} | self._DB_EXCLUDED_META_KEYS:
+                meta[key] = value
+        return {
+            "name": data.get("name"),
+            "pipeline": data.get("pipeline"),
+            "status": data.get("status"),
+            "comment": data.get("comment"),
+            "meta": meta,
+        }
 
     @property
     def events(self):
         """
         Return all of the events in the ledger.
+
+        Returns
+        -------
+        list of Event
+            All events.
         """
-        return [Event.from_dict(page) for page in self.db.tables["event"].all()]
+        return [self._event_from_dict(event_dict) for event_dict in self.db.query("event")]
+
+    def _event_from_dict(self, event_dict):
+        kwargs = dict(event_dict)
+        kwargs.pop("ledger", None)
+        event = Event(**kwargs, ledger=self)
+
+        # Load productions from the separate productions table.
+        for prod_dict in self.db.query("production", "event_name", event.name):
+            ledger_backup = event.meta.pop("ledger", None)
+            try:
+                production = Production.from_dict(prod_dict, event, ledger=self)
+                if production.name not in [p.name for p in event.productions]:
+                    event.add_production(production)
+            except Exception as e:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Skipped loading production %r for event %r: %s",
+                    prod_dict.get("name"), event.name, e
+                )
+            finally:
+                if ledger_backup is not None:
+                    event.meta["ledger"] = ledger_backup
+
+        event.update_graph()
+        return event
+
+    @property
+    def project_analyses(self):
+        """
+        Return all project analyses in the ledger.
+
+        Returns
+        -------
+        list of ProjectAnalysis
+            All project analyses.
+        """
+        from asimov.analysis import ProjectAnalysis
+
+        return [
+            ProjectAnalysis.from_dict(analysis, ledger=self)
+            for analysis in self.db.query("project_analysis")
+        ]
 
     def get_defaults(self):
-        raise NotImplementedError
+        """
+        Get project-level defaults from the ledger.
+
+        Note: For database ledgers, defaults should be stored in configuration
+        rather than the database. This method is kept for compatibility.
+
+        Returns
+        -------
+        dict
+            Default settings (empty for database ledger).
+        """
+        # For database backend, defaults are in config, not in the database
+        # This keeps the database focused on analysis data
+        return {}
 
     def get_event(self, event=None):
         """
         Find a specific event in the ledger and return it.
-        """
-        event_dict = self.db.query("event", "name", event)[0]
-        return Event.from_dict(event_dict)
 
-    def get_productions(self, event, filters=None, query=None):
-        """
-        Get all of the productions for a given event.
-        """
+        Parameters
+        ----------
+        event : str, optional
+            Event name. If None, returns all events.
 
-        if not filters and not query:
-            productions = self.db.query("production", "event", event)
-
+        Returns
+        -------
+        Event or list of Event
+            The requested event(s).
+        """
+        if event:
+            event_dicts = self.db.query("event", "name", event)
+            if not event_dicts:
+                raise ValueError(f"Event '{event}' not found in ledger")
+            event_dict = event_dicts[0]
+            return [self._event_from_dict(event_dict)]
         else:
-            queries_1 = self.db.Q["event"] == event
-            queries = [
-                self.db.Q[parameter] == value for parameter, value in filters.items()
-            ]
-            productions = self.db.tables["production"].search(
-                queries_1 & reduce(lambda x, y: x & y, queries)
-            )
+            return self.events
 
-        event = self.get_event(event)
-        return [
-            Production.from_dict(dict(production), event) for production in productions
-        ]
+    def get_productions(self, event=None, filters=None):
+        """
+        Get productions, optionally filtered.
+
+        Parameters
+        ----------
+        event : str, optional
+            Event name to filter by.
+        filters : dict, optional
+            Additional filters (e.g., {'status': 'ready', 'pipeline': 'bilby'}).
+
+        Returns
+        -------
+        list of Production
+            Matching productions.
+
+        Examples
+        --------
+        >>> ledger.get_productions(event='GW150914')
+        >>> ledger.get_productions(event='GW150914', filters={'status': 'ready'})
+        >>> ledger.get_productions(filters={'pipeline': 'bilby', 'status': 'finished'})
+        """
+        # Build combined filters
+        query_filters = {}
+        if event:
+            query_filters["event"] = event
+        if filters:
+            query_filters.update(filters)
+
+        # Query the database
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            # Use advanced query capabilities
+            production_models = self.db.query_productions(query_filters)
+            production_dicts = [p.to_dict() for p in production_models]
+        else:
+            # Fallback for TinyDB
+            if event:
+                production_dicts = self.db.query("production", "event", event)
+            else:
+                production_dicts = self.db.query("production")
+
+            # Apply additional filters manually for TinyDB
+            if filters:
+                def matches_filters(prod_dict):
+                    for key, value in filters.items():
+                        if prod_dict.get(key) != value:
+                            return False
+                    return True
+
+                production_dicts = [p for p in production_dicts if matches_filters(p)]
+
+        # Get the parent event
+        if event:
+            event_obj = self.get_event(event)[0]
+        else:
+            event_obj = None
+
+        # Convert to Production objects
+        productions = []
+        for prod_dict in production_dicts:
+            production_event = event_obj
+            if production_event is None and "event" in prod_dict:
+                production_event = self.get_event(prod_dict["event"])[0]
+            productions.append(Production.from_dict(prod_dict, production_event, ledger=self))
+
+        return productions
+
+    def add_event(self, event):
+        """
+        Add an event to the ledger.
+
+        Parameters
+        ----------
+        event : Event
+            The event to add.
+        """
+        self._insert(event)
+
+    def add_subject(self, subject):
+        """
+        Add a subject (event) to the ledger.
+
+        Parameters
+        ----------
+        subject : Event
+            The subject to add.
+        """
+        self.add_event(subject)
+
+    def add_production(self, event, production):
+        """
+        Add a production to an event.
+
+        Parameters
+        ----------
+        event : Event
+            The parent event.
+        production : Production
+            The production to add.
+        """
+        self.add_analysis(analysis=production, event=event)
+
+    def add_analysis(self, analysis, event=None):
+        """
+        Add an analysis to the ledger.
+
+        Parameters
+        ----------
+        analysis : Production or ProjectAnalysis
+            The analysis to add.
+        event : Event, optional
+            Parent event (required for Productions).
+        """
+        from asimov.analysis import ProjectAnalysis
+
+        if isinstance(analysis, ProjectAnalysis):
+            self._insert(analysis)
+        else:
+            # It's a Production
+            if event is None:
+                raise ValueError("Event is required for Production analyses")
+            # Set the event reference
+            analysis.event = event
+            self._insert(analysis)
+
+    def update_event(self, event):
+        """
+        Update an event in the ledger, inserting it if it does not exist yet.
+
+        Parameters
+        ----------
+        event : Event
+            The event to update.
+        """
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            event_data = self._prepare_sql_event_data(event.to_dict(productions=False))
+            try:
+                self.db.update_event(event.name, event_data)
+            except ValueError:
+                self.db.insert_event(event_data)
+
+            for production in event.productions:
+                prod_data = self._prepare_sql_production_data(
+                    production.to_dict(event=False)
+                )
+                prod_data["event_name"] = event.name
+                try:
+                    self.db.update_production(event.name, production.name, prod_data)
+                except ValueError:
+                    self.db.insert_production(prod_data)
+        else:
+            raise NotImplementedError("Update not implemented for TinyDB backend")
+
+    def update_analysis_in_project_analysis(self, analysis):
+        """
+        Update a project analysis in the ledger.
+
+        Parameters
+        ----------
+        analysis : ProjectAnalysis
+            The analysis to update.
+        """
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            data = self._prepare_sql_project_analysis_data(analysis.to_dict())
+            data["status"] = analysis.status
+            try:
+                self.db.update_project_analysis(analysis.name, data)
+            except ValueError:
+                self.db.insert_project_analysis(data)
+        else:
+            raise NotImplementedError("Update not implemented for TinyDB backend")
+
+    def delete_event(self, event_name):
+        """
+        Delete an event from the ledger.
+
+        Parameters
+        ----------
+        event_name : str
+            The name of the event to delete.
+        """
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            self.db.delete_event(event_name)
+        else:
+            raise NotImplementedError("Delete not implemented for TinyDB backend")
+
+    def save(self):
+        """
+        Save changes to the ledger.
+
+        For database ledgers, this is typically a no-op since changes
+        are committed immediately in transactions.
+        """
+        # Database transactions are handled automatically
+        pass

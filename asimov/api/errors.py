@@ -31,7 +31,7 @@ def register_error_handlers(app):
         """Handle asimov DescriptionException."""
         return jsonify({
             'error': e.message,
-            'production': e.production
+            'analysis': e.production
         }), 400
 
     @app.errorhandler(PipelineException)
