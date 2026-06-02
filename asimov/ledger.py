@@ -657,7 +657,7 @@ class DatabaseLedger(Ledger):
 
     def update_event(self, event):
         """
-        Update an event in the ledger.
+        Update an event in the ledger, inserting it if it does not exist yet.
 
         Parameters
         ----------
@@ -665,10 +665,22 @@ class DatabaseLedger(Ledger):
             The event to update.
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
-            data = event.to_dict(productions=False)
-            self.db.update_event(event.name, data)
+            event_data = self._prepare_sql_event_data(event.to_dict(productions=False))
+            try:
+                self.db.update_event(event.name, event_data)
+            except ValueError:
+                self.db.insert_event(event_data)
+
+            for production in event.productions:
+                prod_data = self._prepare_sql_production_data(
+                    production.to_dict(event=False)
+                )
+                prod_data["event_name"] = event.name
+                try:
+                    self.db.update_production(event.name, production.name, prod_data)
+                except ValueError:
+                    self.db.insert_production(prod_data)
         else:
-            # For TinyDB, need to implement update logic
             raise NotImplementedError("Update not implemented for TinyDB backend")
 
     def update_analysis_in_project_analysis(self, analysis):
