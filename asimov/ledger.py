@@ -409,13 +409,19 @@ class DatabaseLedger(Ledger):
             return normalized
         return dict(data)
 
+    # Keys that are Python objects and must not be written to the database as JSON.
+    _DB_EXCLUDED_META_KEYS = {"ledger", "pipelines"}
+
     def _prepare_sql_event_data(self, data):
         data = dict(data)
         meta = {}
         if isinstance(data.get("meta"), dict):
-            meta.update(data["meta"])
+            for k, v in data["meta"].items():
+                if k not in self._DB_EXCLUDED_META_KEYS:
+                    meta[k] = v
         for key, value in data.items():
-            if key not in {"name", "repository", "working_directory", "working directory", "meta", "productions"}:
+            if key not in {"name", "repository", "working_directory", "working directory",
+                           "meta", "productions"} | self._DB_EXCLUDED_META_KEYS:
                 meta[key] = value
         return {
             "name": data.get("name"),
@@ -428,9 +434,12 @@ class DatabaseLedger(Ledger):
         data = self._normalize_nested_analysis_dict(data)
         meta = {}
         if isinstance(data.get("meta"), dict):
-            meta.update(data["meta"])
+            for k, v in data["meta"].items():
+                if k not in self._DB_EXCLUDED_META_KEYS:
+                    meta[k] = v
         for key, value in data.items():
-            if key not in {"name", "event", "event_name", "pipeline", "status", "comment", "meta"}:
+            if key not in {"name", "event", "event_name", "pipeline", "status", "comment",
+                           "meta"} | self._DB_EXCLUDED_META_KEYS:
                 meta[key] = value
         return {
             "name": data.get("name"),
@@ -445,9 +454,12 @@ class DatabaseLedger(Ledger):
         data = self._normalize_nested_analysis_dict(data)
         meta = {}
         if isinstance(data.get("meta"), dict):
-            meta.update(data["meta"])
+            for k, v in data["meta"].items():
+                if k not in self._DB_EXCLUDED_META_KEYS:
+                    meta[k] = v
         for key, value in data.items():
-            if key not in {"name", "pipeline", "status", "comment", "meta"}:
+            if key not in {"name", "pipeline", "status", "comment",
+                           "meta"} | self._DB_EXCLUDED_META_KEYS:
                 meta[key] = value
         return {
             "name": data.get("name"),
@@ -481,8 +493,12 @@ class DatabaseLedger(Ledger):
                 production = Production.from_dict(prod_dict, event, ledger=self)
                 if production.name not in [p.name for p in event.productions]:
                     event.productions.append(production)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Skipped loading production %r for event %r: %s",
+                    prod_dict.get("name"), event.name, e
+                )
             finally:
                 if ledger_backup is not None:
                     event.meta["ledger"] = ledger_backup
