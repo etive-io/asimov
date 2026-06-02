@@ -59,8 +59,8 @@ jobs:
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
-            asimov configuration update ledger/engine sqlalchemy
             asimov configuration update ledger/location .asimov/ledger.db
+            asimov configuration update ledger/engine sqlalchemy
             asimov configuration update condor/user submituser
             asimov configuration update condor/cache_time 30
             asimov configuration update condor/cron_minute '*/1'

@@ -189,5 +189,7 @@ try:
     else:
         current_ledger = None
 except FileNotFoundError:
-    # logger.error("Could not find a valid ledger file.")
+    current_ledger = None
+except Exception as e:
+    logger.debug("Could not initialise ledger at startup: %s", e)
     current_ledger = None
