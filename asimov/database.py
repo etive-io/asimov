@@ -159,6 +159,9 @@ class AsimovSQLDatabase(AsimovDatabase):
         # Thread-local storage for sessions
         self._thread_local = threading.local()
 
+        # Create tables if they don't exist (idempotent — safe on every connect)
+        self.create_tables()
+
     @contextmanager
     def get_session(self) -> Session:
         """

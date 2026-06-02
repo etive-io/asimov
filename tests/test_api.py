@@ -519,22 +519,21 @@ class APIAuthenticationTestCase(unittest.TestCase):
 class APICORSTestCase(unittest.TestCase):
     """Tests for CORS configuration."""
 
-    def setUp(self):
-        from asimov import config
-        if not config.has_section('api'):
-            config.add_section('api')
-
-    def tearDown(self):
-        from asimov import config
-        if config.has_section('api') and config.has_option('api', 'cors_origins'):
-            config.remove_option('api', 'cors_origins')
+    def _make_mock_config(self, cors_origins):
+        """Return a mock config that returns known values for api options."""
+        from unittest.mock import MagicMock
+        mock = MagicMock()
+        mock.get.side_effect = lambda section, option, **kw: {
+            ('api', 'secret_key'): None,
+            ('api', 'cors_origins'): cors_origins,
+        }.get((section, option), kw.get('fallback'))
+        return mock
 
     def test_cors_initialised_with_wildcard(self):
         """CORS(app) is called with origins='*' when cors_origins is set to '*'."""
-        from asimov import config
         from unittest.mock import patch
-        config.set('api', 'cors_origins', '*')
-        with patch('asimov.api.app.CORS') as mock_cors:
+        with patch('asimov.api.app.config', self._make_mock_config('*')), \
+             patch('asimov.api.app.CORS') as mock_cors:
             create_app()
             mock_cors.assert_called_once()
             _, kwargs = mock_cors.call_args
@@ -542,10 +541,10 @@ class APICORSTestCase(unittest.TestCase):
 
     def test_cors_initialised_with_specific_origins(self):
         """CORS(app) is called with the configured origin list."""
-        from asimov import config
         from unittest.mock import patch
-        config.set('api', 'cors_origins', 'https://example.com, https://other.com')
-        with patch('asimov.api.app.CORS') as mock_cors:
+        origins_str = 'https://example.com, https://other.com'
+        with patch('asimov.api.app.config', self._make_mock_config(origins_str)), \
+             patch('asimov.api.app.CORS') as mock_cors:
             create_app()
             mock_cors.assert_called_once()
             _, kwargs = mock_cors.call_args
@@ -555,7 +554,8 @@ class APICORSTestCase(unittest.TestCase):
     def test_cors_not_initialised_without_config(self):
         """CORS(app) is not called when cors_origins is not configured."""
         from unittest.mock import patch
-        with patch('asimov.api.app.CORS') as mock_cors:
+        with patch('asimov.api.app.config', self._make_mock_config(None)), \
+             patch('asimov.api.app.CORS') as mock_cors:
             create_app()
             mock_cors.assert_not_called()
 
