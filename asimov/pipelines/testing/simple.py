@@ -194,12 +194,11 @@ class SimpleTestPipeline(Pipeline):
         os.chdir(self.production.rundir)
         try:
             if isinstance(self.scheduler, LocalProcessScheduler):
-                job_script = os.path.join(self.production.rundir, "test_job.sh")
                 job_id = self.scheduler.submit({
                     "executable": "/bin/bash",
-                    "arguments": job_script,
-                    "output": os.path.join(self.production.rundir, "local_job.out"),
-                    "error": os.path.join(self.production.rundir, "local_job.err"),
+                    "arguments": "test_job.sh",
+                    "output": "local_job.out",
+                    "error": "local_job.err",
                     "name": f"test/{self.production.event.name}/{self.production.name}",
                 })
                 self.logger.info(f"Local process job submitted: {job_id}")
