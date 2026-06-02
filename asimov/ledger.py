@@ -492,7 +492,7 @@ class DatabaseLedger(Ledger):
             try:
                 production = Production.from_dict(prod_dict, event, ledger=self)
                 if production.name not in [p.name for p in event.productions]:
-                    event.productions.append(production)
+                    event.add_production(production)
             except Exception as e:
                 import logging as _logging
                 _logging.getLogger(__name__).warning(
