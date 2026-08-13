@@ -5,10 +5,16 @@ Trigger handling code.
 import html
 import os
 import subprocess
+import sys
+import warnings
 
 import networkx as nx
 import yaml
-from ligo.gracedb.rest import GraceDb, HTTPError
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 from asimov import config, logger, LOGGER_LEVEL
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
@@ -372,6 +378,12 @@ class Event:
         """
         Get a file from Gracedb, and store it in the event repository.
 
+        .. deprecated:: 0.8
+           This method will be removed from :class:`Event` in asimov 0.9.
+           GraceDB support now lives in the optional ``asimov-gracedb``
+           plugin; call its ``asimov.hooks.filesource`` hook directly once
+           this method is removed.
+
         Parameters
         ----------
         gfile : str
@@ -379,18 +391,34 @@ class Event:
         destination : str
            The location in the repository for this file.
         """
+        warnings.warn(
+            "Event.get_gracedb() will be removed from asimov core in 0.9; "
+            "it now delegates to the asimov-gracedb plugin's filesource hook.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         if "preferred event" in self.meta.get("ligo", {}):
             gid = self.meta["ligo"]["preferred event"]
         else:
             raise ValueError("No preferred event GID is included in this event's metadata.")
 
-        try:
-            client = GraceDb(service_url=config.get("gracedb", "url"))
-            file_obj = client.files(gid, gfile)
+        discovered = entry_points(group="asimov.hooks.filesource")
+        for hook in discovered:
+            if hook.name == "gracedb":
+                client = hook.load()(config)
+                break
+        else:
+            raise RuntimeError(
+                "GraceDB support requires the asimov-gracedb plugin. "
+                "Install it with `pip install asimov-gracedb`."
+            )
 
-            with open("download.file", "w") as dest_file:
-                dest_file.write(file_obj.read().decode())
+        try:
+            content = client.fetch(gid, gfile)
+
+            with open("download.file", "wb") as dest_file:
+                dest_file.write(content)
 
             if "xml" in gfile:
                 # Convert to the new xml format
@@ -406,11 +434,11 @@ class Event:
                 commit_message=f"Downloaded {gfile} from GraceDB",
             )
             self.logger.info(f"Fetched {gfile} from GraceDB")
-        except HTTPError as e:
+        except Exception as e:
             self.logger.error(
-                f"Unable to connect to GraceDB when attempting to download {gfile}. {e}"
+                f"Unable to fetch {gfile} from GraceDB. {e}"
             )
-            raise HTTPError(e)
+            raise
 
     def to_dict(self, productions=True):
         data = {}
