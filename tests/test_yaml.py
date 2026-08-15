@@ -24,7 +24,7 @@ interferometers:
 quality: {{}}
 productions:
   - name: Prod0
-    pipeline: rift
+    pipeline: bayeswave
     comment: PSD production
     status: wait
 """
