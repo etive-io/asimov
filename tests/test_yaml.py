@@ -151,13 +151,13 @@ class ProductionTests(unittest.TestCase):
             productions:
               - name: Prod0
                 comment: PSD production
-                pipeline: rift
+                pipeline: bilby
                 priors:
                   q: [0.0, 0.05]
                 status: wait
               - name: Prod1
                 comment: PSD production
-                pipeline: rift
+                pipeline: bilby
                 priors:
                   q: [0.0, 0.8]
                 status: wait
@@ -187,13 +187,13 @@ class ProductionTests(unittest.TestCase):
         productions:
         - name: Prod0
           comment: PSD production
-          pipeline: rift
+          pipeline: bayeswave
           priors:
                 q: [0.0, 0.05]
           status: wait
         - name: Prod1
           comment: PSD production
-          pipeline: rift
+          pipeline: bayeswave
           priors:
                 q: [0.0, 1.0]
           status: wait

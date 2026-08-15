@@ -113,7 +113,7 @@ pipeline: subjecttestpipeline
 analyses:
   - pipeline: bilby
   - optional: true
-    pipeline: rift
+    pipeline: bayeswave
 """
         with open('test_subject_optional.yaml', 'w') as f:
             f.write(blueprint)

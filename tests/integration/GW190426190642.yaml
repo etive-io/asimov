@@ -48,13 +48,6 @@ productions:
     pipeline: bilby
     status: ready
     rundir: {wd}/ProdF5
-- ProdF6:
-    approximant: SEOBNRv4HM
-    comment: Rift test job
-    pipeline: rift
-    status: ready
-    user: marie.curie
-    rundir: {wd}/ProdF6
 psds:
   1024:
     H1: analyses/psds/1024/H1-psd.dat

@@ -26,7 +26,7 @@ pipeline: pesummary
 analyses:
   - pipeline: bilby       # Required
   - optional: true        # Optional dependency
-    pipeline: rift
+    pipeline: bayeswave
 refreshable: true
 status: ready
 ---

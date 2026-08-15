@@ -32,15 +32,6 @@ exemplar = {
         "data frames": "{ 'H1':'NonstandardFrame','L1':'NonstandardFrameL1','V1':'UnusualFrameType', }",
         "window length": "71",
     },
-    "rift": {
-        "minimum frequency": '{ "H1":62,"L1":92,"V1":62, }',
-        "segment length": "4",
-        "psd length": "108.6",
-        "ifo list": "['H1', 'L1', 'V1']",
-        "data channels": '{ "H1":"H1:WeirdChannel","L1":"L1:WeirdChannel","V1":"V1:OddChannel", }',
-        "data frames": '{ "H1":"NonstandardFrame","L1":"NonstandardFrameL1","V1":"UnusualFrameType", }',
-        "window length": "71",
-    },
 }
 
 
@@ -51,15 +42,6 @@ mappings = {
         "psd length": ["test", "psd-length"],
         "ifo list": ["test", "detectors"],
         "data channels": ["test", "channel-dict"],
-    },
-    "rift": {
-        "data channels": ["datafind", "channel-list"],
-        "data frames": ["datafind", "frtype-list"],
-        "minimum frequency": ["lalinference", "flow"],
-        "segment length": ["engine", "seglen"],
-        "ifo list": ["analysis", "ifos"],
-        "data channels": ["data", "channels"],
-        "data frames": ["datafind", "types"],
     },
 }
 

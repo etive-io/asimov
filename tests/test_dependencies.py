@@ -50,14 +50,14 @@ class DependencyTests(unittest.TestCase):
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: rift
+pipeline: bayeswave
 status: uploaded
 ---
 kind: analysis
 name: Prod1
 pipeline: bilby
 needs:
-  - pipeline: rift
+  - pipeline: bayeswave
 """
         with open('test_property_dep.yaml', 'w') as f:
             f.write(blueprint)
@@ -74,7 +74,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: rift
+pipeline: bayeswave
 status: uploaded
 ---
 kind: analysis
@@ -86,7 +86,7 @@ kind: analysis
 name: Prod2
 pipeline: simpletestpipeline
 needs:
-  - pipeline: "!rift"
+  - pipeline: "!bayeswave"
 """
         with open('test_negation.yaml', 'w') as f:
             f.write(blueprint)
@@ -104,7 +104,7 @@ needs:
         blueprint = """
 kind: analysis
 name: ProdA
-pipeline: rift
+pipeline: bayeswave
 status: uploaded
 waveform:
   approximant: IMRPhenomXPHM
@@ -148,7 +148,7 @@ needs:
         blueprint = """
 kind: analysis
 name: ProdA
-pipeline: rift
+pipeline: bilby
 status: uploaded
 waveform:
   approximant: IMRPhenomXPHM
@@ -162,7 +162,7 @@ waveform:
 ---
 kind: analysis
 name: ProdC
-pipeline: rift
+pipeline: bilby
 status: uploaded
 waveform:
   approximant: SEOBNRv5PHM
@@ -171,7 +171,7 @@ kind: analysis
 name: Selector
 pipeline: simpletestpipeline
 needs:
-  - - pipeline: rift
+  - - pipeline: bilby
     - waveform.approximant: IMRPhenomXPHM
 """
         with open('test_and_logic.yaml', 'w') as f:
@@ -192,7 +192,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: rift
+pipeline: bayeswave
 status: finished
 ---
 kind: analysis
@@ -221,7 +221,7 @@ needs:
         blueprint2 = """
 kind: analysis
 name: Prod0b
-pipeline: rift
+pipeline: bayeswave
 status: finished
 """
         with open('test_stale2.yaml', 'w') as f:

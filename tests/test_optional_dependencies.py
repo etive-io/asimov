@@ -142,7 +142,7 @@ pipeline: subjecttestpipeline
 needs:
   - pipeline: simpletestpipeline
   - optional: true
-    pipeline: rift
+    pipeline: bayeswave
 """
         with open('test_mixed.yaml', 'w') as f:
             f.write(blueprint)
