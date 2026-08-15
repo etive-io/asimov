@@ -5,12 +5,17 @@ import glob
 import os
 import re
 import subprocess
+import sys
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 from asimov import config, logger
 from asimov.utils import set_directory
 
 from asimov.pipeline import Pipeline, PipelineException, PipelineLogger
-from asimov.pipelines.pesummary import PESummary
 
 
 class Rift(Pipeline):
@@ -60,7 +65,19 @@ class Rift(Pipeline):
     def after_completion(self):
 
         self.logger.info("Job has completed. Running PE Summary.")
-        post_pipeline = PESummary(production=self.production)
+
+        discovered = entry_points(group="asimov.pipelines")
+        for pipeline in discovered:
+            if pipeline.name == "pesummary":
+                pesummary_cls = pipeline.load()
+                break
+        else:
+            raise PipelineException(
+                "RIFT post-processing requires the asimov-pesummary plugin. "
+                "Install it with `pip install asimov-pesummary`."
+            )
+
+        post_pipeline = pesummary_cls(production=self.production)
         cluster = post_pipeline.submit_dag()
 
         self.production.meta["job id"] = int(cluster)

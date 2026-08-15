@@ -24,7 +24,7 @@ interferometers:
 quality: {{}}
 productions:
   - name: Prod0
-    pipeline: lalinference
+    pipeline: rift
     comment: PSD production
     status: wait
 """
@@ -151,13 +151,13 @@ class ProductionTests(unittest.TestCase):
             productions:
               - name: Prod0
                 comment: PSD production
-                pipeline: lalinference
+                pipeline: rift
                 priors:
                   q: [0.0, 0.05]
                 status: wait
               - name: Prod1
                 comment: PSD production
-                pipeline: lalinference
+                pipeline: rift
                 priors:
                   q: [0.0, 0.8]
                 status: wait
@@ -187,13 +187,13 @@ class ProductionTests(unittest.TestCase):
         productions:
         - name: Prod0
           comment: PSD production
-          pipeline: lalinference
+          pipeline: rift
           priors:
                 q: [0.0, 0.05]
           status: wait
         - name: Prod1
           comment: PSD production
-          pipeline: lalinference
+          pipeline: rift
           priors:
                 q: [0.0, 1.0]
           status: wait

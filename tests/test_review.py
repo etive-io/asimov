@@ -37,7 +37,7 @@ interferometers:
 quality: {{}}
 productions:
   - name: Prod0
-    pipeline: lalinference
+    pipeline: rift
     comment: PSD production
     status: wait
     review:
@@ -64,7 +64,7 @@ interferometers:
 quality: {{}}
 productions:
   - name: Prod0
-    pipeline: lalinference
+    pipeline: rift
     comment: PSD production
     status: wait
 """

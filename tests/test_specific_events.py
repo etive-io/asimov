@@ -14,7 +14,7 @@ import os
 from asimov.cli.application import apply_page
 from asimov.testing import AsimovTestCase
 
-pipelines = {"bayeswave", "bilby", "rift"}
+pipelines = {"bilby", "rift"}
 EVENTS = {"GW150914_095045", "GW190924_021846", "GW190929_012149", "GW191109_010717"}
 
 EXTERNAL_DEFAULTS_URL = "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml"

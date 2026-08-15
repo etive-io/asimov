@@ -38,7 +38,7 @@ class OptionalDependencyTests(unittest.TestCase):
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: finished
 ---
 kind: analysis
@@ -46,7 +46,7 @@ name: Prod1
 pipeline: bilby
 needs:
   - optional: true
-    pipeline: bayeswave
+    pipeline: simpletestpipeline
 """
         with open('test_optional.yaml', 'w') as f:
             f.write(blueprint)
@@ -73,7 +73,7 @@ kind: analysis
 name: Prod1
 pipeline: bilby
 needs:
-  - pipeline: bayeswave
+  - pipeline: simpletestpipeline
 """
         with open('test_required_missing.yaml', 'w') as f:
             f.write(blueprint)
@@ -97,14 +97,14 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: finished
 ---
 kind: analysis
 name: Prod1
 pipeline: bilby
 needs:
-  - pipeline: bayeswave
+  - pipeline: simpletestpipeline
 """
         with open('test_required_present.yaml', 'w') as f:
             f.write(blueprint)
@@ -128,7 +128,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: finished
 ---
 kind: analysis
@@ -138,9 +138,9 @@ status: finished
 ---
 kind: analysis
 name: Combiner
-pipeline: lalinference
+pipeline: subjecttestpipeline
 needs:
-  - pipeline: bayeswave
+  - pipeline: simpletestpipeline
   - optional: true
     pipeline: rift
 """
@@ -152,13 +152,13 @@ needs:
         
         combiner = [p for p in event.productions if p.name == 'Combiner'][0]
         
-        # Should resolve the bayeswave dependency (required and present)
+        # Should resolve the simpletestpipeline dependency (required and present)
         self.assertIn('Prod0', combiner.dependencies)
         
         # Should have 1 required dependency
         self.assertEqual(len(combiner.required_dependencies), 1)
         
-        # Required dependencies should be satisfied (bayeswave is present)
+        # Required dependencies should be satisfied (simpletestpipeline is present)
         self.assertTrue(combiner.has_required_dependencies_satisfied)
         
         # Should NOT have the rift dependency (optional and not present)
