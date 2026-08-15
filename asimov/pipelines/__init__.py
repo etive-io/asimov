@@ -6,17 +6,12 @@ if sys.version_info < (3, 10):
 else:
     from importlib.metadata import entry_points
 
-from asimov.pipelines.bilby import Bilby
-from asimov.pipelines.rift import Rift
-
 discovered_pipelines = entry_points(group="asimov.pipelines")
 
 logger = logging.getLogger(__name__)
 
 
 known_pipelines = {
-    "bilby": Bilby,
-    "rift": Rift,
 }
 
 
