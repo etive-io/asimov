@@ -421,9 +421,9 @@ General waveform settings
    * - ``waveform:reference frequency``
      - 
      - The reference frequency at which spins etc are defined.
-   * - ``likelihood:start frequency``
+   * - ``waveform:start frequency``
      - ``float``
-     - The frequency at which the generation of the waveform should be started. NB this is not the same as ``quality:minimum frequency`` which is the lowest frequency at which the inner product is evaluated.
+     - The frequency at which the generation of the waveform should be started. NB this is not the same as ``likelihood:minimum frequency`` which is the lowest frequency at which the inner product is evaluated.
    * - ``waveform:conversion function``
      - See individual pipeline documentation.
      - A function which can be used to perform conversions for the waveform.
@@ -507,6 +507,12 @@ General likelihood settings
    * - ``likelihood:time domain source model``
      - See individual pipeline documentation.
      -
+   * - ``likelihood:minimum frequency``
+     - ``dict``, keyed by interferometer
+     - The lowest frequency at which the inner product / likelihood integral is evaluated for each interferometer. This used to be specified under ``quality`` (a legacy location kept from when it came from data-quality recommendations); that is now deprecated but still supported, with a warning, and the value is migrated automatically.
+   * - ``likelihood:maximum frequency``
+     - ``dict``, keyed by interferometer
+     - The highest frequency at which the inner product / likelihood integral is evaluated for each interferometer. Calculated automatically from the sample rate if not given. As with minimum frequency, specifying this under ``quality`` is deprecated but still supported, with a warning.
 
 Calibration settings
 --------------------

@@ -65,7 +65,8 @@ class _GravitationalWaveEventsBase:
 class TestGravitationalWaveEventsLocal(_GravitationalWaveEventsBase, AsimovTestCase):
     """
     Tests using local copies of blueprints updated to conform to the v0.7
-    requirement that minimum frequency lives in the 'waveform' section.
+    convention that minimum frequency lives in the 'likelihood' section
+    ('quality' is still accepted, with a deprecation warning).
     These tests must always pass.
     """
 

@@ -160,8 +160,10 @@ class DetcharTests(AsimovTestCase):
         self.assertEqual(event.meta["data"]["frame types"]["H1"], "NonstandardFrame")
         self.assertEqual(event.meta["data"]["frame types"]["V1"], "UnusualFrameType")
 
-    def test_minimum_frequency_in_quality_raises_error(self):
-        """Test that having minimum frequency in quality section raises an error."""
+    def test_minimum_frequency_in_quality_migrated_with_warning(self):
+        """Test that minimum frequency in the 'quality' section is a deprecated
+        but still-supported location: it should be migrated into 'likelihood'
+        automatically, with a warning, rather than rejected."""
         apply_page(
             f"{self.cwd}/tests/test_data/testing_pe.yaml",
             event=None,
@@ -173,16 +175,58 @@ class DetcharTests(AsimovTestCase):
             ledger=self.ledger,
         )
 
-        # Creating an analysis from this event should raise a ValueError
-        with self.assertRaises(ValueError) as context:
+        # Creating an analysis from this event should not raise, but should
+        # warn that 'minimum frequency' belongs in 'likelihood', not 'quality'.
+        with self.assertLogs("asimov", level="WARNING") as log:
             apply_page(
                 f"{self.cwd}/tests/test_data/simple_analysis.yaml",
                 event="Deprecated fmin in quality",
                 ledger=self.ledger,
             )
-        
-        self.assertIn("waveform", str(context.exception).lower())
-        self.assertIn("quality", str(context.exception).lower())
+
+        warnings = [msg.lower() for msg in log.output]
+        self.assertTrue(
+            any("minimum frequency" in msg and "quality" in msg for msg in warnings)
+        )
+
+        event = self.ledger.get_event("Deprecated fmin in quality")[0]
+        production = event.productions[0]
+        self.assertEqual(production.meta["likelihood"]["minimum frequency"]["H1"], 20)
+        self.assertEqual(production.meta["likelihood"]["minimum frequency"]["L1"], 20)
+        self.assertEqual(production.meta["likelihood"]["minimum frequency"]["V1"], 20)
+
+    def test_minimum_frequency_in_quality_bayeswave_construction(self):
+        """Regression test: constructing a BayesWave analysis must not crash
+        when 'minimum frequency' is only present in the deprecated 'quality'
+        section. BayesWave's pipeline object evaluates its 'flow' property
+        (which depends on 'likelihood.minimum frequency') during
+        construction, which happens *inside* Analysis.__init__ before
+        GravitationalWaveTransient's own quality->likelihood migration runs
+        - so the migrated value must already be usable by the time the
+        pipeline object is built."""
+        apply_page(
+            f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger,
+        )
+        apply_page(
+            f"{self.cwd}/tests/test_data/event_deprecated_fmin_quality.yaml",
+            event=None,
+            ledger=self.ledger,
+        )
+
+        # Should not raise, unlike the pre-fix behaviour where BayesWave's
+        # eager construction-time 'flow' lookup crashed before the migration
+        # in GravitationalWaveTransient.__init__ had a chance to run.
+        apply_page(
+            f"{self.cwd}/tests/test_data/blueprints/bayeswave.yaml",
+            event="Deprecated fmin in quality",
+            ledger=self.ledger,
+        )
+
+        event = self.ledger.get_event("Deprecated fmin in quality")[0]
+        production = event.productions[0]
+        self.assertEqual(production.pipeline.flow, 20)
 
     def test_minimum_frequency_in_likelihood_accepted(self):
         """Test that likelihood.minimum_frequency is accepted (used by BayesWave)."""

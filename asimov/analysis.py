@@ -1798,6 +1798,16 @@ class GravitationalWaveTransient(SimpleAnalysis):
             if "maximum frequency" not in self.meta["likelihood"]:
                 self.meta["likelihood"]["maximum frequency"] = self.meta["quality"]["maximum frequency"]
 
+        # Migrate minimum frequency from quality to likelihood
+        if "quality" in self.meta and "minimum frequency" in self.meta["quality"]:
+            self.logger.warning(
+                "Found 'minimum frequency' in the 'quality' section; "
+                "this is deprecated. Please move it to the 'likelihood' section. "
+                "It has been automatically migrated for this run."
+            )
+            if "minimum frequency" not in self.meta["likelihood"]:
+                self.meta["likelihood"]["minimum frequency"] = self.meta["quality"]["minimum frequency"]
+
         # Calculate maximum frequency from sample rate if not provided
         if "sample rate" in self.meta["likelihood"] and "interferometers" in self.meta:
             if "maximum frequency" not in self.meta["likelihood"]:
@@ -1835,14 +1845,6 @@ class GravitationalWaveTransient(SimpleAnalysis):
             )
             ref_freq = self.meta["likelihood"].pop("reference frequency")
             self.meta["waveform"]["reference frequency"] = ref_freq
-
-        if "quality" in self.meta and "minimum frequency" in self.meta["quality"]:
-            raise ValueError(
-                "Minimum frequency must be specified in the 'waveform' section, "
-                "not in the 'quality' section. Please update your blueprint to move "
-                "'minimum frequency' from 'quality' to 'waveform'."
-            )
-
 
         # Gather the PSDs for the job
         self.psds = self._collect_psds()

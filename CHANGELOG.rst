@@ -1,3 +1,25 @@
+Unreleased
+==========
+
+Bug Fixes
+---------
+
+**Minimum Frequency Section Corrected**
+  0.7.0-beta1 (below) documented, and attempted to enforce, a requirement
+  that ``minimum frequency`` must live in the ``waveform`` section of a
+  blueprint. In practice every pipeline that consumes it (``bilby``,
+  ``bayeswave``, ``pesummary``) has always read it from ``likelihood``, and
+  the ``waveform`` location was never actually wired up anywhere — so
+  blueprints that followed that guidance would fail when run. ``likelihood``
+  is now the documented, correctly-enforced canonical location, matching the
+  ``Likelihood`` blueprint schema and every pipeline's own validation.
+
+  The legacy ``quality`` location (its original home, from when the value
+  came from data-quality recommendations) is restored as a deprecated
+  fallback rather than a hard rejection: values found under ``quality`` are
+  automatically migrated into ``likelihood``, with a warning, the same way
+  ``maximum frequency`` has always been handled.
+
 0.7.0-beta1
 ===========
 

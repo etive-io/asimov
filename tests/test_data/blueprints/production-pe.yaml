@@ -1,6 +1,7 @@
 #
 # This is a local copy of the production-pe.yaml defaults, updated to match
-# the v0.7 requirement that minimum frequency must be in the 'waveform' section.
+# the v0.7 convention that minimum frequency belongs in the 'likelihood'
+# section ('quality' is still accepted, with a deprecation warning).
 # Original source: https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml
 #
 

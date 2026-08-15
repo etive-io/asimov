@@ -50,9 +50,6 @@ class BayesWave(Pipeline):
             self.category = "analyses"
             self.logger.info("Assuming analyses directory.")
 
-        if not production.meta.get("quality", {}).get("lowest minimum frequency", None):
-            production.meta.setdefault("quality", {})["lowest minimum frequency"] = self.flow
-
     def build_dag(self, user=None, dryrun=False):
         """
         Construct a DAG file in order to submit a production to the

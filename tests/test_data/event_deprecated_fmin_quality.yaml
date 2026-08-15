@@ -1,5 +1,6 @@
-# This event is designed for testing that an error is raised when
-# minimum frequency is in the quality section instead of waveform.
+# This event is designed for testing that a deprecation warning is raised,
+# and the value automatically migrated to 'likelihood', when minimum
+# frequency is found in the quality section instead of likelihood.
 kind: event
 name: Deprecated fmin in quality
 quality:

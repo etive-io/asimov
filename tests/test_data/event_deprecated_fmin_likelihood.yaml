@@ -1,5 +1,6 @@
-# This event is designed for testing that an error is raised when
-# minimum frequency is in the likelihood section instead of waveform.
+# This event is designed for testing that minimum frequency in the
+# 'likelihood' section (its correct, current location) is accepted
+# without any warning or error.
 kind: event
 name: Deprecated fmin in likelihood
 quality:
