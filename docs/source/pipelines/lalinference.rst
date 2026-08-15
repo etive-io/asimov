@@ -3,17 +3,21 @@
 LALInference Pipelines
 ======================
 
-Asimov provides full support for the LALInference pipeline.
 While LALInference has been largely superseded by newer sampling techniques it can still be helpful to be able to run jobs using it both for carrying-out cross checks, and for replicating older analyses.
 
-Review status
--------------
+LALInference support is not part of asimov core. It's provided by the optional
+``asimov-lalinference`` plugin, which you'll need to install separately:
+
+::
+   $ pip install asimov-lalinference
+
+Once the plugin is installed, ``pipeline: lalinference`` in a blueprint will resolve to it exactly
+as it did when the integration shipped with asimov core.
 
 .. warning::
 
-   **v0.4.0**
-     The integration with LALInference has been deprecated.
-     It *must not* be used for collaboration parameter estimation analyses.
+   The LALInference integration was deprecated in asimov v0.4.0.
+   It *must not* be used for collaboration parameter estimation analyses.
 
 Examples
 --------
@@ -32,7 +36,7 @@ LALInference with Markov Chain Monte Carlo
 
 LALInference with Nested sampling
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-       
+
 .. code-block:: yaml
 
    - Prod0:
@@ -105,4 +109,3 @@ The following values will be added to the production meta data by asimov as a pr
 
 ``job id``
    The JobID for this event on the condor cluster.
-

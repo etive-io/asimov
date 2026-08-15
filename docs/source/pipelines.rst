@@ -13,10 +13,15 @@ Supported Pipelines
 
 The following pipelines currently have support bundled with asimov:
 
-+ :ref:`LALInference<lalinference-pipelines>`
-+ :ref:`BayesWave<bayeswave-pipelines>`
 + :ref:`Bilby<bilby-pipelines>`
 + :ref:`RIFT<rift-pipelines>`
+
+The following pipelines are supported via optional plugin packages (see each page for the
+``pip install`` command):
+
++ :ref:`LALInference<lalinference-pipelines>`
++ :ref:`BayesWave<bayeswave-pipelines>`
++ :ref:`PESummary<pesummary-pipelines>`
 
 Adding new pipelines
 --------------------

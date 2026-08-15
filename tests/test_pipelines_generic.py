@@ -22,16 +22,6 @@ from asimov import config
 from asimov.utils import set_directory
 
 exemplar = {
-    "bayeswave": {
-        "minimum frequency": "62",
-        "segment length": "4",
-        "psd length": "108.6",
-        "ifo list": "['H1', 'L1', 'V1']",
-        "segment start": "2",
-        "data channels": "{ 'H1':'H1:WeirdChannel','L1':'L1:WeirdChannel','V1':'V1:OddChannel', }",
-        "data frames": "{ 'H1':'NonstandardFrame','L1':'NonstandardFrameL1','V1':'UnusualFrameType', }",
-        "window length": "71",
-    },
     "bilby": {
         "minimum frequency": "{ H1:62,L1:92,V1:62, }",
         "segment length": "4",
@@ -51,27 +41,10 @@ exemplar = {
         "data frames": '{ "H1":"NonstandardFrame","L1":"NonstandardFrameL1","V1":"UnusualFrameType", }',
         "window length": "71",
     },
-    "lalinference": {
-        "minimum frequency": "{ 'H1': 62,'L1': 92,'V1': 62, }",
-        "segment length": "4",
-        "ifo list": "['H1', 'L1', 'V1']",
-        "data channels": "{ 'H1': 'H1:WeirdChannel','L1': 'L1:WeirdChannel','V1': 'V1:OddChannel', }",
-        "data frames": "{ 'H1': 'NonstandardFrame','L1': 'NonstandardFrameL1','V1': 'UnusualFrameType', }",
-    }
 }
 
 
 mappings = {
-    "bayeswave": {
-        "minimum frequency": ["input", "flow"],
-        "segment length": ["input", "seglen"],
-        "window length": ["input", "window"],
-        "psd length": ["input", "psdlength"],
-        "ifo list": ["input", "ifo-list"],
-        "segment start": ["input", "segment-start"],
-        "data channels": ["datafind", "channel-list"],
-        "data frames": ["datafind", "frtype-list"],
-    },
     "bilby": {
         "minimum frequency": ["test", "minimum-frequency"],
         "segment length": ["test", "duration"],
@@ -82,13 +55,6 @@ mappings = {
     "rift": {
         "data channels": ["datafind", "channel-list"],
         "data frames": ["datafind", "frtype-list"],
-        "minimum frequency": ["lalinference", "flow"],
-        "segment length": ["engine", "seglen"],
-        "ifo list": ["analysis", "ifos"],
-        "data channels": ["data", "channels"],
-        "data frames": ["datafind", "types"],
-    },
-    "lalinference": {
         "minimum frequency": ["lalinference", "flow"],
         "segment length": ["engine", "seglen"],
         "ifo list": ["analysis", "ifos"],

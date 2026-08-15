@@ -50,14 +50,14 @@ class DependencyTests(unittest.TestCase):
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: rift
 status: uploaded
 ---
 kind: analysis
 name: Prod1
 pipeline: bilby
 needs:
-  - pipeline: bayeswave
+  - pipeline: rift
 """
         with open('test_property_dep.yaml', 'w') as f:
             f.write(blueprint)
@@ -74,7 +74,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: rift
 status: uploaded
 ---
 kind: analysis
@@ -84,9 +84,9 @@ status: uploaded
 ---
 kind: analysis
 name: Prod2
-pipeline: lalinference
+pipeline: simpletestpipeline
 needs:
-  - pipeline: "!bayeswave"
+  - pipeline: "!rift"
 """
         with open('test_negation.yaml', 'w') as f:
             f.write(blueprint)
@@ -95,7 +95,7 @@ needs:
         event = self.ledger.get_event('GW150914_095045')[0]
         
         prod2 = [p for p in event.productions if p.name == 'Prod2'][0]
-        # Should match Prod1 (bilby) and Prod2 (lalinference) but not Prod0 (bayeswave)
+        # Should match Prod1 (bilby) and Prod2 (simpletestpipeline) but not Prod0 (rift)
         self.assertIn('Prod1', prod2.dependencies)
         self.assertNotIn('Prod0', prod2.dependencies)
 
@@ -104,7 +104,7 @@ needs:
         blueprint = """
 kind: analysis
 name: ProdA
-pipeline: bayeswave
+pipeline: rift
 status: uploaded
 waveform:
   approximant: IMRPhenomXPHM
@@ -118,7 +118,7 @@ waveform:
 ---
 kind: analysis
 name: ProdC
-pipeline: lalinference
+pipeline: simpletestpipeline
 status: uploaded
 waveform:
   approximant: IMRPhenomD
@@ -148,7 +148,7 @@ needs:
         blueprint = """
 kind: analysis
 name: ProdA
-pipeline: bayeswave
+pipeline: rift
 status: uploaded
 waveform:
   approximant: IMRPhenomXPHM
@@ -162,16 +162,16 @@ waveform:
 ---
 kind: analysis
 name: ProdC
-pipeline: bayeswave
+pipeline: rift
 status: uploaded
 waveform:
   approximant: SEOBNRv5PHM
 ---
 kind: analysis
 name: Selector
-pipeline: lalinference
+pipeline: simpletestpipeline
 needs:
-  - - pipeline: bayeswave
+  - - pipeline: rift
     - waveform.approximant: IMRPhenomXPHM
 """
         with open('test_and_logic.yaml', 'w') as f:
@@ -181,7 +181,7 @@ needs:
         event = self.ledger.get_event('GW150914_095045')[0]
         
         selector = [p for p in event.productions if p.name == 'Selector'][0]
-        # Should only match ProdA (bayeswave AND IMRPhenomXPHM)
+        # Should only match ProdA (rift AND IMRPhenomXPHM)
         self.assertEqual(len(selector.dependencies), 1)
         self.assertIn('ProdA', selector.dependencies)
         self.assertNotIn('ProdB', selector.dependencies)
@@ -192,7 +192,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: rift
 status: finished
 ---
 kind: analysis
@@ -221,7 +221,7 @@ needs:
         blueprint2 = """
 kind: analysis
 name: Prod0b
-pipeline: bayeswave
+pipeline: rift
 status: finished
 """
         with open('test_stale2.yaml', 'w') as f:

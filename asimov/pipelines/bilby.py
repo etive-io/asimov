@@ -6,7 +6,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 from typing import Dict, Any
 
@@ -14,7 +20,6 @@ from .. import config
 
 from ..pipeline import Pipeline, PipelineException, PipelineLogger
 from .. import auth
-from .pesummary import PESummary
 from ..priors import PriorInterface
 
 
@@ -615,7 +620,18 @@ class Bilby(Pipeline):
         ) + glob.glob(os.path.join(rundir, "final_result", "*.json"))
 
     def after_completion(self):
-        post_pipeline = PESummary(production=self.production)
+        discovered = entry_points(group="asimov.pipelines")
+        for pipeline in discovered:
+            if pipeline.name == "pesummary":
+                pesummary_cls = pipeline.load()
+                break
+        else:
+            raise PipelineException(
+                "Bilby post-processing requires the asimov-pesummary plugin. "
+                "Install it with `pip install asimov-pesummary`."
+            )
+
+        post_pipeline = pesummary_cls(production=self.production)
         self.logger.info("Job has completed. Running PE Summary.")
         cluster = post_pipeline.submit_dag()
         self.production.meta["job id"] = int(cluster)
