@@ -61,6 +61,15 @@ docs = [
 	"sphinx-multiversion",
 	"autodoc-pydantic",
 ]
+lvkgw = [
+	"bilby_pipe",
+	"asimov-pesummary",
+	"asimov-bayeswave",
+	"asimov-gwdata",
+]
+lvkgw-extras = [
+	"asimov-lalinference",
+]
 bilby = [
 	"bilby_pipe",
 	"bilby",
