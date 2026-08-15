@@ -6,8 +6,6 @@ import os
 import re
 import subprocess
 
-from ligo.gracedb.rest import HTTPError
-
 from asimov import config, logger
 from asimov.utils import set_directory
 
@@ -151,17 +149,17 @@ class Rift(Pipeline):
                 calibration = config.get("general", "calibration_directory")
                 coinc_file = os.path.abspath(coinc_file)
                 self.logger.info(f"Coinc found at {coinc_file}")
-            except HTTPError:
-                print(
-                    "Unable to download the coinc file because it was not possible to connect to GraceDB"
-                )
-                self.logger.warning(
-                    "Could not download a coinc file for this event; could not connect to GraceDB."
-                )
-                coinc_file = None
             except ValueError:
                 self.logger.warning(
                     "Could not download a coinc file for this event as no GraceDB ID was supplied."
+                )
+                coinc_file = None
+            except Exception as e:
+                print(
+                    "Unable to download the coinc file because it was not possible to fetch it from GraceDB"
+                )
+                self.logger.warning(
+                    f"Could not download a coinc file for this event; could not fetch it from GraceDB. {e}"
                 )
                 coinc_file = None
             try:
