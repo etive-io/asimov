@@ -2,9 +2,10 @@
 Blueprint path constants for tests.
 
 Provides absolute paths to local blueprint files that are v0.7-compatible
-(minimum frequency in 'waveform' section).  These should be used instead of
-the external asimov-data URLs so that unit tests are not dependent on network
-access and do not fail due to upstream data lagging behind code changes.
+(minimum frequency in the 'likelihood' section).  These should be used
+instead of the external asimov-data URLs so that unit tests are not
+dependent on network access and do not fail due to upstream data lagging
+behind code changes.
 """
 import os
 

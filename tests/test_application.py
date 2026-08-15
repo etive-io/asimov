@@ -160,8 +160,10 @@ class DetcharTests(AsimovTestCase):
         self.assertEqual(event.meta["data"]["frame types"]["H1"], "NonstandardFrame")
         self.assertEqual(event.meta["data"]["frame types"]["V1"], "UnusualFrameType")
 
-    def test_minimum_frequency_in_quality_raises_error(self):
-        """Test that having minimum frequency in quality section raises an error."""
+    def test_minimum_frequency_in_quality_migrated_with_warning(self):
+        """Test that minimum frequency in the 'quality' section is a deprecated
+        but still-supported location: it should be migrated into 'likelihood'
+        automatically, with a warning, rather than rejected."""
         apply_page(
             f"{self.cwd}/tests/test_data/testing_pe.yaml",
             event=None,
@@ -173,16 +175,25 @@ class DetcharTests(AsimovTestCase):
             ledger=self.ledger,
         )
 
-        # Creating an analysis from this event should raise a ValueError
-        with self.assertRaises(ValueError) as context:
+        # Creating an analysis from this event should not raise, but should
+        # warn that 'minimum frequency' belongs in 'likelihood', not 'quality'.
+        with self.assertLogs("asimov", level="WARNING") as log:
             apply_page(
                 f"{self.cwd}/tests/test_data/simple_analysis.yaml",
                 event="Deprecated fmin in quality",
                 ledger=self.ledger,
             )
-        
-        self.assertIn("waveform", str(context.exception).lower())
-        self.assertIn("quality", str(context.exception).lower())
+
+        warnings = [msg.lower() for msg in log.output]
+        self.assertTrue(
+            any("minimum frequency" in msg and "quality" in msg for msg in warnings)
+        )
+
+        event = self.ledger.get_event("Deprecated fmin in quality")[0]
+        production = event.productions[0]
+        self.assertEqual(production.meta["likelihood"]["minimum frequency"]["H1"], 20)
+        self.assertEqual(production.meta["likelihood"]["minimum frequency"]["L1"], 20)
+        self.assertEqual(production.meta["likelihood"]["minimum frequency"]["V1"], 20)
 
     def test_minimum_frequency_in_likelihood_accepted(self):
         """Test that likelihood.minimum_frequency is accepted (used by BayesWave)."""
