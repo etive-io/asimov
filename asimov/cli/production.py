@@ -127,7 +127,9 @@ def set(event, production, status):
     if status:
         if status in accepted_states:
             production.status = status
-            # ledger.save()
+            if config.get("ledger", "engine") == "yamlfile":
+                ledger.events[event.name] = event.to_dict()
+                ledger.save()
             click.echo(
                 click.style("●", fg="green")
                 + f" {production.name} status updated to {status}"
