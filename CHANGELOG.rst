@@ -1,36 +1,37 @@
-Unreleased
-==========
+0.7.0
+=====
 
-Bug Fixes
----------
-
-**Minimum Frequency Section Corrected**
-  0.7.0-beta1 (below) documented, and attempted to enforce, a requirement
-  that ``minimum frequency`` must live in the ``waveform`` section of a
-  blueprint. In practice every pipeline that consumes it (``bilby``,
-  ``bayeswave``, ``pesummary``) has always read it from ``likelihood``, and
-  the ``waveform`` location was never actually wired up anywhere — so
-  blueprints that followed that guidance would fail when run. ``likelihood``
-  is now the documented, correctly-enforced canonical location, matching the
-  ``Likelihood`` blueprint schema and every pipeline's own validation.
-
-  The legacy ``quality`` location (its original home, from when the value
-  came from data-quality recommendations) is restored as a deprecated
-  fallback rather than a hard rejection: values found under ``quality`` are
-  automatically migrated into ``likelihood``, with a warning, the same way
-  ``maximum frequency`` has always been handled.
-
-0.7.0-beta1
-===========
-
-This is the first beta release of asimov 0.7, building on the alpha releases
-with first-class Slurm support, a hardened report system, and a number of
-event-application and ledger bug fixes.  The architectural changes introduced
-in the alpha series (state machine monitor, flexible dependency system, Python
-API, pydantic priors) are now considered stable for beta testing.
+This is a major feature release representing a significant evolution of asimov's
+architecture and capabilities. It introduces a state-machine monitor loop, a flexible
+dependency specification system, a Python API, pydantic-validated priors, first-class
+Slurm scheduler support, and a hardened HTML report system. It also completes the
+plugin-extraction work begun in 0.6: GraceDB and the ``bayeswave``, ``lalinference``, and
+``pesummary`` pipelines no longer ship with core asimov, and now live in their own
+optional plugin packages.
 
 New Features
 ------------
+
+**State Machine Architecture**
+  The monitor loop has been completely refactored into a state machine pattern, providing better control flow, plugin support, and pipeline-specific handlers. This enables more sophisticated workflow management and better extensibility.
+
+**Advanced Dependency System**
+  Implements a flexible dependency specification system with property-based filtering, AND/OR/negation logic, staleness tracking, and workflow graph integration. This allows complex relationships between analyses to be expressed naturally.
+
+**Strategy Expansion**
+  New strategy expansion feature enables creating multiple analyses from parameter matrices, making it easy to run parameter studies and systematic variations.
+
+**Python API**
+  Comprehensive Python API for project creation and management, including context manager support for programmatic control of asimov workflows.
+
+**Enhanced HTML Reports**
+  HTML reports now include graph-based workflow visualization with interactive modal popups, advanced filtering, and improved styling for better workflow monitoring.
+
+**Blueprint Validator**
+  Introduces validation for blueprint files to catch configuration errors early and ensure consistent project setup.
+
+**Modern Prior Handling**
+  Refactored prior handling with pydantic validation and pipeline-specific interfaces, providing better type safety and clearer error messages.
 
 **First-class Slurm Scheduler Support**
   Asimov now ships with a full Slurm scheduler backend.  The implementation
@@ -55,112 +56,16 @@ Improvements
   Scheduler support and its associated testing pipelines have been further
   extended and hardened following the initial Slurm integration.
 
-Bug Fixes
----------
-
-**Event Application Reliability**
-  Several bugs in the event-apply path have been fixed, covering analysis
-  application ordering, ledger persistence during apply, and edge cases in
-  the event update workflow.
-
-**Ledger I/O Fix**
-  A bug in ledger reading and writing that could corrupt state under certain
-  conditions has been corrected.
-
-Breaking Changes
-----------------
-
-**Waveform Minimum Frequency Location**
-  The ``minimum frequency`` parameter **must** now be placed in the ``waveform``
-  section of a blueprint.  In earlier versions, placing it in the ``quality`` or
-  ``likelihood`` sections was permitted with a deprecation warning.  As of v0.7,
-  any blueprint that specifies ``minimum frequency`` under ``quality`` or
-  ``likelihood`` will be **rejected** with a ``ValueError`` and the blueprint
-  will not be applied.
-
-  To migrate an existing blueprint, move the value from the old location::
-
-      # Old (no longer valid in v0.7)
-      quality:
-        minimum frequency:
-          H1: 20
-          L1: 20
-
-  to the new location::
-
-      # Correct (v0.7+)
-      waveform:
-        minimum frequency:
-          H1: 20
-          L1: 20
-
-  The error message will indicate which section the value was found in and
-  prompt the user to update their blueprint accordingly.
-
-GitHub Pull Requests
---------------------
-
-+ `github#86 <https://github.com/etive-io/asimov/pull/86>`_: Add first-class Slurm scheduler support with bidirectional DAG translation and end-to-end CI coverage
-+ `github#103 <https://github.com/etive-io/asimov/pull/103>`_: Fix the application of analyses
-+ `github#107 <https://github.com/etive-io/asimov/pull/107>`_: Enforce waveform minimum frequency location (breaking change for old blueprints)
-+ `github#112 <https://github.com/etive-io/asimov/pull/112>`_: Fix ledger I/O
-+ `github#115 <https://github.com/etive-io/asimov/pull/115>`_: Fix event apply
-+ `github#116 <https://github.com/etive-io/asimov/pull/116>`_: Add CBCFlow integration tests and update apply_via_plugin to use current ledger
-+ `github#117 <https://github.com/etive-io/asimov/pull/117>`_: Refactor event rendering and improve graph data generation
-+ `github#118 <https://github.com/etive-io/asimov/pull/118>`_: Fix event apply (follow-up)
-+ `github#121 <https://github.com/etive-io/asimov/pull/121>`_: Enhance scheduler support and testing pipelines
-+ `github#122 <https://github.com/etive-io/asimov/pull/122>`_: Fix Slurm tests
-+ `github#123 <https://github.com/etive-io/asimov/pull/123>`_: Improve and harden the report page
-+ `github#124 <https://github.com/etive-io/asimov/pull/124>`_: Fix subject report
-
-0.7.0-alpha2
-============
-
-This is a bug-fix release on top of 0.7.0-alpha1.
-
-Bug Fixes
----------
-
-**Git Repository Initialisation**
-  Fixes an issue with ``git init`` during project creation that could cause
-  project setup to fail in some environments.
-
-GitHub Pull Requests
---------------------
-
-+ `github#97 <https://github.com/etive-io/asimov/pull/97>`_: Fix issue with git init in project creation
-
-0.7.0-alpha1
-============
-
-This is the first alpha of a major feature release representing a significant evolution of asimov's architecture and capabilities. It introduces powerful new workflow management features, a modernised monitoring system, and enhanced programmatic control.
-
-Major New Features
-------------------
-
-**State Machine Architecture**
-  The monitor loop has been completely refactored into a state machine pattern, providing better control flow, plugin support, and pipeline-specific handlers. This enables more sophisticated workflow management and better extensibility.
-
-**Advanced Dependency System**
-  Implements a flexible dependency specification system with property-based filtering, AND/OR/negation logic, staleness tracking, and workflow graph integration. This allows complex relationships between analyses to be expressed naturally.
-
-**Strategy Expansion**
-  New strategy expansion feature enables creating multiple analyses from parameter matrices, making it easy to run parameter studies and systematic variations.
-
-**Python API**
-  Comprehensive Python API for project creation and management, including context manager support for programmatic control of asimov workflows.
-
-**Enhanced HTML Reports**
-  HTML reports now include graph-based workflow visualization with interactive modal popups, advanced filtering, and improved styling for better workflow monitoring.
-
-**Blueprint Validator**
-  Introduces validation for blueprint files to catch configuration errors early and ensure consistent project setup.
-
-**Modern Prior Handling**
-  Refactored prior handling with pydantic validation and pipeline-specific interfaces, providing better type safety and clearer error messages.
-
-Changes
--------
+**GraceDB Decoupled from Core**
+  ``ligo-gracedb``, ``gwpy``, ``lscsoft-glue``, and ``igwn-auth-utils`` are no longer
+  dependencies of the core ``asimov`` package; GraceDB support now lives in the optional
+  ``asimov-gracedb`` plugin (``pip install asimov-gracedb``). A new ``asimov.hooks.filesource``
+  plugin entry-point group allows plugins to provide "fetch a file for an existing subject"
+  behaviour. ``Event.get_gracedb()`` remains in core as a deprecated shim which discovers the
+  plugin at call time and raises a clear error if it isn't installed; it will be removed from
+  core in 0.9. ``asimov event create``'s GraceDB-backed ``--gid``/``--superevent``/``--search``
+  flags are replaced by ``asimov apply -p gracedb -e <id>``, using the same
+  ``asimov.hooks.applicator`` mechanism the ``cbcflow`` plugin already uses.
 
 **Thread-Safe Logging**
   File logging setup has been refactored to ensure thread safety with shared locks, and logging is now lazy-loaded to prevent log file creation for read-only commands.
@@ -183,6 +88,44 @@ Changes
 **Removed Legacy Assumptions**
   Removed calibration categories and fixed hardcoded git branch assumptions for greater flexibility in deployment environments.
 
+Bug Fixes
+---------
+
+**Git Repository Initialisation**
+  Fixes an issue with ``git init`` during project creation that could cause
+  project setup to fail in some environments.
+
+**Event Application Reliability**
+  Several bugs in the event-apply path have been fixed, covering analysis
+  application ordering, ledger persistence during apply, and edge cases in
+  the event update workflow.
+
+**Ledger I/O Fix**
+  A bug in ledger reading and writing that could corrupt state under certain
+  conditions has been corrected.
+
+**Production Status Persistence**
+  ``asimov production set -s <status>`` reported success but never actually wrote the change
+  to ``.asimov/ledger.yml``, silently losing it on the next ledger load.
+
+**Minimum Frequency Canonical Location**
+  An earlier 0.7 pre-release briefly documented, and enforced, a requirement that
+  ``minimum frequency`` must live in the ``waveform`` section of a blueprint. In practice
+  every pipeline that consumes it (``bilby``, ``bayeswave``, ``pesummary``) has always read
+  it from ``likelihood``, and the ``waveform`` location was never actually wired up
+  anywhere, so that requirement was corrected ahead of this release. ``likelihood`` is the
+  documented, enforced canonical location, matching the ``Likelihood`` blueprint schema and
+  every pipeline's own validation. The legacy ``quality`` location (its original home, from
+  when the value came from data-quality recommendations) is kept as a deprecated fallback:
+  values found under ``quality`` are automatically migrated into ``likelihood``, with a
+  warning, the same way ``maximum frequency`` has always been handled.
+
+**Documentation Build Fixed**
+  ``sphinx-multiversion`` calls Sphinx's ``Config.read(confpath, overrides)``
+  positionally, which Sphinx 9 broke by making ``overrides``/``tags`` keyword-only;
+  the docs build crashed immediately with a ``TypeError``. ``sphinx<9`` is now pinned
+  in the ``docs`` extra until ``sphinx-multiversion`` is patched or replaced.
+
 Breaking Changes
 ----------------
 
@@ -191,6 +134,30 @@ This release introduces significant architectural changes. While efforts have be
 - Monitor loop behavior due to state machine refactoring
 - Dependency specification syntax (old syntax may need updating)
 - Prior specification format (now uses pydantic models)
+
+**Bundled Pipelines Reduced to Bilby and RIFT**
+  Support for the ``bayeswave``, ``lalinference``, and ``pesummary`` pipelines no longer
+  ships with core ``asimov``; each now lives exclusively in its own optional plugin package
+  (``asimov-bayeswave``, ``asimov-lalinference``, ``asimov-pesummary``), installed via the
+  same ``asimov.pipelines`` entry-point mechanism and the same pipeline names used in
+  blueprints, following the pattern already established for GraceDB above. Blueprints that
+  reference these pipelines will fail to apply unless the corresponding plugin is installed.
+  ``rift.py`` and ``bilby.py``'s post-completion hooks no longer import ``PESummary``
+  directly; they now discover the ``pesummary`` plugin at call time and raise a clear
+  installation error if it's missing.
+
+Known Issues
+------------
+
+**``bilby`` Pipeline Entry Point Naming**
+  Blueprints referencing the ``bilby`` pipeline currently fail to resolve via the
+  ``asimov.pipelines`` entry-point mechanism: the installed ``bilby_pipe`` registers its
+  own asimov integration under the name ``bilby_native`` rather than ``bilby``. This is a
+  naming mismatch in ``bilby_pipe``, not a missing asimov plugin -- unlike bayeswave,
+  lalinference, and pesummary, ``bilby_pipe`` has shipped its own ``asimov.pipelines``
+  entry point for some time. A ``bilby_pipe`` release dropping the ``bilby_native`` name
+  in favour of ``bilby`` is expected soon, at which point this should resolve without any
+  change needed in asimov core.
 
 GitHub Pull Requests
 --------------------
@@ -226,6 +193,24 @@ GitHub Pull Requests
 + `github#75 <https://github.com/etive-io/asimov/pull/75>`_: Add strategy expansion for creating multiple analyses from parameter matrices
 + `github#76 <https://github.com/etive-io/asimov/pull/76>`_: Allow additional plugin flexibility
 + `github#83 <https://github.com/etive-io/asimov/pull/83>`_: Refactor file logging setup to ensure thread safety with a shared lock
++ `github#86 <https://github.com/etive-io/asimov/pull/86>`_: Add first-class Slurm scheduler support with bidirectional DAG translation and end-to-end CI coverage
++ `github#97 <https://github.com/etive-io/asimov/pull/97>`_: Fix issue with git init in project creation
++ `github#103 <https://github.com/etive-io/asimov/pull/103>`_: Fix the application of analyses
++ `github#107 <https://github.com/etive-io/asimov/pull/107>`_: Enforce waveform minimum frequency location (later corrected in #130)
++ `github#112 <https://github.com/etive-io/asimov/pull/112>`_: Fix ledger I/O
++ `github#115 <https://github.com/etive-io/asimov/pull/115>`_: Fix event apply
++ `github#116 <https://github.com/etive-io/asimov/pull/116>`_: Add CBCFlow integration tests and update apply_via_plugin to use current ledger
++ `github#117 <https://github.com/etive-io/asimov/pull/117>`_: Refactor event rendering and improve graph data generation
++ `github#118 <https://github.com/etive-io/asimov/pull/118>`_: Fix event apply (follow-up)
++ `github#121 <https://github.com/etive-io/asimov/pull/121>`_: Enhance scheduler support and testing pipelines
++ `github#122 <https://github.com/etive-io/asimov/pull/122>`_: Fix Slurm tests
++ `github#123 <https://github.com/etive-io/asimov/pull/123>`_: Improve and harden the report page
++ `github#124 <https://github.com/etive-io/asimov/pull/124>`_: Fix subject report
++ `github#128 <https://github.com/etive-io/asimov/pull/128>`_: Decouple GraceDB and unused LVK-only deps from asimov core
++ `github#129 <https://github.com/etive-io/asimov/pull/129>`_: Fix ``asimov production set -s <status>`` not persisting to the ledger
++ `github#130 <https://github.com/etive-io/asimov/pull/130>`_: Fix minimum frequency section: canonical location is likelihood, not waveform
++ `github#131 <https://github.com/etive-io/asimov/pull/131>`_: Remove built-in bayeswave, lalinference, and pesummary pipelines
++ `github#133 <https://github.com/etive-io/asimov/pull/133>`_: Fix CI: pin sphinx<9 for docs build, update cbcflow test fixture for v3 schema
 
 0.6.1
 =====
