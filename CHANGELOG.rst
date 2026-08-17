@@ -5,9 +5,10 @@ This is a major feature release representing a significant evolution of asimov's
 architecture and capabilities. It introduces a state-machine monitor loop, a flexible
 dependency specification system, a Python API, pydantic-validated priors, first-class
 Slurm scheduler support, and a hardened HTML report system. It also completes the
-plugin-extraction work begun in 0.6: GraceDB and the ``bayeswave``, ``lalinference``, and
-``pesummary`` pipelines no longer ship with core asimov, and now live in their own
+plugin-extraction work begun in 0.6: GraceDB and pipelines no longer ship with core asimov, they now live in their own
 optional plugin packages.
+
+This version is intended as a stepping-stone towards the required feature set for the IR1 run of the gravitational-wave detectors, but also as a first step towards making asimov into a more useful general-purpose tool.
 
 New Features
 ------------
@@ -83,7 +84,7 @@ Improvements
   Enhanced plugin system with additional flexibility for extending asimov's capabilities.
 
 **Scheduler Improvements**
-  Scheduler refresh implementation for better job management.
+  Scheduler refresh implementation for better job management, which should allow asimov to integrate more easily with a larger family of job schedulling systems in the future. At present htcondor and slurm are fully supported.
 
 **Removed Legacy Assumptions**
   Removed calibration categories and fixed hardcoded git branch assumptions for greater flexibility in deployment environments.
@@ -135,16 +136,13 @@ This release introduces significant architectural changes. While efforts have be
 - Dependency specification syntax (old syntax may need updating)
 - Prior specification format (now uses pydantic models)
 
-**Bundled Pipelines Reduced to Bilby and RIFT**
-  Support for the ``bayeswave``, ``lalinference``, and ``pesummary`` pipelines no longer
+**Bundled Pipelines Removed**
+  Support for the ``bilby``, ``rift``, ``bayeswave``, ``lalinference``, and ``pesummary`` pipelines no longer
   ships with core ``asimov``; each now lives exclusively in its own optional plugin package
-  (``asimov-bayeswave``, ``asimov-lalinference``, ``asimov-pesummary``), installed via the
+  (``bilby_pipe``, ``RIFT``, ``asimov-bayeswave``, ``asimov-lalinference``, ``asimov-pesummary``), installed via the
   same ``asimov.pipelines`` entry-point mechanism and the same pipeline names used in
   blueprints, following the pattern already established for GraceDB above. Blueprints that
   reference these pipelines will fail to apply unless the corresponding plugin is installed.
-  ``rift.py`` and ``bilby.py``'s post-completion hooks no longer import ``PESummary``
-  directly; they now discover the ``pesummary`` plugin at call time and raise a clear
-  installation error if it's missing.
 
 Known Issues
 ------------
