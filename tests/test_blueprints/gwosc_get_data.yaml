@@ -1,0 +1,5 @@
+kind: analysis
+name: get-data
+pipeline: gwdata
+download:
+  - frames

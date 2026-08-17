@@ -1,0 +1,23 @@
+name: 'Run Asimov Command'
+description: 'Execute asimov command as submituser'
+inputs:
+  script:
+    description: 'Full script to run inside the asimov env (include the asimov CLI if needed)'
+    required: true
+
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run asimov command
+      shell: bash -el {0}
+      run: |
+        CONDA_EXE="${CONDA_EXE:-$(which conda)}"
+        CONDA_BASE="$($CONDA_EXE info --base)"
+        su - submituser <<SUBMITUSER
+        source "${CONDA_BASE}/etc/profile.d/conda.sh"
+        conda activate asimov
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        ${{ inputs.script }}
+        SUBMITUSER

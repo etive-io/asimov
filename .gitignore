@@ -1,0 +1,39 @@
+*node_modules*
+.venv-simple
+docs/lvk
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Asimov specific
+.asimov/
+# Test temporary files
+tests/tmp/
+# Asimov specific
+.asimov/
+
+# Test artifacts
+tests/tmp/

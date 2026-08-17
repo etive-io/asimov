@@ -5,15 +5,33 @@ An important function of asimov is interaction with condor schedulers in order t
 
 In order to improve performance the code caches results from the query to the scheduler.
 
+Note: This module now uses the asimov.scheduler module internally for improved
+      scheduler abstraction. The functions here maintain backward compatibility.
+
 """
 
 import os
 import datetime
+import configparser
 from dateutil import tz
-import htcondor
+
+
+import warnings
+try:
+    warnings.filterwarnings("ignore", module="htcondor2")
+    import htcondor2 as htcondor  # NoQA
+except ImportError:
+    warnings.filterwarnings("ignore", module="htcondor")
+    import htcondor  # NoQA
+
+# htcondor2 exposes only HTCondorException; older htcondor has the specific subtypes.
+_HTCondorLocateError = getattr(htcondor, "HTCondorLocateError", htcondor.HTCondorException)
+_HTCondorIOError = getattr(htcondor, "HTCondorIOError", htcondor.HTCondorException)
+
 import yaml
 
 from asimov import config, logger, LOGGER_LEVEL
+from asimov.scheduler import HTCondor as HTCondorScheduler
 
 UTC = tz.tzutc()
 
@@ -42,19 +60,73 @@ def datetime_from_epoch(dt, tzinfo=UTC):
 
 def submit_job(submit_description):
     """
-    Submit a new job to the condor scheduller
+    Submit a new job to the condor scheduler.
+    
+    This function now uses the asimov.scheduler module internally while
+    maintaining backward compatibility with the original interface.
+    
+    Parameters
+    ----------
+    submit_description : dict
+        A dictionary containing the HTCondor submit description.
+        
+    Returns
+    -------
+    int
+        The cluster ID of the submitted job.
     """
+    # Try to get the configured scheduler name
+    try:
+        schedd_name = config.get("condor", "scheduler")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        schedd_name = None
+    
+    # Create the scheduler instance
+    scheduler = HTCondorScheduler(schedd_name=schedd_name)
+    
+    # Try to submit using the new scheduler interface
+    try:
+        cluster_id = scheduler.submit(submit_description)
+        logger.info(f"Submitted job with cluster ID: {cluster_id}")
+        return cluster_id
+    except Exception as e:
+        logger.error(f"Failed to submit job: {e}")
+        # Fall back to the old implementation for robustness
+        logger.info("Falling back to legacy submission method")
+        return _submit_job_legacy(submit_description)
 
+
+def _submit_job_legacy(submit_description):
+    """
+    Legacy job submission implementation (for backward compatibility).
+    
+    Parameters
+    ----------
+    submit_description : dict
+        A dictionary containing the HTCondor submit description.
+        
+    Returns
+    -------
+    int
+        The cluster ID of the submitted job.
+    """
     hostname_job = htcondor.Submit(submit_description)
 
     try:
-        # There should really be a specified submit node, and if there is, use it.
         schedulers = htcondor.Collector().locate(
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
         logger.info(f"Found scheduler: {schedd}")
-    except:  # NoQA
+        result = schedd.submit(hostname_job)
+        cluster_id = result.cluster()
+    except (
+        _HTCondorLocateError,
+        _HTCondorIOError,
+        configparser.NoOptionError,
+        configparser.NoSectionError,
+        KeyError,
+    ):  # Fall back to searching for any schedd on expected lookup/config errors
         # If you can't find a specified scheduler, try until it works
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -62,23 +134,61 @@ def submit_job(submit_description):
             logger.info(f"Found {collector}")
             schedd = htcondor.Schedd(collector)
             try:
-                with schedd.transaction() as txn:
-                    cluster_id = hostname_job.queue(txn)
-                    break
-            except htcondor.HTCondorIOError:
+                result = schedd.submit(hostname_job)
+                cluster_id = result.cluster()
+                break
+            except _HTCondorIOError:
                 logger.info(f"{collector} cannot receive jobs")
 
     return cluster_id
 
 
 def delete_job(cluster_id):
+    """
+    Delete a job from the condor scheduler.
+    
+    This function now uses the asimov.scheduler module internally while
+    maintaining backward compatibility with the original interface.
+    
+    Parameters
+    ----------
+    cluster_id : int
+        The cluster ID of the job to delete.
+    """
+    # Try to get the configured scheduler name
+    try:
+        schedd_name = config.get("condor", "scheduler")
+    except (configparser.NoOptionError, configparser.NoSectionError, KeyError):
+        schedd_name = None
+    
+    # Create the scheduler instance and delete the job
+    try:
+        scheduler = HTCondorScheduler(schedd_name=schedd_name)
+        scheduler.delete(cluster_id)
+        logger.info(f"Deleted job with cluster ID: {cluster_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete job using new scheduler: {e}")
+        # Fall back to the old implementation
+        logger.info("Falling back to legacy deletion method")
+        _delete_job_legacy(cluster_id)
+
+
+def _delete_job_legacy(cluster_id):
+    """
+    Legacy job deletion implementation (for backward compatibility).
+    
+    Parameters
+    ----------
+    cluster_id : int
+        The cluster ID of the job to delete.
+    """
     try:
         # There should really be a specified submit node, and if there is, use it.
         schedulers = htcondor.Collector().locate(
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to default schedd
         # If you can't find a specified scheduler, use the first one you find
         schedd = htcondor.Schedd()
     schedd.act(htcondor.JobAction.Remove, f"ClusterId == {cluster_id}")
@@ -91,7 +201,7 @@ def collect_history(cluster_id):
             htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler")
         )
         schedd = htcondor.Schedd(schedulers)
-    except:  # NoQA
+    except Exception:  # Catch all exceptions to fall back to searching for any schedd
         # If you can't find a specified scheduler, use the first one you find
         collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
         logger.info("Searching for a scheduler of any kind")
@@ -114,7 +224,7 @@ def collect_history(cluster_id):
                 )
                 logger.info(f"Jobs found: {jobs}")
                 break
-            except htcondor.HTCondorIOError:
+            except _HTCondorIOError:
                 logger.info(f"{collector} cannot receive jobs")
         if len(list(jobs)) == 0:
             raise ValueError
@@ -286,8 +396,12 @@ class CondorJobList:
             age = -os.stat(cache).st_mtime + datetime.datetime.now().timestamp()
             logger.info(f"Condor cache is {age} seconds old")
             if float(age) < float(config.get("condor", "cache_time")):
-                with open(cache, "r") as f:
-                    self.jobs = yaml.safe_load(f)
+                try:
+                    with open(cache, "r") as f:
+                        self.jobs = yaml.safe_load(f)
+                except yaml.constructor.ConstructorError:
+                    logger.warning("Cache contains unreadable YAML tags, refreshing")
+                    self.refresh()
             else:
                 self.refresh()
 
@@ -301,7 +415,7 @@ class CondorJobList:
 
         try:
             collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
-        except htcondor.HTCondorLocateError as e:
+        except _HTCondorLocateError as e:
             logger.error("Could not find a valid condor scheduler")
             logger.exception(e)
             raise e
@@ -310,7 +424,7 @@ class CondorJobList:
             try:
                 schedd = htcondor.Schedd(schedd_ad)
                 jobs = schedd.query(
-                    opts=htcondor.htcondor.QueryOpts.DefaultMyJobsOnly,
+                    opts=htcondor.QueryOpts.DefaultMyJobsOnly,
                     projection=[
                         "ClusterId",
                         "Cmd",
@@ -323,7 +437,7 @@ class CondorJobList:
                     ],
                 )
                 data += jobs
-            except:  # NoQA
+            except Exception:  # Catch all exceptions to skip problematic schedds
                 pass
 
             retdat = []
@@ -346,17 +460,20 @@ class CondorJobList:
 
         for datum in retdat:
             if not datum.dag:
-                self.jobs[datum.idno] = datum
+                self.jobs[datum.idno] = datum.to_dict()
                 # # Now search for subjobs
         for datum in retdat:
             if datum.dag:
                 if datum.dag in self.jobs:
-                    self.jobs[datum.dag].add_subjob(datum)
+                    # Reconstruct the parent job to add subjob
+                    parent_job = CondorJob.from_dict(self.jobs[datum.dag])
+                    parent_job.add_subjob(datum)
+                    self.jobs[datum.dag] = parent_job.to_dict()
                 else:
                     self.jobs[datum.idno] = datum.to_dict()
 
         with open(os.path.join(".asimov", "_cache_jobs.yaml"), "w") as f:
-            f.write(yaml.dump(self.jobs))
+            f.write(yaml.safe_dump(self.jobs))
 
 
 def get_job_priority(job_id):

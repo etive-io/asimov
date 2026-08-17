@@ -16,9 +16,9 @@ Details of the metadata stored in the production ledger can be found on the :ref
 .. code-block:: yaml
 
     calibration:
-      H1: C01_offline/calibration/H1.dat
-      L1: C01_offline/calibration/L1.dat
-      V1: C01_offline/calibration/V1.dat
+      H1: analyses/calibration/H1.dat
+      L1: analyses/calibration/L1.dat
+      V1: analyses/calibration/V1.dat
     data:
       channels:
 	H1: H1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01
@@ -59,9 +59,9 @@ Details of the metadata stored in the production ledger can be found on the :ref
 	status: ready
     psds:
       1024:
-	H1: /home/daniel.williams/events/O3/event_repos/S200224a/C01_offline/psds/1024/H1-psd.dat
-	L1: /home/daniel.williams/events/O3/event_repos/S200224a/C01_offline/psds/1024/L1-psd.dat
-	V1: /home/daniel.williams/events/O3/event_repos/S200224a/C01_offline/psds/1024/V1-psd.dat
+	H1: /home/daniel.williams/events/O3/event_repos/S200224a/analyses/psds/1024/H1-psd.dat
+	L1: /home/daniel.williams/events/O3/event_repos/S200224a/analyses/psds/1024/L1-psd.dat
+	V1: /home/daniel.williams/events/O3/event_repos/S200224a/analyses/psds/1024/V1-psd.dat
     quality:
       lower-frequency:
 	H1: 20

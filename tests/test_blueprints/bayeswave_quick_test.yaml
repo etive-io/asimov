@@ -1,0 +1,9 @@
+kind: analysis
+name: generate-psd
+pipeline: bayeswave
+comment: Bayeswave on-source PSD estimation process
+likelihood:
+  roll off time: 1
+  iterations: 25000
+  chains: 4
+  threads: 4

@@ -1,0 +1,7 @@
+# Test blueprint for the SimpleTestPipeline
+# This creates a simple analysis that will complete quickly for testing
+kind: analysis
+name: test-simple-pipeline
+pipeline: simpletestpipeline
+comment: Testing pipeline for SimpleAnalysis infrastructure
+status: ready

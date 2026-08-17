@@ -1,0 +1,70 @@
+---
+# Example blueprint demonstrating the new dependency management features
+
+# Simple name-based dependency (backward compatible)
+kind: analysis
+name: generate-psds
+pipeline: bayeswave
+status: finished
+
+---
+# Property-based dependency
+kind: analysis
+name: pe-analysis-1
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+status: finished
+needs:
+  - pipeline: bayeswave
+
+---
+# Multiple OR dependencies
+kind: analysis
+name: combiner
+pipeline: bilby
+status: ready
+needs:
+  - waveform.approximant: IMRPhenomXPHM
+  - pipeline: bayeswave
+
+---
+# AND logic using nested list
+kind: analysis
+name: approved-bayeswave
+pipeline: bilby
+status: ready
+needs:
+  - - pipeline: bayeswave
+    - review.status: approved
+
+---
+# Negation example
+kind: analysis
+name: non-bayeswave-combiner
+pipeline: bilby
+status: ready
+needs:
+  - pipeline: "!bayeswave"
+
+---
+# Complex AND/OR combination
+kind: analysis
+name: complex-analysis
+pipeline: bilby
+status: ready
+refreshable: true
+needs:
+  - - pipeline: bayeswave
+    - status: finished
+  - waveform.approximant: IMRPhenomXPHM
+
+---
+# Analysis with refreshable flag set
+kind: analysis
+name: auto-refresh
+pipeline: bilby
+status: ready
+refreshable: true
+needs:
+  - review.status: approved

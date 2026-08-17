@@ -113,6 +113,63 @@ test-python-313:
     - pip install bilby-pipe
     - python -m unittest discover tests/
 
+test-htcondor:
+  stage: test
+  image: htcondor/mini:latest
+  tags:
+    - docker-privileged
+  variables:
+    FF_NETWORK_PER_BUILD: "true"
+  before_script:
+    # Start HTCondor
+    - condor_master &
+    - sleep 10
+    - condor_status
+    
+    # Change to the submit user
+    - su - submituser
+    
+    # Set up conda environment
+    - wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+    - bash miniconda.sh -b -p $HOME/miniconda
+    - export PATH="$HOME/miniconda/bin:$PATH"
+    - conda init bash
+    - source ~/.bashrc
+    - conda config --set always_yes yes --set changeps1 no
+    - conda config --add channels conda-forge
+    - conda config --remove channels defaults || true
+    
+    # Create and activate environment
+    - conda create -n asimov python=3.9
+    - source activate asimov
+    
+    # Install dependencies & asimov
+    - conda install --file conda/environment.yaml
+    - conda install conda-build
+    - pip install .
+    
+    # Git configuration
+    - git config --global init.defaultBranch master
+    - git config --global user.email "ci@example.com"
+    - git config --global user.name "GitLab CI"
+  script:
+    # Create asimov project
+    - mkdir test_project
+    - cd test_project
+    - asimov init "Test Project"
+    - asimov apply -f ../tests/test_blueprints/gwosc_quick_test.yaml
+    
+    # Test Event Add
+    - asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
+    
+    # Commented out test - uncomment when ready
+    # - asimov apply -f ../tests/test_blueprints/gwosc_get_data.yaml -e GW150914_095045
+    # - asimov manage build
+    # - asimov manage submit 
+    # - sleep 300
+    # - ls working/GW150914_095045/get-data/*
+    # - asimov monitor
+
 # Build docs for multiple code versions
 pages:
   stage: build

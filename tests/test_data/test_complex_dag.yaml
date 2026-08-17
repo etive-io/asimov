@@ -1,13 +1,13 @@
 ---
 kind: analysis
 name: Prod0
-pipeline: bilby
+pipeline: simpletestpipelineb
 comment: PSD production
 status: uploaded
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 comment: PSD production
 status: ready
 needs:
@@ -15,7 +15,7 @@ needs:
 ---
 kind: analysis
 name: Prod2
-pipeline: bilby
+pipeline: simpletestpipelineb
 comment: PSD production
 status: ready
 needs:
@@ -23,7 +23,7 @@ needs:
 ---
 kind: analysis
 name: Prod3
-pipeline: lalinference
+pipeline: simpletestpipeline
 comment: PSD production
 status: ready
 needs: 
@@ -31,7 +31,7 @@ needs:
 ---
 kind: analysis
 name: Prod4
-pipeline: lalinference
+pipeline: simpletestpipeline
 comment: PSD production
 status: ready
 needs: 
@@ -40,6 +40,6 @@ needs:
 ---
 kind: analysis
 name: Prod5
-pipeline: lalinference
+pipeline: simpletestpipeline
 comment: PSD production
 status: wait

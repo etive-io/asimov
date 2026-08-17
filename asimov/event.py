@@ -2,12 +2,19 @@
 Trigger handling code.
 """
 
+import html
 import os
 import subprocess
+import sys
+import warnings
 
 import networkx as nx
 import yaml
-from ligo.gracedb.rest import GraceDb, HTTPError
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 from asimov import config, logger, LOGGER_LEVEL
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
@@ -73,10 +80,10 @@ class Event:
         self.logger = logger.getChild("event").getChild(f"{self.name}")
         self.logger.setLevel(LOGGER_LEVEL)
 
-        # pathlib.Path(os.path.join(config.get("logging", "directory"), name)).mkdir(
+        # pathlib.Path(os.path.join(config.get("logging", "location"), name)).mkdir(
         #    parents=True, exist_ok=True
         # )
-        # logfile = os.path.join(config.get("logging", "directory"), name, "asimov.log")
+        # logfile = os.path.join(config.get("logging", "location"), name, "asimov.log")
 
         # fh = logging.FileHandler(logfile)
         # formatter = logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
@@ -131,16 +138,35 @@ class Event:
 
         if "productions" in kwargs:
             for production in kwargs["productions"]:
-                if ("analyses" in production) or ("productions" in production):
+                # Normalise stored production structures. They may arrive either as
+                # {name: {..metadata..}} (preferred) or a flat dict. Ensure the
+                # inner dict carries the production name so downstream factories
+                # have the required fields.
+                if isinstance(production, dict) and len(production) == 1:
+                    prod_name, prod_meta = next(iter(production.items()))
+                    if prod_meta is None:
+                        prod_meta = {}
+                    if "name" not in prod_meta:
+                        prod_meta["name"] = prod_name
+                elif isinstance(production, dict):
+                    prod_meta = dict(production)
+                else:
+                    # Unknown structure; skip
+                    continue
+
+                if ("analyses" in prod_meta) or ("productions" in prod_meta):
                     self.add_production(
-                        SubjectAnalysis.from_dict(production, subject=self)
+                        SubjectAnalysis.from_dict(prod_meta, subject=self)
                     )
                 else:
                     self.add_production(
                         Production.from_dict(
-                            production, subject=self, ledger=self.ledger
+                            prod_meta, subject=self, ledger=self.ledger
                         )
                     )
+        # After all productions are added, update the graph to build dependency edges
+        # This ensures dependencies can be resolved regardless of order in the ledger
+        self.update_graph()
         self._check_required()
 
         if (
@@ -234,14 +260,43 @@ class Event:
         self.productions.append(production)
         self.graph.add_node(production)
 
-        if production.dependencies:
-            for dependency in production.dependencies:
-                if dependency == production:
-                    continue
-                analysis_dict = {
-                    production.name: production for production in self.productions
-                }
-                self.graph.add_edge(analysis_dict[dependency], production)
+        # Note: Dependencies are resolved dynamically when accessed, so we don't
+        # build edges here. Instead, call update_graph() after all productions
+        # are added to ensure the graph reflects current dependencies.
+        # This fixes the issue where dependencies appearing later in the ledger
+        # couldn't be found during initial loading.
+    
+    def update_graph(self):
+        """
+        Rebuild the dependency graph based on current production dependencies.
+
+        This is necessary because dependency queries (e.g., property-based filters)
+        are evaluated dynamically and may change as productions are added or modified.
+        Call this method before using the graph to ensure edges reflect current state.
+        """
+        # Clear all edges but keep nodes
+        self.graph.clear_edges()
+
+        # Rebuild edges based on current dependencies
+        analysis_dict = {production.name: production for production in self.productions}
+
+        for production in self.productions:
+            if production.dependencies:
+                for dependency_name in production.dependencies:
+                    if dependency_name == production.name:
+                        continue
+                    if dependency_name in analysis_dict:
+                        self.graph.add_edge(analysis_dict[dependency_name], production)
+
+        # Re-resolve SubjectAnalysis dependencies now that all productions are loaded
+        # This ensures smart dependencies work correctly regardless of production order
+        from asimov.analysis import SubjectAnalysis
+        for production in self.productions:
+            if isinstance(production, SubjectAnalysis):
+                production.resolve_analyses()
+                # Note: We don't add graph edges for SubjectAnalysis to avoid disrupting
+                # the topological layout. Instead, they'll be manually placed in the last
+                # layer during HTML generation (see html() method below)
 
     def __repr__(self):
         return f"<Event {self.name}>"
@@ -323,6 +378,12 @@ class Event:
         """
         Get a file from Gracedb, and store it in the event repository.
 
+        .. deprecated:: 0.8
+           This method will be removed from :class:`Event` in asimov 0.9.
+           GraceDB support now lives in the optional ``asimov-gracedb``
+           plugin; call its ``asimov.hooks.filesource`` hook directly once
+           this method is removed.
+
         Parameters
         ----------
         gfile : str
@@ -330,18 +391,34 @@ class Event:
         destination : str
            The location in the repository for this file.
         """
+        warnings.warn(
+            "Event.get_gracedb() will be removed from asimov core in 0.9; "
+            "it now delegates to the asimov-gracedb plugin's filesource hook.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         if "preferred event" in self.meta.get("ligo", {}):
             gid = self.meta["ligo"]["preferred event"]
         else:
             raise ValueError("No preferred event GID is included in this event's metadata.")
 
-        try:
-            client = GraceDb(service_url=config.get("gracedb", "url"))
-            file_obj = client.files(gid, gfile)
+        discovered = entry_points(group="asimov.hooks.filesource")
+        for hook in discovered:
+            if hook.name == "gracedb":
+                client = hook.load()(config)
+                break
+        else:
+            raise RuntimeError(
+                "GraceDB support requires the asimov-gracedb plugin. "
+                "Install it with `pip install asimov-gracedb`."
+            )
 
-            with open("download.file", "w") as dest_file:
-                dest_file.write(file_obj.read().decode())
+        try:
+            content = client.fetch(gid, gfile)
+
+            with open("download.file", "wb") as dest_file:
+                dest_file.write(content)
 
             if "xml" in gfile:
                 # Convert to the new xml format
@@ -357,11 +434,11 @@ class Event:
                 commit_message=f"Downloaded {gfile} from GraceDB",
             )
             self.logger.info(f"Fetched {gfile} from GraceDB")
-        except HTTPError as e:
+        except Exception as e:
             self.logger.error(
-                f"Unable to connect to GraceDB when attempting to download {gfile}. {e}"
+                f"Unable to fetch {gfile} from GraceDB. {e}"
             )
-            raise HTTPError(e)
+            raise
 
     def to_dict(self, productions=True):
         data = {}
@@ -381,7 +458,9 @@ class Event:
         if productions:
             data["productions"] = []
             for production in self.productions:
-                data["productions"].append(production.to_dict(event=False))
+                # Store production metadata keyed by its name so it can be
+                # reconstructed losslessly when reloading the ledger.
+                data["productions"].append({production.name: production.to_dict(event=False)})
 
         data["working directory"] = self.work_dir
         if "ledger" in data:
@@ -411,6 +490,9 @@ class Event:
         set
             A set of independent jobs which are not finished execution.
         """
+        # Update graph to reflect current dependencies
+        self.update_graph()
+        
         unfinished = self.graph.subgraph(
             [
                 production
@@ -461,23 +543,201 @@ class Event:
             production.build_report()
 
     def html(self):
+        # Helper function to get review info from a node
+        def get_review_info(node):
+            """Extract review status and message from a node."""
+            review_status = 'none'
+            review_message = ''
+            if hasattr(node, 'review') and len(node.review) > 0:
+                # Get the latest review message (Review class implements __getitem__)
+                latest_review = node.review[-1]
+                if latest_review:
+                    review_status = latest_review.status.lower() if latest_review.status else 'none'
+                    review_message = latest_review.message if latest_review.message else ''
+            return review_status, review_message
+        
         card = f"""
-        <div class="card event-data" id="card-{self.name}">
+        <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
         <div class="card-body">
-        <h3 class="card-title">{self.name}</h3>
+        <h3 class="card-title event-toggle">{self.name}</h3>
         """
 
-        card += "<h4>Analyses</h4>"
-        card += """<div class="list-group">"""
+        # Add event metadata if available
+        if hasattr(self, 'meta') and self.meta:
+            if "gps" in self.meta:
+                card += f"""<p class="text-muted">GPS Time: {self.meta['gps']}</p>"""
+            if "interferometers" in self.meta:
+                ifos = ", ".join(self.meta["interferometers"]) if isinstance(self.meta["interferometers"], list) else self.meta["interferometers"]
+                card += f"""<p class="text-muted">Interferometers: {ifos}</p>"""
 
-        for production in self.productions:
-            card += production.html()
+        # Generate graph-based workflow visualization (Mermaid + ELK)
+        if hasattr(self, 'graph') and self.graph and len(self.graph.nodes()) > 0:
+            self.update_graph()
 
-        card += """</div>"""
+            import re
+            import json as _json
 
-        # card += """
-        # </div></div>
-        # """
+            _REVIEW_PREFIX = {'approved': '✓ ', 'rejected': '✗ ', 'deprecated': '⊘ '}
+
+            def _safe_token(name):
+                """Sanitise a string into a token for Mermaid/DOM identifiers."""
+                return re.sub(r'[^a-zA-Z0-9_]', '_', str(name))
+
+            def _safe_dom_id(*parts):
+                dom_id = '-'.join(str(part) for part in parts if part is not None)
+                dom_id = re.sub(r'[^a-zA-Z0-9_-]', '-', dom_id).strip('-')
+                return dom_id or 'analysis-data'
+
+            def _escape_mermaid_label(value):
+                return (str(value)
+                        .replace('\\', '\\\\')
+                        .replace('"', '\\"')
+                        .replace('\r', ' ')
+                        .replace('\n', ' '))
+
+            card += f'<div class="workflow-graph" data-event-name="{self.name}">'
+            card += '<h4>Workflow Graph</h4>'
+            container_id = f'mermaid-{_safe_dom_id(self.name)}'
+            card += f'<div id="{container_id}" class="mermaid-container"></div>'
+
+            node_data_id_by_node = {}
+            try:
+                nodes_data = []
+                node_map = {}
+                node_mid_by_node = {}
+                event_prefix = f'event_{_safe_token(self.name)}'
+                for idx, node in enumerate(self.graph.nodes()):
+                    mid = f'{event_prefix}_{_safe_token(node.name)}_{idx}'
+                    data_id = _safe_dom_id('analysis-data', self.name, node.name, idx)
+                    node_mid_by_node[node] = mid
+                    node_data_id_by_node[node] = data_id
+                    node_map[mid] = data_id
+                    status = (node.status or 'unknown') if hasattr(node, 'status') else 'unknown'
+                    review_status, _ = get_review_info(node)
+                    pipeline_name = (node.pipeline.name
+                                     if hasattr(node, 'pipeline') and node.pipeline else '')
+                    prefix = _REVIEW_PREFIX.get(review_status, '')
+                    label = _escape_mermaid_label(f'{prefix}{node.name}') + ('<br/><small>' + _escape_mermaid_label(pipeline_name) + '</small>' if pipeline_name else '')
+                    is_subject = (getattr(node, 'category', '') == 'subject_analyses')
+                    nodes_data.append({
+                        'id': mid,
+                        'label': label,
+                        'status': status,
+                        'review': review_status,
+                        'isSubject': is_subject,
+                        'dataId': data_id,
+                    })
+
+                edges_data = [{'from': node_mid_by_node[s], 'to': node_mid_by_node[t]}
+                              for s, t in self.graph.edges()
+                              if s in node_mid_by_node and t in node_mid_by_node]
+
+                event_name_js = _json.dumps(self.name)
+                container_id_js = _json.dumps(container_id)
+                nodes_js = _json.dumps(nodes_data)
+                edges_js = _json.dumps(edges_data)
+                node_map_js = _json.dumps(node_map)
+
+                card += f"""<script>
+window.asimovGraphs = window.asimovGraphs || {{}};
+window.asimovGraphs[{event_name_js}] = {{
+  containerId: {container_id_js},
+  nodes: {nodes_js},
+  edges: {edges_js}
+}};
+window.asimovNodeMap = window.asimovNodeMap || {{}};
+Object.assign(window.asimovNodeMap, {node_map_js});
+</script>"""
+
+            except Exception as e:
+                card += f'<p class="text-muted">Error generating graph data: {str(e)}</p>'
+
+            # Hidden data containers for modal — one per analysis node
+            try:
+                import os as _os
+
+                for node in self.graph.nodes():
+                    status = node.status if hasattr(node, 'status') else 'unknown'
+                    review_status, review_message = get_review_info(node)
+                    status_badge = status_map.get(status, 'secondary')
+                    pipeline_name = (node.pipeline.name
+                                     if hasattr(node, 'pipeline') and node.pipeline else '')
+                    data_id = node_data_id_by_node.get(
+                        node, _safe_dom_id('analysis-data', self.name, node.name)
+                    )
+
+                    def _node_attr(attr, fallback=''):
+                        return getattr(node, attr, None) or fallback
+
+                    comment = _node_attr('comment')
+                    rundir = _node_attr('rundir')
+                    approximant = (node.meta.get('approximant', '')
+                                   if hasattr(node, 'meta') else '')
+
+                    webdir = ''
+                    if hasattr(node, 'event') and hasattr(node.event, 'webdir') and node.event.webdir:
+                        webdir = node.event.webdir
+
+                    result_pages = []
+                    pages_dir = ''
+                    modal_plots_str = ''
+                    modal_plot_labels_str = ''
+                    if webdir and rundir:
+                        rundir_name = _os.path.basename(rundir.rstrip('/'))
+                        base_url = f"{webdir}/{rundir_name}"
+                        if pipeline_name.lower() == 'bilby':
+                            result_pages.append(f"{base_url}/result/homepage.html|Bilby Results")
+                            result_pages.append(f"{base_url}/result/corner.png|Corner Plot")
+                        elif pipeline_name.lower() == 'bayeswave':
+                            result_pages.append(f"{base_url}/post/megaplot.png|Bayeswave Megaplot")
+                        elif pipeline_name.lower() == 'pesummary':
+                            result_pages.append(f"{base_url}/home.html|PESummary Results")
+
+                    default_plots = ['luminosity_distance', 'chirp_mass']
+                    modal_plots = (self.meta.get('report', {}).get('modal_plots', default_plots)
+                                   if hasattr(self, 'meta') and self.meta else default_plots)
+
+                    if pipeline_name.lower() in ('bilby', 'pesummary') and status in ('finished', 'uploaded'):
+                        pages_dir = f"{self.name}/{node.name}/pesummary"
+                        result_pages.append(f"{pages_dir}/home.html|Summary Pages")
+                        modal_plots_str = ' '.join(modal_plots)
+                        # bilby: label is the analysis name itself
+                        # pesummary: labels are the resolved source analyses (combined page)
+                        source_labels = ([a.name for a in node.analyses]
+                                         if hasattr(node, 'analyses') and node.analyses
+                                         else [node.name])
+                        modal_plot_labels_str = ' '.join(source_labels)
+
+                    result_pages_str = ';;'.join(result_pages)
+                    result_pages_str_escaped = html.escape(result_pages_str, quote=True)
+                    pages_dir_escaped = html.escape(pages_dir, quote=True)
+                    modal_plots_str_escaped = html.escape(modal_plots_str, quote=True)
+                    modal_plot_labels_str_escaped = html.escape(modal_plot_labels_str, quote=True)
+                    dependencies = node.dependencies if hasattr(node, 'dependencies') else []
+                    dependencies_str = ', '.join(dependencies) if dependencies else ''
+                    dependencies_str_escaped = html.escape(dependencies_str, quote=True)
+                    review_message_escaped = html.escape(review_message, quote=True)
+
+                    card += f"""<div id="{data_id}" style="display:none;"
+                         data-name="{node.name}"
+                         data-status="{status}"
+                         data-status-badge="{status_badge}"
+                         data-pipeline="{pipeline_name}"
+                         data-rundir="{rundir}"
+                         data-approximant="{approximant}"
+                         data-comment="{comment}"
+                         data-dependencies="{dependencies_str_escaped}"
+                         data-review-status="{review_status}"
+                         data-review-message="{review_message_escaped}"
+                         data-result-pages="{result_pages_str_escaped}"
+                         data-pages-dir="{pages_dir_escaped}"
+                         data-modal-plots="{modal_plots_str_escaped}"
+                         data-modal-plot-labels="{modal_plot_labels_str_escaped}"></div>"""
+
+            except Exception as e:
+                card += f'<p class="text-muted">Error generating modal data: {str(e)}</p>'
+
+            card += '</div>'
 
         return card
 

@@ -24,19 +24,22 @@ Project analyses
 """
 
 import os
+import html
+import urllib.parse
 import configparser
 from copy import deepcopy
 import pathlib
 
 from functools import reduce
 import operator
+from typing import TYPE_CHECKING, Any, Optional, List, cast
 
 from liquid import Liquid
 
-from asimov import config, logger, LOGGER_LEVEL
-from asimov.pipelines import known_pipelines
-from asimov.utils import update, diff_dict
-from asimov.storage import Store
+from . import config, logger, LOGGER_LEVEL
+from .pipelines import known_pipelines
+from .utils import update, diff_dict
+from .storage import Store
 
 from .review import Review
 from .ini import RunConfiguration
@@ -70,9 +73,24 @@ class Analysis:
     The base class for all other types of analysis.
     """
 
-    meta = {}
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": {}, "likelihood": {}}
-    _reviews = Review()
+    meta: dict[str, Any] = {}
+    meta_defaults: dict[str, Any] = {"scheduler": {}, "sampler": {}, "likelihood": {}}
+
+    # These annotations help static analysis without affecting runtime state
+    if TYPE_CHECKING:
+        event: Any
+        subject: Any
+        name: str
+        pipeline: Any
+        comment: Optional[str]
+        _needs: List[Any]
+        _reviews: Review
+        status_str: str
+        repository: Any
+        ledger: Any
+        analyses: List[Any]
+        productions: List[Any]
+        _analysis_spec: Any
 
     @property
     def review(self):
@@ -82,7 +100,8 @@ class Analysis:
         if "review" in self.meta:
             if len(self.meta["review"]) > 0:
                 self._reviews = Review.from_dict(self.meta["review"], production=self)
-                self.meta.pop("review")
+            # Always remove 'review' from meta since we manage it via _reviews
+            self.meta.pop("review")
         return self._reviews
 
     def _process_dependencies(self, needs):
@@ -92,27 +111,124 @@ class Analysis:
         The dependencies can be provided either as the name of a production,
         or a query against the analysis's attributes.
 
+        The needs list supports complex dependency specifications:
+        - Simple name: "Prod1" matches analysis with name "Prod1"
+        - Property query: "waveform.approximant: IMRPhenomXPHM" matches analyses
+          with that waveform approximant
+        - Negation: "review.status: !approved" matches analyses that are NOT approved
+        - Nested lists for AND logic: [["review.status: approved", "waveform.approximant: IMRPhenomXPHM"]]
+          matches analyses that satisfy ALL conditions in the nested list
+        - Top-level items are OR'd together
+        - Optional dependencies: {"optional": true, "pipeline": "bilby"} marks dependency as optional
+
         Parameters
         ----------
         needs : list
-           A list of all the requirements
+           A list of all the requirements. Can contain strings (OR'd together),
+           or lists of strings (AND'd together internally, OR'd with other items),
+           or dicts with optional flag
 
         Returns
         -------
         list
            A list of all the requirements processed for evaluation.
+           Each item is either a tuple (attribute, match, negate, optional) for simple filters,
+           or a list of tuples for AND groups.
         """
         all_requirements = []
         for need in deepcopy(needs):
-            try:
-                requirement = need.split(":")
-                requirement = [requirement[0].split("."), requirement[1]]
-            except IndexError:
-                requirement = [["name"], need]
-            except AttributeError:
-                requirement = need
-            all_requirements.append(requirement)
+            # Check if this is an AND group (list of conditions)
+            if isinstance(need, list):
+                and_group = []
+                for condition in need:
+                    and_group.append(self._parse_single_dependency(condition))
+                all_requirements.append(and_group)
+            else:
+                # Single condition
+                all_requirements.append(self._parse_single_dependency(need))
         return all_requirements
+    
+    def _parse_single_dependency(self, need):
+        """
+        Parse a single dependency specification into (attribute, match, negate, optional) tuple.
+        
+        Handles multiple formats:
+        - String: "waveform.approximant: IMRPhenomXPHM" (with quotes in YAML)
+        - Dict (simple): {waveform.approximant: IMRPhenomXPHM} (without quotes in YAML)
+        - Dict (optional): {optional: true, pipeline: bilby} (marks dependency as optional)
+        
+        Parameters
+        ----------
+        need : str or dict
+            A single dependency specification
+            
+        Returns
+        -------
+        tuple
+            (attribute_list, match_value, is_negated, is_optional)
+        """
+        negate = False
+        optional = False
+        
+        # Handle dict format (when YAML parses without quotes)
+        if isinstance(need, dict):
+            # Check for optional flag
+            if "optional" in need:
+                optional = bool(need.get("optional", False))
+                # Remove optional key and process remaining as dependency
+                dep_dict = {k: v for k, v in need.items() if k != "optional"}
+                if len(dep_dict) == 1:
+                    key, value = list(dep_dict.items())[0]
+                    key_str = str(key).strip()
+                    attribute = key_str.split(".")
+                    match_value = str(value).strip()
+                    
+                    # Check for negation
+                    if match_value.startswith("!"):
+                        negate = True
+                        match_value = match_value[1:].strip()
+                        
+                    return (attribute, match_value, negate, optional)
+                else:
+                    raise ValueError(
+                        f"Invalid optional dependency format: expected one dependency key "
+                        f"plus 'optional', got {list(dep_dict.keys())}: {need}"
+                    )
+            # Handle simple dict format
+            elif len(need) == 1:
+                key, value = list(need.items())[0]
+                key_str = str(key).strip()
+                attribute = key_str.split(".")
+                match_value = str(value).strip()
+                
+                # Check for negation
+                if match_value.startswith("!"):
+                    negate = True
+                    match_value = match_value[1:].strip()
+                    
+                return (attribute, match_value, negate, optional)
+            else:
+                raise ValueError(
+                    f"Invalid dependency dict format: expected a single key-value pair, "
+                    f"got {len(need)} entries: {need}"
+                )
+        
+        # Handle string format (with quotes in YAML)
+        try:
+            # Handle "attribute: value" format
+            parts = need.split(":", 1)
+            attribute = parts[0].strip().split(".")
+            match_value = parts[1].strip()
+            
+            # Check for negation
+            if match_value.startswith("!"):
+                negate = True
+                match_value = match_value[1:].strip()
+            
+            return (attribute, match_value, negate, optional)
+        except (IndexError, AttributeError):
+            # Plain name without colon
+            return (["name"], need, False, optional)
 
     @property
     def job_id(self):
@@ -133,26 +249,246 @@ class Analysis:
 
     @property
     def dependencies(self):
-        """Return a list of analyses which this analysis depends upon."""
+        """
+        Return a list of analyses which this analysis depends upon.
+        
+        The dependency resolution supports complex logic:
+        - Top-level items in needs are OR'd together
+        - Nested lists represent AND conditions (all must match)
+        - Individual filters can be negated with !
+        
+        Returns
+        -------
+        list
+            List of analysis names that this analysis depends on
+        """
         all_matches = []
         if len(self._needs) == 0:
             return []
         else:
-            matches = set({})  # set(self.event.analyses)
-            # matches.remove(self)
+            matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
-            for attribute, match in requirements:
+            
+            for requirement in requirements:
+                if isinstance(requirement, list):
+                    # This is an AND group - all conditions must match
+                    and_matches = set(self.event.analyses)
+                    for parsed_dep in requirement:
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(parsed_dep) == 4:
+                            attribute, match, negate, optional = parsed_dep
+                        else:
+                            attribute, match, negate = parsed_dep
+                            optional = False
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate),
+                                and_matches,
+                            )
+                        )
+                        and_matches = set(filtered_analyses)
+                    matches = set.union(matches, and_matches)
+                else:
+                    # Single condition
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(requirement) == 4:
+                        attribute, match, negate, optional = requirement
+                    else:
+                        attribute, match, negate = requirement
+                        optional = False
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            self.event.analyses,
+                        )
+                    )
+                    matches = set.union(matches, set(filtered_analyses))
+            
+            # Exclude self-dependencies
+            for analysis in matches:
+                if analysis.name != self.name:
+                    all_matches.append(analysis.name)
+
+            return all_matches
+    
+    @property
+    def required_dependencies(self):
+        """
+        Return a list of required (non-optional) dependencies.
+        
+        This evaluates the needs specification and returns only dependencies
+        that are not marked as optional. If a required dependency is not found
+        in the ledger, the analysis should not run.
+        
+        Returns
+        -------
+        list
+            List of dependency specifications that are required
+        """
+        if len(self._needs) == 0:
+            return []
+        
+        required_specs = []
+        requirements = self._process_dependencies(deepcopy(self._needs))
+        
+        for requirement in requirements:
+            if isinstance(requirement, list):
+                # This is an AND group - check if all are optional
+                all_optional = all(
+                    parsed_dep[3] if len(parsed_dep) == 4 else False
+                    for parsed_dep in requirement
+                )
+                if not all_optional:
+                    required_specs.append(requirement)
+            else:
+                # Single condition - check if optional
+                is_optional = requirement[3] if len(requirement) == 4 else False
+                if not is_optional:
+                    required_specs.append(requirement)
+        
+        return required_specs
+    
+    @property
+    def has_required_dependencies_satisfied(self):
+        """
+        Check if all required dependencies are satisfied.
+        
+        A required dependency is satisfied if at least one analysis in the ledger
+        matches its specification. Optional dependencies don't affect this check.
+        
+        Returns
+        -------
+        bool
+            True if all required dependencies are satisfied (or there are no required deps),
+            False if any required dependency has no matches
+        """
+        required_specs = self.required_dependencies
+        
+        if len(required_specs) == 0:
+            # No required dependencies, so they're all satisfied
+            return True
+        
+        for requirement in required_specs:
+            if isinstance(requirement, list):
+                # This is an AND group - all conditions must match at least one analysis
+                and_matches = set(self.event.analyses)
+                for parsed_dep in requirement:
+                    if len(parsed_dep) == 4:
+                        attribute, match, negate, optional = parsed_dep
+                    else:
+                        attribute, match, negate = parsed_dep
+                        optional = False
+                    
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            and_matches,
+                        )
+                    )
+                    and_matches = set(filtered_analyses)
+                
+                # If no analyses match this AND group, requirement not satisfied
+                if len(and_matches) == 0:
+                    return False
+            else:
+                # Single condition
+                if len(requirement) == 4:
+                    attribute, match, negate, optional = requirement
+                else:
+                    attribute, match, negate = requirement
+                    optional = False
+                
                 filtered_analyses = list(
                     filter(
-                        lambda x: x.matches_filter(attribute, match),
+                        lambda x: x.matches_filter(attribute, match, negate),
                         self.event.analyses,
                     )
                 )
-                matches = set.union(matches, set(filtered_analyses))
-            for analysis in matches:
-                all_matches.append(analysis.name)
-
-            return all_matches
+                
+                # If no analyses match this requirement, it's not satisfied
+                if len(filtered_analyses) == 0:
+                    return False
+        
+        # All required dependencies have at least one match
+        return True
+    
+    @property
+    def resolved_dependencies(self):
+        """
+        Get the list of dependencies that were resolved when this analysis was run.
+        
+        This is used to track if dependencies have changed since the analysis ran,
+        which would make the analysis stale.
+        
+        Returns
+        -------
+        list or None
+            List of analysis names that were dependencies when this ran, or None if not yet run
+        """
+        if "resolved_dependencies" in self.meta:
+            return self.meta["resolved_dependencies"]
+        return None
+    
+    @resolved_dependencies.setter
+    def resolved_dependencies(self, value):
+        """
+        Store the resolved dependencies for this analysis.
+        
+        Parameters
+        ----------
+        value : list
+            List of analysis names that are current dependencies
+        """
+        self.meta["resolved_dependencies"] = value
+    
+    @property
+    def is_stale(self):
+        """
+        Check if this analysis is stale (dependencies have changed since it was run).
+        
+        An analysis is considered stale if:
+        1. It has been run (has resolved_dependencies)
+        2. The current dependencies differ from the resolved dependencies
+        
+        Returns
+        -------
+        bool
+            True if the analysis is stale, False otherwise
+        """
+        if self.resolved_dependencies is None:
+            # Never run, so not stale
+            return False
+        
+        current_deps = set(self.dependencies)
+        resolved_deps = set(self.resolved_dependencies)
+        
+        return current_deps != resolved_deps
+    
+    @property
+    def is_refreshable(self):
+        """
+        Check if this analysis should be automatically refreshed when stale.
+        
+        Returns
+        -------
+        bool
+            True if the analysis is marked as refreshable
+        """
+        if "refreshable" in self.meta:
+            return self.meta["refreshable"]
+        return False
+    
+    @is_refreshable.setter
+    def is_refreshable(self, value):
+        """
+        Mark this analysis as refreshable or not.
+        
+        Parameters
+        ----------
+        value : bool
+            Whether the analysis should be automatically refreshed
+        """
+        self.meta["refreshable"] = bool(value)
 
     @property
     def priors(self):
@@ -161,10 +497,33 @@ class Analysis:
         else:
             priors = None
         return priors
+    
+    @priors.setter
+    def priors(self, value):
+        """
+        Set priors with validation.
+        
+        Parameters
+        ----------
+        value : dict or PriorDict
+            The prior specification
+        """
+        from asimov.priors import PriorDict
+        
+        if value is None:
+            self.meta["priors"] = None
+        elif isinstance(value, PriorDict):
+            self.meta["priors"] = value.to_dict()
+        elif isinstance(value, dict):
+            # Validate using pydantic
+            validated = PriorDict.from_dict(value)
+            self.meta["priors"] = validated.to_dict()
+        else:
+            raise TypeError(f"priors must be dict or PriorDict, got {type(value)}")
 
     @property
     def finished(self):
-        finished_states = ["finished", "processing", "uploaded"]
+        finished_states = ["finished", "processing", "uploaded", "complete"]
         return self.status in finished_states
 
     @property
@@ -175,7 +534,7 @@ class Analysis:
     def status(self, value):
         self.status_str = value.lower()
 
-    def matches_filter(self, attribute, match):
+    def matches_filter(self, attribute, match, negate=False):
         """
         Checks to see if this analysis matches a given filtering
         criterion.
@@ -187,6 +546,8 @@ class Analysis:
 
             - processing status
 
+            - pipeline
+
             - name
 
         In addition, any quantity contained in the analysis metadata
@@ -197,10 +558,12 @@ class Analysis:
 
         Parameters
         ----------
-        attribute : str
-           The name of the attribute to be tested
+        attribute : list
+           The attribute path to be tested (e.g., ["waveform", "approximant"])
         match : str
            The string to be matched against the value of the attribute
+        negate : bool, optional
+           If True, invert the match result (default: False)
 
         Returns
         -------
@@ -211,20 +574,42 @@ class Analysis:
         is_review = False
         is_status = False
         is_name = False
+        is_pipeline = False
         in_meta = False
+        
         if attribute[0] == "review":
             is_review = match.lower() == str(self.review.status).lower()
         elif attribute[0] == "status":
             is_status = match.lower() == self.status.lower()
         elif attribute[0] == "name":
             is_name = match == self.name
+        elif attribute[0] == "pipeline":
+            # Check pipeline object first; metadata is a fallback only when the
+            # object gives no answer (avoids SubjectAnalysis inheriting the event's
+            # pipeline meta and incorrectly matching its parent's pipeline name).
+            pipeline_obj_checked = False
+            if hasattr(self, 'pipeline'):
+                if hasattr(self.pipeline, 'name'):
+                    is_pipeline = match.lower() == self.pipeline.name.lower()
+                    pipeline_obj_checked = True
+                elif isinstance(self.pipeline, str):
+                    is_pipeline = match.lower() == self.pipeline.lower()
+                    pipeline_obj_checked = True
+            if not pipeline_obj_checked and 'pipeline' in self.meta:
+                is_pipeline = match.lower() == self.meta['pipeline'].lower()
         else:
             try:
-                in_meta = reduce(operator.getitem, attribute, self.meta) == match
-            except KeyError:
+                meta_value = reduce(operator.getitem, attribute, self.meta)
+                in_meta = str(meta_value).lower() == str(match).lower()
+            except (KeyError, TypeError, AttributeError):
                 in_meta = False
 
-        return is_name | in_meta | is_status | is_review
+        result = is_name | in_meta | is_status | is_review | is_pipeline
+        
+        # Apply negation if requested
+        if negate:
+            return not result
+        return result
 
     def results(self, filename=None, handle=False, hash=None):
         store = Store(root=config.get("storage", "results_store"))
@@ -246,7 +631,7 @@ class Analysis:
         """
         Return the run directory for this analysis.
         """
-        if "rundir" in self.meta:
+        if "rundir" in self.meta and self.meta["rundir"] is not None:
             return os.path.abspath(self.meta["rundir"])
         elif "working directory" in self.subject.meta:
             value = os.path.join(self.subject.meta["working directory"], self.name)
@@ -314,12 +699,15 @@ class Analysis:
             if hasattr(pipeline, "config_template"):
                 template_file = pipeline.config_template
             else:
-                from pkg_resources import resource_filename
+                try:
+                    from importlib.resources import files
+                except ImportError:
+                    from importlib_resources import files
 
-                template_file = resource_filename("asimov", f"configs/{template}")
+                template_file = str(files("asimov").joinpath(f"configs/{template}"))
 
         liq = Liquid(template_file)
-        rendered = liq.render(production=self, analysis=self, config=config)
+        rendered = liq.render(production=self, analysis=self, pipeline=pipeline, config=config)
         with open(filename, "w") as output_file:
             output_file.write(rendered)
 
@@ -336,6 +724,17 @@ class Analysis:
         card = ""
 
         card += f"<div class='asimov-analysis asimov-analysis-{self.status}'>"
+        
+        # Add running indicator for active analyses
+        if self.status in ["running", "processing"]:
+            card += """<span class="running-indicator"></span>"""
+        
+        # Add stale indicator if applicable
+        if self.is_stale:
+            stale_class = "stale-refreshable" if self.is_refreshable else "stale"
+            stale_text = "Stale (will refresh)" if self.is_refreshable else "Stale"
+            card += f"""<span class="stale-indicator {stale_class}" title="Dependencies have changed since this analysis was run">{stale_text}</span>"""
+        
         card += f"<h4>{self.name}"
 
         if self.comment:
@@ -343,35 +742,92 @@ class Analysis:
                 f"""  <small class="asimov-comment text-muted">{self.comment}</small>"""
             )
         card += "</h4>"
+        
         if self.status:
             card += f"""<p class="asimov-status">
   <span class="badge badge-pill badge-{status_map[self.status]}">{self.status}</span>
 </p>"""
 
         if self.pipeline:
-            card += f"""<p class="asimov-pipeline-name">{self.pipeline.name}</p>"""
+            card += f"""<p class="asimov-pipeline-name"><strong>Pipeline:</strong> {self.pipeline.name}</p>"""
 
-        if self.pipeline:
-            # self.pipeline.collect_pages()
-            card += self.pipeline.html()
+        # Build collapsible details section
+        has_details = bool(
+            self.rundir or 
+            "approximant" in production.meta or 
+            "sampler" in production.meta or
+            "quality" in production.meta or
+            self.pipeline or
+            self.dependencies or
+            self.resolved_dependencies or
+            (hasattr(self, 'analyses') and self.analyses)
+        )
+        
+        if has_details:
+            card += """<a class="toggle-details">▶ Show details</a>"""
+            card += """<div class="details-content">"""
+            
+            # Show source analyses for SubjectAnalysis
+            if hasattr(self, 'analyses') and self.analyses:
+                if hasattr(self.analyses, "__iter__"):
+                    card += """<p class="asimov-source-analyses"><strong>Source Analyses:</strong><br>"""
+                    source_analysis_html = []
+                    for analysis in self.analyses:
+                        status_color = status_map.get(analysis.status, 'secondary')
+                        source_analysis_html.append(
+                            f"""<span class="badge badge-{status_color}">{analysis.name}</span>"""
+                        )
+                    card += " ".join(source_analysis_html)
+                    card += """</p>"""
+            
+            # Show dependencies
+            if self.dependencies:
+                if hasattr(self.dependencies, "__iter__"):
+                    card += """<p class="asimov-dependencies"><strong>Current Dependencies:</strong><br>"""
+                    card += ", ".join(self.dependencies)
+                    card += """</p>"""
+            
+            # Show resolved dependencies if different from current
+            if self.resolved_dependencies and self.resolved_dependencies != self.dependencies:
+                if hasattr(self.dependencies, "__iter__"):  
+                    card += """<p class="asimov-resolved-dependencies"><strong>Resolved Dependencies (when run):</strong><br>"""
+                    card += ", ".join(self.resolved_dependencies)
+                    card += """</p>"""
+            
+            if self.pipeline:
+                # self.pipeline.collect_pages()
+                card += self.pipeline.html()
 
-        if self.rundir:
-            card += f"""<p class="asimov-rundir"><code>{production.rundir}</code></p>"""
-        else:
-            card += """&nbsp;"""
+            if self.rundir:
+                card += f"""<p class="asimov-rundir"><strong>Run directory:</strong><br><code>{production.rundir}</code></p>"""
 
-        if "approximant" in production.meta:
-            card += f"""<p class="asimov-attribute">Waveform approximant:
+            if "approximant" in production.meta:
+                card += f"""<p class="asimov-attribute"><strong>Waveform approximant:</strong>
    <span class="asimov-approximant">{production.meta['approximant']}</span>
 </p>"""
 
-        card += """&nbsp;"""
+            # Add more metadata if available
+            if "sampler" in production.meta and production.meta["sampler"]:
+                if isinstance(production.meta["sampler"], dict):
+                    for key, value in production.meta["sampler"].items():
+                        card += f"""<p class="asimov-attribute"><strong>{key}:</strong> {value}</p>"""
+                        
+            if "quality" in production.meta:
+                card += f"""<p class="asimov-attribute"><strong>Quality:</strong> {production.meta['quality']}</p>"""
+
+            card += """</div>"""
+        
         card += """</div>"""
 
-        if len(self.review) > 0:
-            for review in self.review:
-                card += review.html()
+        try:
+            if len(self.review) > 0:
+                for review in self.review:
+                    card += review.html()
 
+        except TypeError:
+            # The mocked review object doesn't support len()
+            pass
+        
         return card
 
     def to_dict(self, event=True):
@@ -414,12 +870,22 @@ class Analysis:
             dictionary[key] = value
 
         dictionary["status"] = self.status
-        dictionary["job id"] = self.job_id
+        # dictionary["job id"] = self.job_id
 
         # Remove duplicates of pipeline defaults
-        if self.pipeline.name.lower() in self.event.ledger.data["pipelines"]:
+        pipeline_obj = getattr(self, "pipeline", None)
+        if (
+            hasattr(self, "event")
+            and self.event
+            and hasattr(self.event, "ledger")
+            and self.event.ledger
+            and "pipelines" in self.event.ledger.data
+            and pipeline_obj is not None
+            and hasattr(pipeline_obj, "name")
+            and pipeline_obj.name.lower() in self.event.ledger.data["pipelines"]
+        ):
             defaults = deepcopy(
-                self.event.ledger.data["pipelines"][self.pipeline.name.lower()]
+                self.event.ledger.data["pipelines"][pipeline_obj.name.lower()]
             )
         else:
             defaults = {}
@@ -431,6 +897,12 @@ class Analysis:
 
         defaults = update(defaults, deepcopy(self.event.meta))
         dictionary = diff_dict(defaults, dictionary)
+        
+        # Ensure critical fields are always saved, even if they match defaults
+        # This is necessary to support old ledgers and ensure status updates persist
+        dictionary["status"] = self.status
+        if self.job_id is not None:
+            dictionary["job id"] = self.job_id
 
         if "repository" in self.meta:
             dictionary["repository"] = self.repository.url
@@ -461,7 +933,7 @@ class SimpleAnalysis(Analysis):
         self.name = name
 
         pathlib.Path(
-            os.path.join(config.get("logging", "directory"), self.event.name, name)
+            os.path.join(config.get("logging", "location"), self.event.name, name)
         ).mkdir(parents=True, exist_ok=True)
 
         self.logger = logger.getChild("analysis").getChild(
@@ -480,6 +952,9 @@ class SimpleAnalysis(Analysis):
             self.status_str = "none"
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
 
         # Start by adding pipeline defaults
         if "pipelines" in self.event.ledger.data:
@@ -504,10 +979,8 @@ class SimpleAnalysis(Analysis):
         self.pipeline = pipeline.lower()
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
-        if "needs" in self.meta:
-            self._needs = self.meta.pop("needs")
-        else:
-            self._needs = []
+        needs_value = self.meta.pop("needs", None)
+        self._needs = cast(List[Any], needs_value) if needs_value is not None else []
 
         self.comment = kwargs.get("comment", None)
 
@@ -566,41 +1039,145 @@ class SubjectAnalysis(Analysis):
             self.status_str = "none"
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
+        
         self.meta = update(self.meta, deepcopy(self.subject.meta))
+        # Avoid inheriting full productions/analyses blobs from the subject; they bloat the ledger
+        for noisy_key in ["productions", "analyses"]:
+            if noisy_key in self.meta:
+                self.meta.pop(noisy_key)
         self.meta = update(self.meta, deepcopy(kwargs))
 
-        self._analysis_spec = self.meta.get("needs")
-
+        self._analysis_spec = self.meta.get("needs") or self.meta.get("analyses")
+        # Store the analysis spec names for refresh checking (if it's just a list of names).
+        # This lets us detect when dependencies have changed without blocking submission.
+        self._analysis_spec_names = []
         if self._analysis_spec:
-            requirements = self._process_dependencies(self._analysis_spec)
-            self.analyses = []
-            for attribute, match in requirements:
-                matches = set(self.subject.analyses)
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x.matches_filter(attribute, match), subject.analyses
-                    )
-                )
-                matches = set.intersection(matches, set(filtered_analyses))
-
-                for analysis in matches:
-                    self.analyses.append(analysis)
-            self.productions = self.analyses
+            if isinstance(self._analysis_spec, list):
+                for spec_item in self._analysis_spec:
+                    if isinstance(spec_item, str):
+                        self._analysis_spec_names.append(spec_item)
+                    elif isinstance(spec_item, dict) and len(spec_item) == 1:
+                        # Single-key dict, add the value if it's a string
+                        key, val = list(spec_item.items())[0]
+                        if isinstance(val, str):
+                            self._analysis_spec_names.append(val)
+            elif isinstance(self._analysis_spec, str):
+                self._analysis_spec_names.append(self._analysis_spec)
+        
+        # SubjectAnalysis does not participate in the dependency graph.
+        # Its _needs remain empty so it doesn't block submission.
+        self._needs = []
+        
+        # Remove needs and analyses from meta to prevent duplication later
         if "needs" in self.meta:
             self.meta.pop("needs")
+        if "analyses" in self.meta:
+            self.meta.pop("analyses")
+
+        # Initialize analyses lists (will be populated by resolve_analyses)
+        self.analyses = []
+        self.productions = []
+
+        # Resolve analyses from smart dependencies
+        # Note: This may be incomplete if not all analyses are loaded yet.
+        # Event.update_graph() will call resolve_analyses() again after all productions are loaded.
+        if self._analysis_spec:
+            self.resolve_analyses()
 
         self.pipeline = pipeline.lower()
         self.pipeline = known_pipelines[pipeline.lower()](self)
-
-        if "needs" in self.meta:
-            self._needs = self.meta.pop("needs")
-        else:
-            self._needs = []
 
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
         else:
             self.comment = None
+
+    def resolve_analyses(self):
+        """
+        Resolve analyses from smart dependencies.
+
+        This method evaluates the _analysis_spec (smart dependencies) against
+        the current set of analyses in the subject/event and populates self.analyses
+        with the matching analyses.
+
+        This can be called multiple times safely:
+        - During __init__ (may be incomplete if not all analyses are loaded)
+        - After all productions are loaded (via Event.update_graph)
+        - When dependencies change
+
+        Returns
+        -------
+        None
+        """
+        if not self._analysis_spec:
+            return
+
+        requirements = self._process_dependencies(self._analysis_spec)
+        self.analyses = []
+
+        for requirement in requirements:
+            if isinstance(requirement, list):
+                # This is an AND group - all conditions must match
+                and_matches = set(self.subject.analyses)
+                for parsed_dep in requirement:
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(parsed_dep) == 4:
+                        attribute, match, negate, optional = parsed_dep
+                    else:
+                        attribute, match, negate = parsed_dep
+                        optional = False
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate), and_matches
+                        )
+                    )
+                    and_matches = set(filtered_analyses)
+                # Add all matches from this AND group (never include self)
+                for analysis in and_matches:
+                    if analysis is not self and analysis not in self.analyses:
+                        self.analyses.append(analysis)
+            else:
+                # Single condition
+                # Handle both 3-tuple and 4-tuple formats
+                if len(requirement) == 4:
+                    attribute, match, negate, optional = requirement
+                else:
+                    attribute, match, negate = requirement
+                    optional = False
+                filtered_analyses = list(
+                    filter(
+                        lambda x: x is not self and x.matches_filter(attribute, match, negate),
+                        self.subject.analyses
+                    )
+                )
+                # Add all matches from this single condition
+                for analysis in filtered_analyses:
+                    if analysis not in self.analyses:
+                        self.analyses.append(analysis)
+
+        # Keep productions in sync
+        self.productions = self.analyses
+
+    def source_analyses_ready(self):
+        """
+        Check if all source analyses are finished and ready for processing.
+        
+        Returns
+        -------
+        bool
+            True if all source analyses have finished status, False otherwise
+        """
+        if not hasattr(self, 'analyses') or not self.analyses:
+            return False
+        
+        finished_statuses = {"finished", "uploaded", "processing", "complete"}
+        for analysis in self.analyses:
+            if analysis.status not in finished_statuses:
+                return False
+        return True
 
     def to_dict(self, event=True):
         """
@@ -615,6 +1192,11 @@ class SubjectAnalysis(Analysis):
         dictionary = {}
         dictionary = update(dictionary, self.meta)
 
+        # Keep resolved_dependencies in serialization for staleness detection
+        # This tracks which analyses were actually used when the job was run,
+        # allowing the refresh logic to detect when new analyses match the criteria
+        # Note: resolved_dependencies is set by PESummary.submit_dag() during submission
+
         if not event:
             dictionary["event"] = self.event.name
             dictionary["name"] = self.name
@@ -626,7 +1208,15 @@ class SubjectAnalysis(Analysis):
             dictionary["pipeline"] = self.pipeline.name.lower()
         dictionary["comment"] = self.comment
 
-        dictionary["analyses"] = self._analysis_spec
+        # Always persist the original analysis specification (smart dependencies)
+        # rather than the resolved list of analysis names.
+        # This ensures that smart dependencies are re-evaluated on each load,
+        # and the ledger doesn't get polluted with resolved names.
+        if hasattr(self, "_analysis_spec") and self._analysis_spec:
+            dictionary["analyses"] = self._analysis_spec
+        elif hasattr(self, "analyses") and self.analyses:
+            # Fallback: if no _analysis_spec but we have analyses, save as names
+            dictionary["analyses"] = [analysis.name for analysis in self.analyses]
 
         if self.review:
             dictionary["review"] = self.review.to_dicts()
@@ -637,9 +1227,36 @@ class SubjectAnalysis(Analysis):
             dictionary["quality"] = self.meta["quality"]
         if "priors" in self.meta:
             dictionary["priors"] = self.meta["priors"]
+
+        # Include remaining meta fields
         for key, value in self.meta.items():
+            # Do not allow a meta-level "analyses" entry to overwrite the
+            # explicitly constructed analyses list above.
+            if key in ["analyses"]:
+                continue
             dictionary[key] = value
-        if "repository" in self.meta:
+
+        # Remove duplicated defaults to keep the ledger minimal, mirroring Analysis.to_dict
+        defaults = {}
+        pipeline_obj = getattr(self, "pipeline", None)
+        if (
+            hasattr(self.event, "ledger")
+            and self.event.ledger
+            and "pipelines" in self.event.ledger.data
+            and pipeline_obj is not None
+            and hasattr(pipeline_obj, "name")
+            and pipeline_obj.name.lower() in self.event.ledger.data["pipelines"]
+        ):
+            defaults = deepcopy(
+                self.event.ledger.data["pipelines"][pipeline_obj.name.lower()]
+            )
+
+        # Subject-level defaults
+        defaults = update(defaults, deepcopy(self.subject.meta))
+
+        dictionary = diff_dict(defaults, dictionary)
+
+        if "repository" in dictionary:
             dictionary["repository"] = self.repository.url
         if "ledger" in dictionary:
             dictionary.pop("ledger")
@@ -672,13 +1289,34 @@ class SubjectAnalysis(Analysis):
 
         return cls(subject, name, pipeline, **parameters)
 
+    @property
+    def rundir(self):
+        """
+        Return the run directory for this subject analysis.
+        """
+        if "rundir" in self.meta:
+            return os.path.abspath(self.meta["rundir"])
+        elif "working directory" in self.subject.meta:
+            value = os.path.join(self.subject.meta["working directory"], self.name)
+            self.meta["rundir"] = value
+            return os.path.abspath(self.meta["rundir"])
+        else:
+            return None
+
+    @rundir.setter
+    def rundir(self, value):
+        """
+        Set the run directory.
+        """
+        self.meta["rundir"] = value
+
 
 class ProjectAnalysis(Analysis):
     """
     A multi-subject analysis.
     """
 
-    meta_defaults = {"scheduler": {}, "sampler": {}, "review": {}}
+    meta_defaults = {"scheduler": {}, "sampler": {}}
 
     def __init__(self, name, pipeline, ledger=None, **kwargs):
         """ """
@@ -696,7 +1334,8 @@ class ProjectAnalysis(Analysis):
             self._analysis_spec = kwargs["analyses"]
         else:
             self._analysis_spec = {}
-        requirements = self._process_dependencies(self._analysis_spec)
+
+        # Initialize analyses list (will be populated by resolve_analyses)
         self.analyses = []
 
         # set up the working directory
@@ -712,19 +1351,11 @@ class ProjectAnalysis(Analysis):
         self.repository = None
 
         self._subject_obs = []
-        for subject in self.subjects:
-            if self._analysis_spec:
-                matches = set(subject.analyses)
-                for attribute, match in requirements:
-                    filtered_analyses = list(
-                        filter(
-                            lambda x: x.matches_filter(attribute, match),
-                            subject.analyses,
-                        )
-                    )
-                    matches = set.intersection(matches, set(filtered_analyses))
-                for analysis in matches:
-                    self.analyses.append(analysis)
+
+        # Resolve analyses from smart dependencies across subjects
+        if self._analysis_spec:
+            self.resolve_analyses()
+
         if "status" in kwargs:
             self.status_str = kwargs["status"].lower()
         else:
@@ -732,22 +1363,25 @@ class ProjectAnalysis(Analysis):
         
         self.pipeline = pipeline  # .lower()
         if isinstance(pipeline, str):
-            # try:
-            self.pipeline = known_pipelines[str(pipeline).lower()](self)
-            # except KeyError:
-            self.logger.warning(f"The pipeline {pipeline} could not be found.")
+            try:
+                self.pipeline = known_pipelines[str(pipeline).lower()](self)
+            except KeyError:
+                self.logger.warning(f"The pipeline {pipeline} could not be found.")
         
-        if "needs" in self.meta:
-            self._needs = self.meta.pop("needs")
-        else:
-            self._needs = []
-        
+        # Read 'needs' from kwargs before it gets merged into self.meta so we
+        # don't accidentally mutate the class-level meta_defaults dict.
+        needs_value = kwargs.pop("needs", None)
+        self._needs = cast(List[Any], needs_value) if needs_value is not None else []
+
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
         else:
             self.comment = None
 
         self.meta = deepcopy(self.meta_defaults)
+        
+        # Initialize review object for this instance
+        self._reviews = Review()
 
         # Start by adding pipeline defaults
         if "pipelines" in self.ledger.data:
@@ -757,6 +1391,9 @@ class ProjectAnalysis(Analysis):
                 )
 
         self.meta = update(self.meta, deepcopy(kwargs))
+        # Restore 'needs' into self.meta for backward compatibility with callers
+        # such as asimov/cli/manage.py that read analysis.meta['needs'].
+        self.meta["needs"] = self._needs
         
 
     def __repr__(self):
@@ -776,7 +1413,66 @@ class ProjectAnalysis(Analysis):
 
     @property
     def events(self):
-        return self.subjects()
+        return self.subjects
+
+    def resolve_analyses(self):
+        """
+        Resolve analyses from smart dependencies across all subjects.
+
+        This method evaluates the _analysis_spec (smart dependencies) against
+        the analyses in each subject and populates self.analyses with matches.
+
+        Returns
+        -------
+        None
+        """
+        if not self._analysis_spec:
+            return
+
+        requirements = self._process_dependencies(self._analysis_spec)
+        self.analyses = []
+
+        for subject in self.subjects:
+            for requirement in requirements:
+                if isinstance(requirement, list):
+                    # This is an AND group - all conditions must match
+                    and_matches = set(subject.analyses)
+                    for parsed_dep in requirement:
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(parsed_dep) == 4:
+                            attribute, match, negate, optional = parsed_dep
+                        else:
+                            attribute, match, negate = parsed_dep
+                            optional = False
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate),
+                                and_matches,
+                            )
+                        )
+                        and_matches = set(filtered_analyses)
+                    # Add all matches from this AND group
+                    for analysis in and_matches:
+                        if analysis not in self.analyses:
+                            self.analyses.append(analysis)
+                else:
+                    # Single condition
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(requirement) == 4:
+                        attribute, match, negate, optional = requirement
+                    else:
+                        attribute, match, negate = requirement
+                        optional = False
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            subject.analyses,
+                        )
+                    )
+                    # Add all matches from this single condition
+                    for analysis in filtered_analyses:
+                        if analysis not in self.analyses:
+                            self.analyses.append(analysis)
 
     @classmethod
     def from_dict(cls, parameters, ledger=None):
@@ -803,13 +1499,24 @@ class ProjectAnalysis(Analysis):
 
     @property
     def dependencies(self):
-        """Return a list of analyses which this analysis depends upon."""
+        """
+        Return a list of analyses which this analysis depends upon.
+        
+        The dependency resolution supports complex logic:
+        - Top-level items in needs are OR'd together
+        - Nested lists represent AND conditions (all must match)
+        - Individual filters can be negated with !
+        
+        Returns
+        -------
+        list
+            List of analysis names that this analysis depends on
+        """
         all_matches = []
         if len(self._needs) == 0:
             return []
         else:
-            matches = set({})  # set(self.event.analyses)
-            # matches.remove(self)
+            matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
             analyses = []
             for subject in self._subjects:
@@ -817,20 +1524,48 @@ class ProjectAnalysis(Analysis):
                 self._subject_obs.append(sub)
                 for analysis in sub.analyses:
                     analyses.append(analysis)
-            for attribute, match in requirements:
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x.matches_filter(attribute, match),
-                        analyses,
+            
+            for requirement in requirements:
+                if isinstance(requirement, list):
+                    # This is an AND group - all conditions must match
+                    and_matches = set(analyses)
+                    for parsed_dep in requirement:
+                        # Handle both 3-tuple and 4-tuple formats
+                        if len(parsed_dep) == 4:
+                            attribute, match, negate, optional = parsed_dep
+                        else:
+                            attribute, match, negate = parsed_dep
+                            optional = False
+                        filtered_analyses = list(
+                            filter(
+                                lambda x: x.matches_filter(attribute, match, negate),
+                                and_matches,
+                            )
+                        )
+                        and_matches = set(filtered_analyses)
+                    matches = set.union(matches, and_matches)
+                else:
+                    # Single condition
+                    # Handle both 3-tuple and 4-tuple formats
+                    if len(requirement) == 4:
+                        attribute, match, negate, optional = requirement
+                    else:
+                        attribute, match, negate = requirement
+                        optional = False
+                    filtered_analyses = list(
+                        filter(
+                            lambda x: x.matches_filter(attribute, match, negate),
+                            analyses,
+                        )
                     )
-                )
-                matches = set.union(matches, set(filtered_analyses))
+                    matches = set.union(matches, set(filtered_analyses))
+            
             for analysis in matches:
                 all_matches.append(analysis.name)
 
             return all_matches
 
-    def to_dict(self):
+    def to_dict(self, event=True):
         """
         Return this project production as a dictionary.
 
@@ -852,7 +1587,7 @@ class ProjectAnalysis(Analysis):
         dictionary["comment"] = self.comment
 
         if self.review:
-            dictionary["review"] = self.review.copy()  # .to_dicts()
+            dictionary["review"] = self.review.to_dicts()
 
         dictionary["needs"] = self.dependencies
 
@@ -860,8 +1595,10 @@ class ProjectAnalysis(Analysis):
             dictionary["quality"] = self.meta["quality"]
         if "priors" in self.meta:
             dictionary["priors"] = self.meta["priors"]
+
         for key, value in self.meta.items():
             dictionary[key] = value
+
         if "repository" in self.meta:
             dictionary["repository"] = self.repository.url
         if "ledger" in dictionary:
@@ -872,21 +1609,40 @@ class ProjectAnalysis(Analysis):
         dictionary["subjects"] = self._subjects
         dictionary["analyses"] = self._analysis_spec
 
-        output = dictionary
+        # Remove duplicated defaults: pipeline defaults + any project-level defaults
+        defaults = {}
+        pipeline_obj = getattr(self, "pipeline", None)
+        if (
+            hasattr(self, "ledger")
+            and self.ledger
+            and "pipelines" in self.ledger.data
+            and pipeline_obj is not None
+            and hasattr(pipeline_obj, "name")
+            and pipeline_obj.name.lower() in self.ledger.data["pipelines"]
+        ):
+            defaults = deepcopy(
+                self.ledger.data["pipelines"][pipeline_obj.name.lower()]
+            )
 
-        return output
+        # Project-level defaults if present
+        if hasattr(self, "ledger") and self.ledger and "project" in self.ledger.data:
+            defaults = update(defaults, deepcopy(self.ledger.data["project"]))
+
+        dictionary = diff_dict(defaults, dictionary)
+
+        return dictionary
 
     @property
     def rundir(self):
         """
-        Returns the rundir for this event
+        Returns the rundir for this project analysis
         """
 
         if "rundir" in self.meta:
-            return self.meta["rundir"]
+            return os.path.abspath(self.meta["rundir"])
         elif self.work_dir:
             self.meta["rundir"] = self.work_dir
-            return self.meta["rundir"]
+            return os.path.abspath(self.meta["rundir"])
         else:
             return None
 
@@ -899,6 +1655,86 @@ class ProjectAnalysis(Analysis):
             self.meta["rundir"] = value
         else:
             self.meta["rundir"] = value
+
+    def html(self):
+        """
+        Generate HTML card for this project analysis.
+
+        This method creates an HTML representation of the project analysis
+        for display in the asimov HTML report. It includes status information,
+        subject and analysis counts, and pipeline-specific content.
+
+        Returns
+        -------
+        str
+            HTML string representing this project analysis as a card.
+        """
+        from asimov.event import status_map
+
+        # Status badge mapping
+        status_badge = status_map.get(self.status, "secondary")
+
+        safe_name = html.escape(self.name)
+        card = f"""
+<div class='project-analysis-card card event-data' id='project-{safe_name}'>
+    <div class='card-header'>
+        <h3 class='card-title'>{safe_name}</h3>
+"""
+
+        if self.comment:
+            card += f"        <p class='text-muted'>{html.escape(self.comment)}</p>\n"
+
+        # Status badge
+        card += f"""        <span class='badge badge-{status_badge}'>{html.escape(self.status)}</span>
+    </div>
+    <div class='card-body'>
+"""
+
+        # Show pipeline info
+        if self.pipeline:
+            pipeline_name = self.pipeline.name if hasattr(self.pipeline, 'name') else str(self.pipeline)
+            card += f"        <p><strong>Pipeline:</strong> {html.escape(pipeline_name)}</p>\n"
+
+        # Show number of subjects
+        if hasattr(self, '_subjects') and self._subjects:
+            card += f"        <p><strong>Subjects:</strong> {len(self._subjects)}</p>\n"
+
+        # Show number of analyses
+        if hasattr(self, 'analyses') and self.analyses:
+            card += f"        <p><strong>Analyses:</strong> {len(self.analyses)}</p>\n"
+
+        # List subjects with links to event cards
+        if hasattr(self, '_subjects') and self._subjects:
+            card += """        <details>
+            <summary>View Subjects</summary>
+            <ul>
+"""
+            for subject in self._subjects:
+                subject_name = subject.name if hasattr(subject, 'name') else str(subject)
+                safe_subject_name = html.escape(subject_name)
+                safe_subject_href = urllib.parse.quote(subject_name, safe="")
+                card += f"                <li><a href='#card-{safe_subject_href}'>{safe_subject_name}</a></li>\n"
+
+            card += """            </ul>
+        </details>
+"""
+
+        # Pipeline-specific content (e.g., plots for CatalogPlotter)
+        if self.pipeline and hasattr(self.pipeline, 'html'):
+            try:
+                pipeline_html = self.pipeline.html()
+                card += pipeline_html
+            except Exception as e:
+                # Log but don't fail if pipeline HTML generation has issues
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to generate pipeline HTML for {self.name}: {e}")
+
+        card += """    </div>
+</div>
+"""
+
+        return card
 
 
 class GravitationalWaveTransient(SimpleAnalysis):
@@ -952,15 +1788,33 @@ class GravitationalWaveTransient(SimpleAnalysis):
             # TODO: Should probably raise a deprecation warning
             self.meta["sampler"]["lmax"] = self.meta["lmax"]
 
-        # Check that the upper frequency is included, otherwise calculate it
-        if "quality" in self.meta:
-            if ("maximum frequency" not in self.meta["quality"]) and (
-                "sample rate" in self.meta["likelihood"]
-            ):
-                self.meta["quality"]["maximum frequency"] = {}
+        # Migrate maximum frequency from quality to likelihood
+        if "quality" in self.meta and "maximum frequency" in self.meta["quality"]:
+            self.logger.warning(
+                "Found 'maximum frequency' in the 'quality' section; "
+                "this is deprecated. Please move it to the 'likelihood' section. "
+                "It has been automatically migrated for this run."
+            )
+            if "maximum frequency" not in self.meta["likelihood"]:
+                self.meta["likelihood"]["maximum frequency"] = self.meta["quality"]["maximum frequency"]
+
+        # Migrate minimum frequency from quality to likelihood
+        if "quality" in self.meta and "minimum frequency" in self.meta["quality"]:
+            self.logger.warning(
+                "Found 'minimum frequency' in the 'quality' section; "
+                "this is deprecated. Please move it to the 'likelihood' section. "
+                "It has been automatically migrated for this run."
+            )
+            if "minimum frequency" not in self.meta["likelihood"]:
+                self.meta["likelihood"]["minimum frequency"] = self.meta["quality"]["minimum frequency"]
+
+        # Calculate maximum frequency from sample rate if not provided
+        if "sample rate" in self.meta["likelihood"] and "interferometers" in self.meta:
+            if "maximum frequency" not in self.meta["likelihood"]:
+                self.meta["likelihood"]["maximum frequency"] = {}
                 # Account for the PSD roll-off with the 0.875 factor
                 for ifo in self.meta["interferometers"]:
-                    self.meta["quality"]["maximum frequency"][ifo] = int(
+                    self.meta["likelihood"]["maximum frequency"][ifo] = int(
                         0.875 * self.meta["likelihood"]["sample rate"] / 2
                     )
 
@@ -1091,6 +1945,13 @@ class GravitationalWaveTransient(SimpleAnalysis):
             raise ValueError("This isn't a valid ini file")
 
         return ini
+
+    def _check_compatible(self, previous_analysis):
+        """
+        Placeholder compatibility check between analyses.
+        Extend when additional metadata comparisons are needed.
+        """
+        return True
 
     def _collect_psds(self, format="ascii"):
         """

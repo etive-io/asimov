@@ -1,11 +1,12 @@
 kind: event
 name: Nonstandard fmin
 quality:
-  minimum frequency:
-    H1: 62
-    L1: 62
-    V1: 62
   state vector:
     L1: L1:DCS-CALIB_STATE_VECTOR_C01
     H1: H1:DCS-CALIB_STATE_VECTOR_C01
     V1: V1:DQ_ANALYSIS_STATE_VECTOR
+waveform:
+  minimum frequency:
+    H1: 62
+    L1: 62
+    V1: 62

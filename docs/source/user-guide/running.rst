@@ -20,7 +20,7 @@ For example running in the root directory of an asimov project,
 		
 		● Working on GW150914_095045
 		   Working on production Prod0
-		Prod0 C01_offline checkouts/GW150914_095045
+		Prod0 analyses checkouts/GW150914_095045
 		Production config Prod0 created.
 
 We can see that an analysis called ``Prod0`` has been build, and the configuration file required for the submission step has been created.
@@ -40,7 +40,7 @@ For example
 
 		$ asimov manage submit
 
-		Prod0 C01_offline checkouts/GW150914_095045
+		Prod0 analyses checkouts/GW150914_095045
 		● Submitted GW150914_095045/Prod0
 
 You can also run the ``build`` and ``submit`` stages in a single command:

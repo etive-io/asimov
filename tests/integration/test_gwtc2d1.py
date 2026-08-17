@@ -35,7 +35,7 @@ class EventTests(unittest.TestCase):
             production.make_config(f"{production.name}.ini")
             if production.pipeline.lower() in known_pipelines:
                 try:
-                    pipe = known_pipelines[production.pipeline.lower()](production, "C01_offline")
+                    pipe = known_pipelines[production.pipeline.lower()](production, "analyses")
                     pipe.clean()
                     pipe.build_dag()
                 except Exception as e:

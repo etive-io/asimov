@@ -1,0 +1,66 @@
+name: 'Setup Asimov Environment'
+description: 'Install Asimov and dependencies with conda'
+inputs:
+  python-version:
+    description: 'Python version to use'
+    default: '3.10'
+    required: false
+  extra-packages:
+    description: 'Additional pip packages to install'
+    default: ''
+    required: false
+  conda-packages:
+    description: 'Path to conda packages file; set to empty string to skip heavy conda packages'
+    default: 'conda/packages.txt'
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Cache conda packages and pip
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/share/miniconda/pkgs
+          ~/.cache/pip
+        key: conda-${{ runner.os }}-${{ hashFiles('conda/packages.txt', 'pyproject.toml') }}
+        restore-keys: |
+          conda-${{ runner.os }}-
+
+    - name: Set up conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniconda-version: "latest"
+        auto-activate-base: false
+        python-version: ${{ inputs.python-version }}
+        activate-environment: asimov
+        channels: conda-forge
+        use-mamba: true
+
+    - name: Cache asimov conda env
+      id: cache-env
+      uses: actions/cache@v4
+      with:
+        path: /usr/share/miniconda/envs/asimov
+        key: conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('conda/packages.txt', 'pyproject.toml', 'setup.py', 'setup.cfg') }}-v3
+        restore-keys: |
+          conda-env-asimov-${{ runner.os }}-py${{ inputs.python-version }}-v3-
+
+    - name: Install conda dependencies
+      if: steps.cache-env.outputs.cache-hit != 'true' && inputs.conda-packages != ''
+      shell: bash -el {0}
+      run: |
+        git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+        conda install -y -n asimov --file ${{ inputs.conda-packages }}
+
+    - name: Install asimov from source
+      shell: bash -e {0}
+      run: |
+        git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+        CONDA_BASE="$("${CONDA_EXE:-conda}" info --base)"
+        CONDA_PYTHON="${CONDA_BASE}/envs/asimov/bin/python"
+        "$CONDA_PYTHON" -m ensurepip --upgrade
+        if [ -n "${{ inputs.extra-packages }}" ]; then
+          "$CONDA_PYTHON" -m pip install ${{ inputs.extra-packages }}
+        fi
+        "$CONDA_PYTHON" -m pip install --force-reinstall .
+        echo "Installed asimov from: $("$CONDA_PYTHON" -c 'import asimov; print(asimov.__file__)')"

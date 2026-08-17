@@ -1,6 +1,6 @@
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 comment: Bayeswave on-source PSD estimation job
 event: GW150914_095045
 status: uploaded
@@ -8,8 +8,8 @@ status: uploaded
 kind: analysis
 name: Prod1
 event: GW150914_095045
-pipeline: bilby
+pipeline: simpletestpipelineb
 approximant: IMRPhenomXPHM
 comment: Bilby parameter estimation job
 needs:
-  - pipeline:Bayeswave
+  - pipeline:simpletestpipeline

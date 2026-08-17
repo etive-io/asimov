@@ -1,0 +1,8 @@
+kind: analysis
+name: Prod1
+pipeline: simpletestpipelineb
+waveform:
+    approximant: IMRPhenomXPHM
+scheduler:
+    accounting group: test
+comment: Generic PE production job (pipeline is incidental to what these tests check)

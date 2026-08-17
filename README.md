@@ -409,6 +409,12 @@ We're grateful to all our contributors! See the full list in [CONTRIBUTORS.md](C
 
 ---
 
+## Testing Status
+
+[![Bilby Pipeline CI](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml)
+[![Bilby Pipeline CI (Slurm)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml)
+
+
 ## 📄 License
 
 Asimov is released under the [MIT License](LICENSE).
@@ -428,7 +434,5 @@ Asimov is released under the [MIT License](LICENSE).
 <div align="center">
 
 **⭐ If Asimov helps your research, please consider starring the repository! ⭐**
-
-*Made with ❤️ by the scientific computing community*
 
 </div>

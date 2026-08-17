@@ -67,7 +67,7 @@ def make_project(
 
     # Make the log directory
     pathlib.Path(logs).mkdir(parents=True, exist_ok=True)
-    config.set("logging", "directory", logs)
+    config.set("logging", "location", logs)
 
     # Make the results store
     storage.Store.create(root=results, name=f"{project_name} storage")
@@ -79,7 +79,13 @@ def make_project(
     config.set("ledger", "location", os.path.join(".asimov", "ledger.yml"))
 
     # Set the default environment
-    python_loc = shutil.which("python").split("/")[:-2]
+    if (python_loc := shutil.which("python")) is not None:
+        python_loc = python_loc.split("/")[:-2]
+    elif (python_loc := shutil.which("python3")) is not None:
+        python_loc = python_loc.split("/")[:-2]
+    else:
+        raise RuntimeError("Unable to find python executable in PATH")
+    
     config.set("pipelines", "environment", os.path.join("/", *python_loc))
     config.set("rift", "environment", os.path.join("/", *python_loc))
 
@@ -88,11 +94,47 @@ def make_project(
     except Exception:
         pass
 
-    # Set the default condor user
-    if not user:
-        config.set("condor", "user", getpass.getuser())
+    # Auto-detect scheduler type
+    has_slurm = bool(shutil.which("sbatch") and shutil.which("squeue"))
+    has_condor = bool(shutil.which("condor_submit") and shutil.which("condor_q"))
+
+    if has_slurm and has_condor:
+        logger.warning(
+            "Both Slurm and HTCondor appear to be available. "
+            "Defaulting to Slurm. Set scheduler/type = htcondor in asimov.conf to override."
+        )
+
+    scheduler_type = "htcondor"  # default
+    if has_slurm:
+        scheduler_type = "slurm"
+        logger.info("Detected Slurm scheduler")
+    elif has_condor:
+        scheduler_type = "htcondor"
+        logger.info("Detected HTCondor scheduler")
     else:
-        config.set("condor", "user", user)
+        logger.warning("No scheduler detected, defaulting to HTCondor")
+    
+    # Create scheduler section and set type
+    if not config.has_section("scheduler"):
+        config.add_section("scheduler")
+    config.set("scheduler", "type", scheduler_type)
+
+    # Set scheduler-specific configuration
+    if scheduler_type == "htcondor":
+        # Set the default condor user
+        if not user:
+            config.set("condor", "user", getpass.getuser())
+        else:
+            config.set("condor", "user", user)
+    elif scheduler_type == "slurm":
+        # Create slurm section if it doesn't exist
+        if not config.has_section("slurm"):
+            config.add_section("slurm")
+        # Set the default slurm user
+        if not user:
+            config.set("slurm", "user", getpass.getuser())
+        else:
+            config.set("slurm", "user", user)
 
     Ledger.create(
         engine="yamlfile",
@@ -138,9 +180,29 @@ def init(
     """
     Roll-out a new project.
     """
+    from asimov import setup_file_logging
     make_project(name, root, working=working, checkouts=checkouts, results=results)
     click.echo(click.style("●", fg="green") + " New project created successfully!")
-    logger.info(f"A new project was created in {os.getcwd()}")
+    
+    # Log the project creation message
+    message = f"A new project was created in {os.getcwd()}"
+    logger.info(message)
+    
+    # Set up logging after project is created, passing the log directory directly
+    # to avoid config reload issues in test environments
+    try:
+        setup_file_logging(logfile=os.path.join("logs", "asimov.log"))
+        # Log again so that, if file logging is now configured, the message is written to the log file
+        logger.info(message)
+    except Exception as exc:
+        # Ensure failures to configure file logging are visible to the user
+        logger.error("Failed to set up file logging for new project: %s", exc)
+        click.echo(
+            click.style(
+                "⚠ Failed to set up file logging. See console output for details.",
+                fg="yellow",
+            )
+        )
 
 
 @click.command()

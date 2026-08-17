@@ -1,0 +1,6 @@
+kind: analysis
+name: Prod0
+pipeline: SimpleTestPipeline
+comment: Generic PE production job (pipeline is incidental to what these tests check)
+scheduler:
+    accounting group: test

@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 .. _ledger:
 
-=======
->>>>>>> v0.4-release
 The Asimov Ledger
 =================
 
@@ -163,18 +160,14 @@ Examples
 Data quality information
 ------------------------
 
-Examples
-~~~~~~~~
+.. note::
 
-.. code-block::
-
-   quality:
-     minimum frequency:
-       H1: 20
-       L1: 20
-     maximum frequency:
-       H1: 2048
-       L1: 2048
+   ``minimum frequency`` and ``maximum frequency`` used to be specified under
+   ``quality``, since they originated from data-quality recommendations.
+   That location is now deprecated: they are automatically migrated into
+   ``likelihood`` (with a warning) if found here, but new blueprints should
+   specify them directly under ``likelihood`` instead — see `Likelihood
+   settings`_ below.
 
 Likelihood settings
 -------------------
@@ -185,7 +178,13 @@ Examples
 .. code-block::
 
    likelihood:
-   
+
+     minimum frequency:
+       H1: 20
+       L1: 20
+     maximum frequency:
+       H1: 2048
+       L1: 2048
      psd length: 4
      reference frequency: 20
      sample rate: 2048

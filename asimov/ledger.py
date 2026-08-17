@@ -37,8 +37,8 @@ class YAMLLedger(Ledger):
     def __init__(self, location=None):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
-        self.location = location
-        with open(location, "r") as ledger_file:
+        self.location = os.path.abspath(location)
+        with open(self.location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 
         self.data["events"] = [
@@ -152,6 +152,9 @@ class YAMLLedger(Ledger):
         --------
         """
         if isinstance(analysis, ProjectAnalysis):
+            # Ensure "project analyses" key exists for old ledgers
+            if "project analyses" not in self.data:
+                self.data["project analyses"] = []
             names = [ana["name"] for ana in self.data["project analyses"]]
             if analysis.name not in names:
                 self.data["project analyses"].append(analysis.to_dict())
@@ -190,7 +193,7 @@ class YAMLLedger(Ledger):
     def project_analyses(self):
         return [
             ProjectAnalysis.from_dict(analysis, ledger=self)
-            for analysis in self.data["project analyses"]
+            for analysis in self.data.get("project analyses", [])
         ]
 
     def get_event(self, event=None):

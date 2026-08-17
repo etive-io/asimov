@@ -1,0 +1,13 @@
+# This file contains a standard bilby_pipe analysis
+kind: analysis
+name: bilby-IMRPhenomXPHM
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+  arguments:
+    PhenomXHMReleaseVersion: 122022
+
+comment: PE job using IMRPhenomXPHM and bilby
+needs:
+    #- get-data
+    - generate-psd

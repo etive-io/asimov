@@ -18,8 +18,8 @@ An example of an event ledger might look something like this, which is for ``GW1
 .. code-block:: yaml
 
 		calibration:
-		  H1: C01_offline/calibration/H1.dat
-		  L1: C01_offline/calibration/L1.dat
+		  H1: analyses/calibration/H1.dat
+		  L1: analyses/calibration/L1.dat
 		data:
 		  channels:
 		    H1: H1:DCS-CALIB_STRAIN_C02
@@ -68,8 +68,8 @@ An example of an event ledger might look something like this, which is for ``GW1
 		    status: ready
 		psds:
 		  2048:
-		    H1: C01_offline/psds/2048/H1-psd.dat
-		    L1: C01_offline/psds/2048/L1-psd.dat
+		    H1: analyses/psds/2048/H1-psd.dat
+		    L1: analyses/psds/2048/L1-psd.dat
 		quality:
 		  lower-frequency:
 		    H1: 20
