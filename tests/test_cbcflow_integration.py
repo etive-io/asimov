@@ -45,6 +45,22 @@ import git
 from asimov.testing import AsimovTestCase
 from asimov.cli.application import apply_page, apply_via_plugin
 from asimov.ledger import YAMLLedger
+from asimov.pipelines.testing.simple import SimpleTestPipeline
+
+
+class _FakeBilbyPipeline(SimpleTestPipeline):
+    """A testing pipeline registered as ``bilby`` for these tests only.
+
+    cbcflow's own ``Collector`` hardcodes
+    ``supported_pipelines = ["bayeswave", "bilby", "rift"]`` (independent of
+    asimov's plugin registry), so exercising it requires a pipeline whose
+    name resolves to one of those values. This is *not* registered as a
+    real ``asimov.pipelines`` entry point - it's patched into
+    ``known_pipelines`` only for the duration of ``TestCBCFlowCollector``.
+    """
+
+    name = "Bilby"
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,7 +81,7 @@ interferometers:
 _BILBY_ANALYSIS_BLUEPRINT = """\
 kind: analysis
 name: Prod0
-pipeline: simpletestpipeline
+pipeline: bilby
 status: running
 waveform:
   approximant: IMRPhenomXPHM
@@ -332,6 +348,16 @@ class TestCBCFlowCollector(AsimovTestCase):
 
     def setUp(self):
         super().setUp()
+        # See _FakeBilbyPipeline: cbcflow's Collector only recognizes
+        # bayeswave/bilby/rift, independent of what's actually registered
+        # in asimov's own plugin registry.
+        import asimov.pipelines
+        self._known_pipelines_patcher = patch.dict(
+            asimov.pipelines.known_pipelines, {"bilby": _FakeBilbyPipeline}
+        )
+        self._known_pipelines_patcher.start()
+        self.addCleanup(self._known_pipelines_patcher.stop)
+
         self.library_path = os.path.join(self.cwd, "tests", "tmp", "cbcflow_library")
         self._setup_empty_library()
         self._setup_asimov_event()
@@ -447,7 +473,7 @@ class TestCBCFlowCollector(AsimovTestCase):
         results = self._read_pe_results()
         self.assertEqual(len(results), 1, "Expected exactly one result entry")
         self.assertEqual(results[0]["UID"], "Prod0")
-        self.assertEqual(results[0]["InferenceSoftware"], "simpletestpipeline")
+        self.assertEqual(results[0]["InferenceSoftware"], "bilby")
 
     @patch("asimov.git.EventRepo.find_prods", return_value=[])
     @patch("cbcflow.core.database.LocalLibraryDatabase.git_push_to_remote")
