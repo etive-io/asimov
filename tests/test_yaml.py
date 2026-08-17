@@ -24,7 +24,7 @@ interferometers:
 quality: {{}}
 productions:
   - name: Prod0
-    pipeline: bayeswave
+    pipeline: simpletestpipeline
     comment: PSD production
     status: wait
 """
@@ -151,13 +151,13 @@ class ProductionTests(unittest.TestCase):
             productions:
               - name: Prod0
                 comment: PSD production
-                pipeline: bilby
+                pipeline: simpletestpipelineb
                 priors:
                   q: [0.0, 0.05]
                 status: wait
               - name: Prod1
                 comment: PSD production
-                pipeline: bilby
+                pipeline: simpletestpipelineb
                 priors:
                   q: [0.0, 0.8]
                 status: wait
@@ -187,13 +187,13 @@ class ProductionTests(unittest.TestCase):
         productions:
         - name: Prod0
           comment: PSD production
-          pipeline: bayeswave
+          pipeline: simpletestpipeline
           priors:
                 q: [0.0, 0.05]
           status: wait
         - name: Prod1
           comment: PSD production
-          pipeline: bayeswave
+          pipeline: simpletestpipeline
           priors:
                 q: [0.0, 1.0]
           status: wait

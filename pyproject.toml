@@ -53,7 +53,7 @@ dependencies = [
 docs = [
 	"sphinx",
 	"kentigern >= 0.3.0",
-        "numpydoc",
+    "numpydoc",
 	"sphinx-click",
 	"sphinxcontrib-httpdomain",
 	"sphinxcontrib-httpexample",
@@ -102,5 +102,7 @@ packages = [
 
 [project.entry-points."asimov.pipelines"]
 simpletestpipeline = "asimov.pipelines.testing:SimpleTestPipeline"
+simpletestpipelineb = "asimov.pipelines.testing:SimpleTestPipelineB"
+simpletestpipelinec = "asimov.pipelines.testing:SimpleTestPipelineC"
 subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"
 projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"

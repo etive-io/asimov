@@ -38,20 +38,20 @@ class SubjectAnalysisTests(unittest.TestCase):
         """Test that a SubjectAnalysis can be created."""
         blueprint = """
 kind: analysis
-name: Bilby1
-pipeline: bilby
+name: Analysis1
+pipeline: simpletestpipeline
 status: finished
 ---
 kind: analysis
-name: Bilby2
-pipeline: bilby
+name: Analysis2
+pipeline: simpletestpipeline
 status: finished
 ---
 kind: analysis
 name: Combined
 pipeline: subjecttestpipeline
 analyses:
-  - pipeline: bilby
+  - pipeline: simpletestpipeline
 """
         with open('test_subject_analysis.yaml', 'w') as f:
             f.write(blueprint)
@@ -65,10 +65,10 @@ analyses:
 
         combined = combined_analyses[0]
 
-        # Check that it found the bilby dependencies
+        # Check that it found the upstream dependencies
         self.assertEqual(len(combined.dependencies), 0)  # dependencies is only for needs
 
-        # Check that the analyses attribute has the bilby runs
+        # Check that the analyses attribute has the upstream runs
         from asimov.analysis import SubjectAnalysis
         self.assertIsInstance(combined, SubjectAnalysis)
 
@@ -76,8 +76,8 @@ analyses:
         if hasattr(combined, 'analyses'):
             self.assertEqual(len(combined.analyses), 2)
             analysis_names = [a.name for a in combined.analyses]
-            self.assertIn('Bilby1', analysis_names)
-            self.assertIn('Bilby2', analysis_names)
+            self.assertIn('Analysis1', analysis_names)
+            self.assertIn('Analysis2', analysis_names)
 
     def test_subject_analysis_with_required_dependencies(self):
         """Test that a SubjectAnalysis won't run if required dependencies are missing."""
@@ -86,7 +86,7 @@ kind: analysis
 name: Combined
 pipeline: subjecttestpipeline
 analyses:
-  - pipeline: bilby
+  - pipeline: simpletestpipeline
 """
         with open('test_subject_no_deps.yaml', 'w') as f:
             f.write(blueprint)
@@ -96,24 +96,24 @@ analyses:
 
         combined = [a for a in event.analyses if a.name == 'Combined'][0]
 
-        # The analyses list should be empty since no bilby jobs exist
+        # The analyses list should be empty since no upstream jobs exist
         self.assertEqual(len(combined.analyses), 0)
 
     def test_subject_analysis_with_optional_dependencies(self):
         """Test that a SubjectAnalysis can run with optional dependencies."""
         blueprint = """
 kind: analysis
-name: Bilby1
-pipeline: bilby
+name: Analysis1
+pipeline: simpletestpipeline
 status: finished
 ---
 kind: analysis
 name: Combined
 pipeline: subjecttestpipeline
 analyses:
-  - pipeline: bilby
+  - pipeline: simpletestpipeline
   - optional: true
-    pipeline: bayeswave
+    pipeline: simpletestpipelineb
 """
         with open('test_subject_optional.yaml', 'w') as f:
             f.write(blueprint)
@@ -123,10 +123,10 @@ analyses:
 
         combined = [a for a in event.analyses if a.name == 'Combined'][0]
 
-        # Should have the bilby analysis
+        # Should have the required (present) analysis, not the optional (absent) one
         if hasattr(combined, 'analyses'):
             self.assertEqual(len(combined.analyses), 1)
-            self.assertEqual(combined.analyses[0].name, 'Bilby1')
+            self.assertEqual(combined.analyses[0].name, 'Analysis1')
 
 
 if __name__ == '__main__':

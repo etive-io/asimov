@@ -1,13 +1,13 @@
 kind: analysis
 name: Prod0
-pipeline: rift
+pipeline: simpletestpipeline
 comment: Bayeswave on-source PSD estimation job
 event: GW150914_095045
 status: ready
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 approximant: IMRPhenomXPHM
 comment: Bilby parameter estimation job
 needs:

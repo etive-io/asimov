@@ -56,8 +56,14 @@ asimov.pipeline.Pipeline : Base pipeline class
 asimov.analysis : Analysis type definitions
 """
 
-from .simple import SimpleTestPipeline
+from .simple import SimpleTestPipeline, SimpleTestPipelineB, SimpleTestPipelineC
 from .subject import SubjectTestPipeline
 from .project import ProjectTestPipeline
 
-__all__ = ['SimpleTestPipeline', 'SubjectTestPipeline', 'ProjectTestPipeline']
+__all__ = [
+    'SimpleTestPipeline',
+    'SimpleTestPipelineB',
+    'SimpleTestPipelineC',
+    'SubjectTestPipeline',
+    'ProjectTestPipeline',
+]

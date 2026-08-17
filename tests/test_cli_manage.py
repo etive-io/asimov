@@ -93,7 +93,7 @@ class TestBuild(unittest.TestCase):
             with open(os.path.join(self.cwd, "tests", "tmp", "project", "test_ledger_page.yaml"), "w") as ledger_page:
                 ledger_page.write(f"""
 kind: analysis
-pipeline: bilby
+pipeline: simpletestpipeline
 event: {event}
 name: Prod8
 status: running
@@ -161,9 +161,8 @@ class TestSubmit(unittest.TestCase):
 
             result = runner.invoke(manage.manage, ['build', 'submit', '--dryrun'])
             for event in EVENTS:
-                    output = """bilby_pipe """
-                    self.assertTrue(output in result.output)
-                    self.assertTrue("--label Prod1" in result.output)
+                    self.assertTrue(f"Working on {event}" in result.output)
+                    self.assertTrue("Production config Prod1 created" in result.output)
 
     def test_submit_no_build(self):
         """Check that the command fails as expected if the build has not been completed."""
@@ -173,7 +172,7 @@ class TestSubmit(unittest.TestCase):
             runner = CliRunner()
             # Simulate a production which hasn't been built yet: the pipeline
             # raises ValueError from build_dag() until a real build has happened.
-            with patch("asimov.pipelines.bilby.Bilby.build_dag", side_effect=ValueError):
+            with patch("asimov.pipelines.testing.simple.SimpleTestPipelineB.build_dag", side_effect=ValueError):
                 result = runner.invoke(manage.manage, ['submit', '--dryrun'])
             self.assertTrue("as it hasn't been built yet" in result.output)
                     
@@ -185,7 +184,7 @@ class TestSubmit(unittest.TestCase):
         with open(os.path.join(self.cwd, "tests", "tmp", "project", "test_ledger_page.yaml"), "w") as ledger_page:
             ledger_page.write(f"""
 kind: analysis
-pipeline: bilby
+pipeline: simpletestpipeline
 event: {event}
 name: Prod8
 status: restart

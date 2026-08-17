@@ -1,8 +1,0 @@
-# This is a generic blueprint for a Bayeswave job.
-# It was constructed for testing-purposes and is not designed for use in analysis.
-kind: analysis
-name: bilby_test_job
-pipeline: bilby
-comment: Bilby primary parameter estimation job
-scheduler:
-    accounting group: test

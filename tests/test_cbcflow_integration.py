@@ -65,7 +65,7 @@ interferometers:
 _BILBY_ANALYSIS_BLUEPRINT = """\
 kind: analysis
 name: Prod0
-pipeline: bilby
+pipeline: simpletestpipeline
 status: running
 waveform:
   approximant: IMRPhenomXPHM
@@ -374,7 +374,7 @@ class TestCBCFlowCollector(AsimovTestCase):
         repo.git.push("-u", "origin", "main")
 
     def _setup_asimov_event(self):
-        """Add the test event and a bilby analysis to the asimov ledger."""
+        """Add the test event and a simpletestpipeline analysis to the asimov ledger."""
         with open("test_event.yaml", "w") as f:
             f.write(_EVENT_BLUEPRINT)
         apply_page("test_event.yaml", ledger=self.ledger)
@@ -447,7 +447,7 @@ class TestCBCFlowCollector(AsimovTestCase):
         results = self._read_pe_results()
         self.assertEqual(len(results), 1, "Expected exactly one result entry")
         self.assertEqual(results[0]["UID"], "Prod0")
-        self.assertEqual(results[0]["InferenceSoftware"], "bilby")
+        self.assertEqual(results[0]["InferenceSoftware"], "simpletestpipeline")
 
     @patch("asimov.git.EventRepo.find_prods", return_value=[])
     @patch("cbcflow.core.database.LocalLibraryDatabase.git_push_to_remote")
@@ -460,7 +460,7 @@ class TestCBCFlowCollector(AsimovTestCase):
         results = self._read_pe_results()
         self.assertEqual(results[0]["RunStatus"], "running")
 
-    @patch("asimov.pipelines.bilby.Bilby.collect_assets")
+    @patch("asimov.pipelines.testing.simple.SimpleTestPipeline.collect_assets")
     @patch("asimov.git.EventRepo.find_prods", return_value=[])
     @patch("cbcflow.core.database.LocalLibraryDatabase.git_push_to_remote")
     @patch("cbcflow.core.database.LocalLibraryDatabase.git_pull_from_remote")
@@ -491,7 +491,7 @@ class TestCBCFlowCollector(AsimovTestCase):
         results = self._read_pe_results()
         self.assertEqual(results[0].get("WaveformApproximant"), "IMRPhenomXPHM")
 
-    @patch("asimov.pipelines.bilby.Bilby.collect_assets")
+    @patch("asimov.pipelines.testing.simple.SimpleTestPipeline.collect_assets")
     @patch("asimov.git.EventRepo.find_prods", return_value=[])
     @patch("cbcflow.core.database.LocalLibraryDatabase.git_push_to_remote")
     @patch("cbcflow.core.database.LocalLibraryDatabase.git_pull_from_remote")

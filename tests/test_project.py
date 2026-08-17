@@ -152,7 +152,7 @@ class TestProject(unittest.TestCase):
             production = GravitationalWaveTransient(
                 subject=subject,
                 name="prod_bilby",
-                pipeline="bilby",
+                pipeline="simpletestpipeline",
                 status="ready",
                 ledger=project.ledger
             )

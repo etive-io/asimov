@@ -43,7 +43,7 @@ status: finished
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 needs:
   - optional: true
     pipeline: simpletestpipeline
@@ -71,7 +71,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 needs:
   - pipeline: simpletestpipeline
 """
@@ -102,7 +102,7 @@ status: finished
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 needs:
   - pipeline: simpletestpipeline
 """
@@ -133,7 +133,7 @@ status: finished
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 status: finished
 ---
 kind: analysis
@@ -142,7 +142,7 @@ pipeline: subjecttestpipeline
 needs:
   - pipeline: simpletestpipeline
   - optional: true
-    pipeline: bayeswave
+    pipeline: simpletestpipelinec
 """
         with open('test_mixed.yaml', 'w') as f:
             f.write(blueprint)
@@ -161,7 +161,7 @@ needs:
         # Required dependencies should be satisfied (simpletestpipeline is present)
         self.assertTrue(combiner.has_required_dependencies_satisfied)
         
-        # Should NOT have the rift dependency (optional and not present)
+        # Should NOT have the simpletestpipelinec dependency (optional and not present)
         # Dependencies list only includes what's actually matched
         self.assertEqual(len(combiner.dependencies), 1)
 
