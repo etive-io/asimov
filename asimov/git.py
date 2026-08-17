@@ -7,12 +7,8 @@ import time
 
 import git
 
-from copy import copy
-
 from asimov import config, logger
 from asimov.utils import set_directory
-
-from .ini import RunConfiguration
 
 
 class AsimovFileNotFound(FileNotFoundError):
@@ -350,81 +346,6 @@ class EventRepo:
             raise ValueError(f"Sample upload failed.\n{out}\n{err}")
         else:
             return out
-
-    def upload_preferred(self, event, prods):
-        """
-        Prepare the preferred PESummary file by combining all of the
-        productions for an event which are marked as `Preferred`
-        or `Finalised`.
-
-        Parameters
-        ----------
-        event : `asimov.event.Event`
-           The event which the preferred upload is being prepared for.
-        prods : list
-           A list of all of the productions which should be included in the preferred file.
-        """
-
-        samples = []
-        labels = []
-        configs = []
-
-        for prod in prods:
-            samples.append(
-                glob.glob(
-                    str(
-                        os.path.join(event.data[f"{prod}_rundir"], "posterior_samples"),
-                    )
-                    + "/*.hdf5"
-                )[0]
-            )
-            run_ini = os.path.join(event.data[f"{prod}_rundir"], "config.ini")
-            actual_config = RunConfiguration(run_ini)
-            engine_data = actual_config.get_engine()
-            labels.append(f"C01:{engine_data['approx']}")
-            configs.append(
-                str(os.path.join(event.data[f"{prod}_rundir"], "config.ini"))
-            )
-
-        with set_directory(
-            os.path.join(self.directory, "Preferred", "PESummary_metafile")
-        ):
-
-            command = [
-                "summarycombine",
-                "--webdir",
-                f"/home/daniel.williams/public_html/LVC/projects/O3/preferred/{event.title}",
-                "--samples",
-            ]
-            command += samples
-            command += ["--labels"]
-            command += labels
-            command += ["--config"]
-            command += configs
-            command += ["--gw"]
-
-            dagman = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-            )
-            out, err = dagman.communicate()
-
-            self.logger.info(out)
-            self.logger.error(err)
-
-            copy(
-                "/home/daniel.williams/public_html/LVC/projects/O3/"
-                + f"preferred/{event.title}/samples/posterior_samples.h5",
-                os.path.join(self.directory, "Preferred", "PESummary_metafile"),
-            )
-            self.repo.git.add("Preferred/PESummary_metafile/posterior_samples.h5")
-            self.repo.git.commit("-m", "Updated the preferred sample metafile.")
-            self.repo.git.push()
-            time.sleep(15)
-
-            event.labels += ["Preferred cleaned"]
-            event.issue_object.save()
-
-        return True
 
     def update(self, stash=False, branch=None):
         """

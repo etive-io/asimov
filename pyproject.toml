@@ -53,13 +53,22 @@ dependencies = [
 docs = [
 	"sphinx",
 	"kentigern >= 0.3.0",
-        "numpydoc",
+    "numpydoc",
 	"sphinx-click",
 	"sphinxcontrib-httpdomain",
 	"sphinxcontrib-httpexample",
 	"sphinx-jsonschema",
 	"sphinx-multiversion",
 	"autodoc-pydantic",
+]
+lvkgw = [
+	"bilby_pipe",
+	"asimov-pesummary",
+	"asimov-bayeswave",
+	"asimov-gwdata",
+]
+lvkgw-extras = [
+	"asimov-lalinference",
 ]
 bilby = [
 	"bilby_pipe",
@@ -93,5 +102,7 @@ packages = [
 
 [project.entry-points."asimov.pipelines"]
 simpletestpipeline = "asimov.pipelines.testing:SimpleTestPipeline"
+simpletestpipelineb = "asimov.pipelines.testing:SimpleTestPipelineB"
+simpletestpipelinec = "asimov.pipelines.testing:SimpleTestPipelineC"
 subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"
 projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"

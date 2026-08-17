@@ -6,11 +6,14 @@ BayesWave pipelines
 The BayesWave interface allows asimov to configure and monitor analyses using BayesWave.
 BayesWave is frequently used as the first analysis of an event in order to generate the on-source PSD estimates for subsequent analyses.
 
-Review Status
--------------
+BayesWave support is not part of asimov core. It's provided by the optional
+``asimov-bayeswave`` plugin, which you'll need to install separately:
 
-.. note::
-   The current integration with BayesWave is fully reviewed and is suitable for use with all collaboration analyses.
+::
+   $ pip install asimov-bayeswave
+
+Once the plugin is installed, ``pipeline: bayeswave`` in a blueprint will resolve to it exactly
+as it did when the integration shipped with asimov core.
 
 Examples
 --------

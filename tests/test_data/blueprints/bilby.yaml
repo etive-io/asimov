@@ -1,10 +1,8 @@
-# This file contains the standard set of analyses which were
-# applied to the events for the GWTC-3 catalogue paper.
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipelineb
 waveform:
     approximant: IMRPhenomXPHM
 scheduler:
     accounting group: test
-comment: Bilby parameter estimation job
+comment: Generic PE production job (pipeline is incidental to what these tests check)

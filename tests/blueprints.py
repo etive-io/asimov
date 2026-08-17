@@ -29,5 +29,4 @@ GWTC21_EVENTS = {
 PIPELINES = {
     "bilby": os.path.join(_BLUEPRINTS_DIR, "bilby.yaml"),
     "bayeswave": os.path.join(_BLUEPRINTS_DIR, "bayeswave.yaml"),
-    "rift": os.path.join(_BLUEPRINTS_DIR, "rift.yaml"),
 }

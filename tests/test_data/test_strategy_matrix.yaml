@@ -2,7 +2,7 @@
 kind: analysis
 name: bilby-{waveform.approximant}-{sampler.sampler}
 event: S000000
-pipeline: bilby
+pipeline: simpletestpipeline
 comment: PE job testing waveform and sampler combinations
 strategy:
   waveform.approximant:

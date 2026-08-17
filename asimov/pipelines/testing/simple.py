@@ -66,7 +66,16 @@ class SimpleTestPipeline(Pipeline):
         """
         super().__init__(production, category)
         self.logger.info("Using the SimpleTestPipeline for testing")
-    
+
+        # Eagerly read 'likelihood.minimum frequency' during construction, the
+        # same way real pipelines (e.g. BayesWave) compute a 'flow' value from
+        # production metadata inside __init__. This exists so tests can check
+        # that pipeline construction only ever sees post-migration metadata
+        # (see Analysis.__init__ / GravitationalWaveTransient's quality ->
+        # likelihood migration).
+        min_freq = production.meta.get("likelihood", {}).get("minimum frequency")
+        self.flow = min(min_freq.values()) if min_freq else None
+
     def _ensure_rundir(self):
         """
         Ensure the run directory exists.
@@ -309,7 +318,7 @@ class SimpleTestPipeline(Pipeline):
     def collect_assets(self):
         """
         Collect analysis assets for version control.
-        
+
         Returns
         -------
         dict
@@ -321,3 +330,23 @@ class SimpleTestPipeline(Pipeline):
             if os.path.exists(results):
                 assets['results'] = results
         return assets
+
+
+class SimpleTestPipelineB(SimpleTestPipeline):
+    """
+    A second, otherwise-identical, SimpleTestPipeline variant.
+
+    Dependency-matching logic (see :meth:`asimov.analysis.Analysis.matches_filter`)
+    identifies a pipeline by its ``name`` class attribute, so tests which need
+    several distinguishable pipeline names at once (e.g. to check that a
+    ``needs: pipeline: X`` filter matches X but not Y) can use this alongside
+    :class:`SimpleTestPipeline` and :class:`SimpleTestPipelineC`.
+    """
+
+    name = "SimpleTestPipelineB"
+
+
+class SimpleTestPipelineC(SimpleTestPipeline):
+    """A third, otherwise-identical, SimpleTestPipeline variant. See :class:`SimpleTestPipelineB`."""
+
+    name = "SimpleTestPipelineC"

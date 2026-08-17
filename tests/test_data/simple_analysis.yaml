@@ -1,5 +1,5 @@
 kind: analysis
 name: test-analysis-deprecated-fmin
-pipeline: bilby
+pipeline: simpletestpipeline
 waveform:
   approximant: IMRPhenomXPHM
