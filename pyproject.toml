@@ -51,7 +51,9 @@ dependencies = [
 
 [project.optional-dependencies]
 docs = [
-	"sphinx",
+	# sphinx-multiversion (unmaintained upstream) calls Config.read() with
+	# overrides/tags as positional args, which Sphinx 9 made keyword-only.
+	"sphinx<9",
 	"kentigern >= 0.3.0",
     "numpydoc",
 	"sphinx-click",

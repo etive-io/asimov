@@ -128,7 +128,10 @@ _MINIMAL_METADATA = {
     },
     "ExtremeMatter": {"Analyses": []},
     "Cosmology": {"Counterparts": []},
-    "Lensing": {"Analyses": []},
+    # cbcflow's v3 schema (its current default) replaced the flat "Analyses"
+    # list with "MultipletAnalyses"/"SingletAnalyses"; an empty dict validates
+    # since neither is required.
+    "Lensing": {},
     "RatesAndPopulations": {"RnPRunsUsingThisSuperevent": []},
     "TestingGR": {
         "IMRCTAnalyses": [],
