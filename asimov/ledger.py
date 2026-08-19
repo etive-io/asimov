@@ -307,7 +307,7 @@ class DatabaseLedger(Ledger):
     - Support for concurrent access
     """
 
-    def __init__(self, engine=None):
+    def __init__(self, engine=None, location=None):
         """
         Initialize the database ledger.
 
@@ -316,6 +316,11 @@ class DatabaseLedger(Ledger):
         engine : str, optional
             Database engine ('tinydb', 'sqlalchemy', 'mongodb').
             Defaults to the value in the config.
+        location : str, optional
+            Explicit database location/URL, overriding the config. Lets a
+            caller select a specific project's database without mutating
+            the process-wide config (e.g. when multiple projects are in
+            play in the same process).
         """
         if engine is None:
             engine = config.get("ledger", "engine")
@@ -323,10 +328,10 @@ class DatabaseLedger(Ledger):
         if engine == "tinydb":
             self.db = asimov.database.AsimovTinyDatabase()
         elif engine in {"sqlalchemy", "sqlite", "postgresql", "mysql"}:
-            self.db = asimov.database.AsimovSQLDatabase()
+            self.db = asimov.database.AsimovSQLDatabase(database_url=location)
         else:
             # Default to SQL database
-            self.db = asimov.database.AsimovSQLDatabase()
+            self.db = asimov.database.AsimovSQLDatabase(database_url=location)
 
     def __deepcopy__(self, memo):
         # Ledgers are shared singletons; deep-copying one would try to duplicate

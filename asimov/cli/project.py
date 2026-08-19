@@ -75,8 +75,8 @@ def make_project(
 
     # Make the ledger and operative files
     pathlib.Path(".asimov").mkdir(parents=True, exist_ok=True)
-    config.set("ledger", "engine", "yamlfile")
-    config.set("ledger", "location", os.path.join(".asimov", "ledger.yml"))
+    config.set("ledger", "engine", "sqlite")
+    config.set("ledger", "location", os.path.join(".asimov", "ledger.db"))
 
     # Set the default environment
     if (python_loc := shutil.which("python")) is not None:
@@ -137,9 +137,9 @@ def make_project(
             config.set("slurm", "user", user)
 
     Ledger.create(
-        engine="yamlfile",
+        engine="sqlite",
         name=project_name,
-        location=os.path.join(".asimov", "ledger.yml"),
+        location=os.path.join(".asimov", "ledger.db"),
     )
 
     with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:

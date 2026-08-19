@@ -16,7 +16,7 @@ def get_ledger():
         The ledger instance for the current request.
     """
     if 'ledger' not in g:
-        engine = config.get("ledger", "engine", fallback="yamlfile")
+        engine = config.get("ledger", "engine", fallback="sqlite")
         if engine == "yamlfile":
             from asimov.ledger import YAMLLedger
             g.ledger = YAMLLedger(config.get("ledger", "location"))
