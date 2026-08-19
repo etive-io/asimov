@@ -193,6 +193,15 @@ class Event:
         else:
             return False
 
+    def __hash__(self):
+        # Defining __eq__ without __hash__ makes instances unhashable in
+        # Python, which broke silently until something tried to put an
+        # Event in a set or use one as a dict key. Two Event objects
+        # representing the same underlying event (e.g. reconstructed
+        # independently from the ledger) should hash the same way they
+        # already compare equal.
+        return hash(self.name)
+
     def update_data(self):
         if self.ledger:
             self.ledger.update_event(self)

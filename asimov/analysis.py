@@ -103,6 +103,30 @@ class Analysis:
             self.meta.pop("review")
         return self._reviews
 
+    def __eq__(self, other):
+        # Analyses get reconstructed fresh from the ledger on essentially
+        # every read (see Ledger.events/project_analyses); without this,
+        # two independently-constructed objects representing the same
+        # underlying analysis are never equal, which silently breaks any
+        # code comparing results across two separate ledger reads (e.g.
+        # `set(ledger.project_analyses) - {a for a in ledger.project_analyses
+        # if ...}` never actually subtracts anything). Names are only
+        # unique within their parent event, not globally (see
+        # next_available_name), so event identity is part of the key.
+        # ProjectAnalysis has no event/subject, so this naturally reduces
+        # to a name-only comparison for it via the getattr default.
+        if not isinstance(other, Analysis):
+            return NotImplemented
+        return (
+            type(self) is type(other)
+            and self.name == other.name
+            and getattr(self, "event", None) == getattr(other, "event", None)
+        )
+
+    def __hash__(self):
+        event = getattr(self, "event", None)
+        return hash((type(self), event.name if event is not None else None, self.name))
+
     def _process_dependencies(self, needs):
         """
         Process the dependencies list for this production.
