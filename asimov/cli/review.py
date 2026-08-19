@@ -100,16 +100,19 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
         subjects = [event] + subjects
 
         for analysis in current_ledger.project_analyses:
+            # analysis.subjects is a list of Event objects, not names -
+            # compare/join by .name rather than the objects themselves.
+            analysis_subject_names = {s.name for s in analysis.subjects}
             if (
                 (analysis.name == production)
                 and (analysis.pipeline.name == pipeline)
-                and (set(analysis.subjects) == set(subjects))
+                and (analysis_subject_names == set(subjects))
             ):
 
                 found = True
                 click.secho(analysis.name, bold=True)
                 click.secho(analysis.pipeline)
-                click.secho(" ".join(analysis.subjects))
+                click.secho(" ".join(analysis_subject_names))
 
                 message = ReviewMessage(
                     message=message, status=status, production=production
