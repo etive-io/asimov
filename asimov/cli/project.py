@@ -148,14 +148,22 @@ def make_project(
         else:
             config.set("slurm", "user", user)
 
+    # Write asimov.conf before creating the ledger. This used to be the
+    # other way round, which was fine while ledger creation just meant
+    # writing a small YAML file - but creating the SQLite database (real
+    # file creation + table setup via SQLAlchemy) immediately before this
+    # write intermittently raised PermissionError on some Docker/overlayfs
+    # CI runners writing the *next* file in the same freshly-created
+    # directory. Writing the plain config file first sidesteps whatever
+    # that interaction is, and is arguably the more sensible order anyway.
+    with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
+        config.write(config_file)
+
     Ledger.create(
         engine=engine,
         name=project_name,
         location=os.path.join(".asimov", ledger_filename),
     )
-
-    with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
-        config.write(config_file)
 
 
 @click.command()
