@@ -18,6 +18,23 @@ from filelock import FileLock
 
 
 class Ledger:
+    def _invalidate_events_cache(self):
+        """
+        Drop the cached ``events``/``get_event()`` result.
+
+        Every write path that can change which events exist, or what a
+        production's dependency graph looks like, must call this. Without
+        it, events/productions read once stay stale for the lifetime of
+        this ledger instance - including within a single `with project:`
+        block, where a just-added event wouldn't show up in `get_event()`
+        until the process reloaded the ledger from scratch.
+        """
+        self._events_cache = None
+
+    def _invalidate_project_analyses_cache(self):
+        """Drop the cached ``project_analyses`` result. See _invalidate_events_cache."""
+        self._project_analyses_cache = None
+
     @classmethod
     def create(cls, name=None, engine=None, location=None):
         """
@@ -71,9 +88,8 @@ class YAMLLedger(Ledger):
         ]
 
         self.events = {ev["name"]: ev for ev in self.data["events"]}
-        self._all_events = [
-            Event(**self.events[event], ledger=self) for event in self.events.keys()
-        ]
+        self._events_cache = None
+        self._project_analyses_cache = None
         self.data.pop("events")
 
     def __getstate__(self):
@@ -114,6 +130,7 @@ class YAMLLedger(Ledger):
         Update an event in the ledger with a changed event object.
         """
         self.events[event.name] = event.to_dict()
+        self._invalidate_events_cache()
         self.save()
 
     def update_analysis_in_project_analysis(self, analysis):
@@ -125,6 +142,7 @@ class YAMLLedger(Ledger):
                 dict_to_save = analysis.to_dict().copy()
                 dict_to_save["status"] = analysis.status
                 self.data["project analyses"][i] = dict_to_save
+        self._invalidate_project_analyses_cache()
         self.save()
 
     def delete_event(self, event_name):
@@ -142,6 +160,7 @@ class YAMLLedger(Ledger):
         if "events" not in self.data["trash"]:
             self.data["trash"]["events"] = {}
         self.data["trash"]["events"][event_name] = event
+        self._invalidate_events_cache()
         self.save()
 
     def save(self):
@@ -172,6 +191,7 @@ class YAMLLedger(Ledger):
             self.data["events"] = []
 
         self.events[subject.name] = subject.to_dict()
+        self._invalidate_events_cache()
         self.save()
 
     def add_event(self, event):
@@ -206,9 +226,11 @@ class YAMLLedger(Ledger):
                 raise ValueError(
                     "An analysis with that name already exists in the ledger."
                 )
+            self._invalidate_project_analyses_cache()
         else:
             event.add_production(analysis)
             self.events[event.name] = event.to_dict()
+            self._invalidate_events_cache()
         self.save()
 
     def add_production(self, event, production):
@@ -235,10 +257,20 @@ class YAMLLedger(Ledger):
 
     @property
     def project_analyses(self):
-        return [
-            ProjectAnalysis.from_dict(analysis, ledger=self)
-            for analysis in self.data.get("project analyses", [])
-        ]
+        if self._project_analyses_cache is None:
+            self._project_analyses_cache = [
+                ProjectAnalysis.from_dict(analysis, ledger=self)
+                for analysis in self.data.get("project analyses", [])
+            ]
+        return self._project_analyses_cache
+
+    @property
+    def _all_events(self):
+        if self._events_cache is None:
+            self._events_cache = [
+                Event(**self.events[name], ledger=self) for name in self.events.keys()
+            ]
+        return self._events_cache
 
     def get_event(self, event=None):
         if event:
@@ -333,6 +365,9 @@ class DatabaseLedger(Ledger):
             # Default to SQL database
             self.db = asimov.database.AsimovSQLDatabase(database_url=location)
 
+        self._events_cache = None
+        self._project_analyses_cache = None
+
     def __deepcopy__(self, memo):
         # Ledgers are shared singletons; deep-copying one would try to duplicate
         # the underlying database engine (which contains unpicklable module state).
@@ -398,6 +433,12 @@ class DatabaseLedger(Ledger):
             id_number = self.db.insert("project_analysis", data)
         else:
             raise ValueError(f"Unknown payload type: {type(payload)}")
+
+        # Cheap and conservative: any insert could change what events() or
+        # project_analyses() should return, so drop both caches rather than
+        # trying to reason about which one this particular payload affects.
+        self._invalidate_events_cache()
+        self._invalidate_project_analyses_cache()
 
         return id_number
 
@@ -479,12 +520,22 @@ class DatabaseLedger(Ledger):
         """
         Return all of the events in the ledger.
 
+        Cached: reconstructing every event (each with its own productions,
+        dependency graph, and pipeline objects) is expensive, and this
+        property gets read repeatedly within a single command (e.g. the
+        monitor loop, report generation). Invalidated by any write via
+        _insert/update_event/delete_event.
+
         Returns
         -------
         list of Event
             All events.
         """
-        return [self._event_from_dict(event_dict) for event_dict in self.db.query("event")]
+        if self._events_cache is None:
+            self._events_cache = [
+                self._event_from_dict(event_dict) for event_dict in self.db.query("event")
+            ]
+        return self._events_cache
 
     def _event_from_dict(self, event_dict):
         kwargs = dict(event_dict)
@@ -516,6 +567,9 @@ class DatabaseLedger(Ledger):
         """
         Return all project analyses in the ledger.
 
+        Cached; see the `events` property docstring for why. Invalidated
+        by any write via _insert/update_analysis_in_project_analysis.
+
         Returns
         -------
         list of ProjectAnalysis
@@ -523,10 +577,12 @@ class DatabaseLedger(Ledger):
         """
         from asimov.analysis import ProjectAnalysis
 
-        return [
-            ProjectAnalysis.from_dict(analysis, ledger=self)
-            for analysis in self.db.query("project_analysis")
-        ]
+        if self._project_analyses_cache is None:
+            self._project_analyses_cache = [
+                ProjectAnalysis.from_dict(analysis, ledger=self)
+                for analysis in self.db.query("project_analysis")
+            ]
+        return self._project_analyses_cache
 
     def get_defaults(self):
         """
@@ -719,6 +775,7 @@ class DatabaseLedger(Ledger):
                     self.db.insert_production(prod_data)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
+        self._invalidate_events_cache()
 
     def update_analysis_in_project_analysis(self, analysis):
         """
@@ -738,6 +795,7 @@ class DatabaseLedger(Ledger):
                 self.db.insert_project_analysis(data)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
+        self._invalidate_project_analyses_cache()
 
     def delete_event(self, event_name):
         """
@@ -752,6 +810,7 @@ class DatabaseLedger(Ledger):
             self.db.delete_event(event_name)
         else:
             raise NotImplementedError("Delete not implemented for TinyDB backend")
+        self._invalidate_events_cache()
 
     def save(self):
         """
