@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 import sys
 import click
 from asimov import logger, LOGGER_LEVEL, condor
+from asimov.telemetry import emit_event
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points
@@ -202,6 +203,20 @@ class RunningState(MonitorState):
                 except Exception as e:
                     logger.warning("Could not collect condor profiling data.")
                     logger.exception(e)
+                else:
+                    # Isolated from the collection try/except above: a
+                    # telemetry hiccup must never be misreported as a
+                    # profiling-collection failure, and must never be
+                    # allowed to skip clear_job_id()/update_ledger() below.
+                    try:
+                        emit_event(
+                            analysis, "resource_snapshot",
+                            ledger=getattr(context, "ledger", None),
+                            **analysis.meta["profiling"],
+                        )
+                    except Exception as e:
+                        logger.warning("Could not emit resource_snapshot telemetry.")
+                        logger.exception(e)
                 finally:
                     context.clear_job_id()
                     context.update_ledger()

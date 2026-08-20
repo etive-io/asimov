@@ -225,6 +225,92 @@ class TestLocalProcessScheduler(unittest.TestCase):
         results2 = self.scheduler.query(pid)
         self.assertEqual(results2, [])
 
+    # ------------------------------------------------------------------
+    # collect_history
+    # ------------------------------------------------------------------
+
+    def test_collect_history_after_completion(self):
+        """collect_history() should work once query() has observed completion."""
+        pid = self.scheduler.submit(
+            {
+                "executable": sys.executable,
+                "arguments": "-c pass",
+                "output": self._out("history_out.txt"),
+                "error": self._out("history_err.txt"),
+            }
+        )
+        self.scheduler.wait_for_job(pid)
+        self.scheduler.query(pid)  # moves the completed process into _history
+
+        history = self.scheduler.collect_history(pid)
+        self.assertEqual(history["cpus"], 1.0)
+        self.assertEqual(history["gpus"], 0.0)
+        self.assertGreaterEqual(history["runtime"], 0.0)
+        self.assertTrue(history["end"])  # a YYYY-MM-DD string was produced
+
+    def test_collect_history_unknown_pid_raises(self):
+        """collect_history() for a PID that was never tracked should raise ValueError."""
+        with self.assertRaises(ValueError):
+            self.scheduler.collect_history(999999999)
+
+    def test_collect_history_before_query_observes_completion_raises(self):
+        """collect_history() shouldn't find a history record before query() has run."""
+        pid = self.scheduler.submit(
+            {
+                "executable": sys.executable,
+                "arguments": "-c pass",
+                "output": self._out("premature_out.txt"),
+                "error": self._out("premature_err.txt"),
+            }
+        )
+        self.scheduler.wait_for_job(pid)
+        # Deliberately not calling query() here - no history record exists yet.
+        with self.assertRaises(ValueError):
+            self.scheduler.collect_history(pid)
+
+    def test_collect_history_error_exit_still_recorded(self):
+        """A non-zero exit code should still produce a usable history record."""
+        pid = self.scheduler.submit(
+            {
+                "executable": sys.executable,
+                "arguments": ["-c", "import sys; sys.exit(3)"],
+                "output": self._out("failed_out.txt"),
+                "error": self._out("failed_err.txt"),
+            }
+        )
+        self.scheduler.wait_for_job(pid)
+        self.scheduler.query(pid)
+
+        history = self.scheduler.collect_history(pid)
+        self.assertTrue(history["end"])
+
+    def test_history_is_bounded(self):
+        """The history cache should evict the oldest entry once the limit is exceeded."""
+        original_limit = self.scheduler._HISTORY_LIMIT
+        self.scheduler._HISTORY_LIMIT = 2
+        try:
+            pids = []
+            for _ in range(3):
+                pid = self.scheduler.submit(
+                    {
+                        "executable": sys.executable,
+                        "arguments": "-c pass",
+                        "output": self._out(f"bounded_out_{_}.txt"),
+                        "error": self._out(f"bounded_err_{_}.txt"),
+                    }
+                )
+                self.scheduler.wait_for_job(pid)
+                self.scheduler.query(pid)
+                pids.append(pid)
+
+            # The first submitted job's history should have been evicted.
+            with self.assertRaises(ValueError):
+                self.scheduler.collect_history(pids[0])
+            # The most recent one should still be present.
+            self.scheduler.collect_history(pids[-1])
+        finally:
+            self.scheduler._HISTORY_LIMIT = original_limit
+
 
 class TestGetSchedulerLocal(unittest.TestCase):
     """Tests for the get_scheduler factory with type='local'."""
