@@ -73,7 +73,7 @@ class Ledger:
                     location if "://" in location
                     else f"sqlite:///{os.path.abspath(location)}"
                 )
-            return DatabaseLedger.create(engine=engine, location=database_url)
+            return DatabaseLedger.create(name=name, engine=engine, location=database_url)
 
         raise ValueError(f"Unsupported ledger engine: {engine}")
 
@@ -364,7 +364,15 @@ class DatabaseLedger(Ledger):
             engine = config.get("ledger", "engine")
 
         if engine == "tinydb":
-            self.db = asimov.database.AsimovTinyDatabase()
+            # `location` may arrive as a bare path (direct construction) or
+            # as a `sqlite:///`-prefixed URL (Ledger.create()'s dispatcher
+            # URL-ifies bare paths for every non-yaml engine, tinydb
+            # included, since that's what AsimovSQLDatabase needs). TinyDB
+            # itself just wants a plain path either way.
+            tinydb_path = location
+            if tinydb_path and tinydb_path.startswith("sqlite:///"):
+                tinydb_path = tinydb_path[len("sqlite:///"):]
+            self.db = asimov.database.AsimovTinyDatabase(database_path=tinydb_path)
         elif engine in {"sqlalchemy", "sqlite", "postgresql", "mysql"}:
             self.db = asimov.database.AsimovSQLDatabase(database_url=location)
         else:
@@ -396,12 +404,18 @@ class DatabaseLedger(Ledger):
         return self._data_cache
 
     @classmethod
-    def create(cls, engine=None, location=None):
+    def create(cls, name=None, engine=None, location=None):
         """
         Create a new database ledger.
 
         Parameters
         ----------
+        name : str, optional
+            Project name. Seeded into ``ledger.data["project"]["name"]``,
+            matching what YAMLLedger.create() does - several read paths
+            (`asimov monitor`, `asimov report`) expect it to be there from
+            project creation onward, not only once a `kind: configuration`
+            blueprint happens to set it.
         engine : str, optional
             Database engine to use.
         location : str, optional
@@ -415,6 +429,9 @@ class DatabaseLedger(Ledger):
         """
         ledger = cls(engine=engine, location=location)
         ledger.db._create()
+        if name is not None:
+            ledger.data["project"]["name"] = name
+            ledger.save()
         return ledger
 
     def _insert(self, payload):

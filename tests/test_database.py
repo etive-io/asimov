@@ -505,6 +505,24 @@ class TestAsimovTinyDatabase(unittest.TestCase):
         self.db.save_config({"quality": {"L1": "foo"}})
         self.assertEqual(self.db.get_config(), {"quality": {"L1": "foo"}})
 
+    def test_explicit_database_path_overrides_config(self):
+        """Test that an explicit database_path is honored instead of the
+        (mocked) config value, matching AsimovSQLDatabase's database_url."""
+        other_path = os.path.join(self.test_dir, "other_ledger.json")
+        db = AsimovTinyDatabase(database_path=other_path)
+        db.save_config({"project": {"name": "explicit-path"}})
+
+        # The mocked config still points at self.db_path; a database opened
+        # against that path should NOT see the write made via other_path.
+        self.assertEqual(self.db.get_config(), {})
+        self.assertTrue(os.path.exists(other_path))
+
+        # Re-opening the explicit path directly should see the write.
+        reopened = AsimovTinyDatabase(database_path=other_path)
+        self.assertEqual(
+            reopened.get_config(), {"project": {"name": "explicit-path"}}
+        )
+
 
 class TestDatabaseLedger(unittest.TestCase):
     """Tests for DatabaseLedger integration."""
@@ -770,6 +788,43 @@ class TestDatabaseLedger(unittest.TestCase):
         """Test .data is cached (same object identity), not reloaded/rebuilt
         on every access, matching update()'s in-place-mutation contract."""
         self.assertIs(self.ledger.data, self.ledger.data)
+
+    def test_create_seeds_project_name(self):
+        """Test that DatabaseLedger.create(name=...) seeds
+        data["project"]["name"], matching YAMLLedger.create(). Real CLI
+        callers (make_project() in asimov/cli/project.py) always pass
+        `name`, and `asimov monitor`/`asimov report` read
+        ledger.data["project"]["name"] unconditionally from project
+        creation onward - not only once a `kind: configuration` blueprint
+        happens to set it."""
+        other_path = os.path.join(self.test_dir, "seeded_ledger.db")
+        other_url = f"sqlite:///{other_path}"
+        ledger = DatabaseLedger.create(
+            name="GWTC-Test", engine="sqlalchemy", location=other_url
+        )
+        self.assertEqual(ledger.data["project"]["name"], "GWTC-Test")
+
+        # And it's genuinely persisted, not just held in the returned
+        # instance's cache.
+        fresh = DatabaseLedger(engine="sqlalchemy", location=other_url)
+        self.assertEqual(fresh.data["project"]["name"], "GWTC-Test")
+
+    def test_tinydb_engine_honors_sqlite_prefixed_location(self):
+        """Test the tinydb branch of DatabaseLedger.__init__ strips a
+        sqlite:/// prefix rather than trying to open a file literally named
+        "sqlite:///...". Ledger.create()'s dispatcher URL-ifies bare paths
+        for every non-yaml engine, tinydb included, since that's the form
+        AsimovSQLDatabase needs - tinydb has to defensively unwrap it."""
+        tinydb_path = os.path.join(self.test_dir, "tiny_ledger.json")
+        ledger = DatabaseLedger(engine="tinydb", location=f"sqlite:///{tinydb_path}")
+        ledger.data["project"] = {"name": "tiny-test"}
+        ledger.save()
+
+        self.assertTrue(os.path.exists(tinydb_path))
+        self.assertFalse(os.path.exists(f"sqlite:///{tinydb_path}"))
+
+        reopened = DatabaseLedger(engine="tinydb", location=tinydb_path)
+        self.assertEqual(reopened.data["project"]["name"], "tiny-test")
 
 
 if __name__ == "__main__":
