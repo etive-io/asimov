@@ -29,6 +29,24 @@ def _get_job_status(job):
     return job.status.lower()
 
 
+def _collect_history_for(context, job_id):
+    """
+    Collect job history using whichever scheduler is actually configured.
+
+    ``context.job_list`` is normally a scheduler-agnostic
+    :class:`asimov.scheduler.JobList`, which carries a real ``.scheduler``
+    (HTCondor/Slurm/LocalProcessScheduler) to dispatch to. Falls back to the
+    legacy ``asimov.condor.collect_history`` for the older
+    ``condor.CondorJobList`` (used when ``get_job_list()`` itself raises -
+    see ``asimov/cli/monitor.py``), which predates the scheduler
+    abstraction and has no ``.scheduler`` attribute to dispatch through.
+    """
+    scheduler = getattr(getattr(context, "job_list", None), "scheduler", None)
+    if scheduler is not None:
+        return scheduler.collect_history(job_id)
+    return condor.collect_history(job_id)
+
+
 class MonitorState(ABC):
     """
     Abstract base class for monitor states.
@@ -197,7 +215,7 @@ class RunningState(MonitorState):
             job_id = context.job_id
             if job_id:
                 try:
-                    analysis.meta["profiling"] = condor.collect_history(job_id)
+                    analysis.meta["profiling"] = _collect_history_for(context, job_id)
                 except ValueError:
                     logger.warning("Could not collect condor profiling data: no history record found.")
                 except Exception as e:
