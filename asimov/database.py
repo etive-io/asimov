@@ -29,6 +29,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool, NullPool
 
 from asimov import config
+from asimov.utils import update as asimov_update
 from asimov.models import (
     Base,
     EventModel,
@@ -66,6 +67,26 @@ class AsimovDatabase:
 
     def save_config(self, data: Dict[str, Any]) -> None:
         """Persist the ledger-wide configuration dict, replacing whatever was stored."""
+        raise NotImplementedError
+
+    def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge `updates` into whatever is currently persisted and save the
+        result, instead of blindly replacing it.
+
+        A long-lived caller (e.g. the `asimov monitor` loop, which calls
+        ledger.save() after every analysis it touches) can hold a config
+        snapshot that's minutes or hours stale. Overwriting wholesale from
+        that snapshot would silently erase any key a different process
+        added or changed in the meantime. Merging means only keys `updates`
+        actually touches can conflict with a concurrent writer - everything
+        else concurrently added/changed survives.
+
+        Returns
+        -------
+        dict
+            The merged, now-persisted configuration.
+        """
         raise NotImplementedError
 
 
@@ -130,6 +151,12 @@ class AsimovTinyDatabase(AsimovDatabase):
         # followed by insert(), which leaves a window where the table is
         # empty if the process is interrupted between the two calls.
         self.tables["config"].upsert(Document({"data": data}, doc_id=1))
+
+    def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        current = self.get_config()
+        asimov_update(current, updates)
+        self.save_config(current)
+        return current
 
 
 class AsimovSQLDatabase(AsimovDatabase):
@@ -683,3 +710,28 @@ class AsimovSQLDatabase(AsimovDatabase):
                 row.data = data
             else:
                 session.add(LedgerConfigModel(id=1, data=data))
+
+    def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge `updates` into whatever is currently persisted and save the
+        result, instead of blindly replacing it - see AsimovDatabase.merge_config.
+
+        The read, merge, and write happen inside a single session/transaction,
+        so two concurrent merge_config() calls can't interleave their reads:
+        SQLite serializes writers at the file level, so the second call's
+        SELECT effectively blocks until the first call's transaction commits.
+
+        Returns
+        -------
+        dict
+            The merged, now-persisted configuration.
+        """
+        with self.get_session() as session:
+            row = session.query(LedgerConfigModel).filter(LedgerConfigModel.id == 1).first()
+            current = dict(row.data) if row else {}
+            asimov_update(current, updates)
+            if row:
+                row.data = current
+            else:
+                session.add(LedgerConfigModel(id=1, data=current))
+            return current
