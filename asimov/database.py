@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional, Any
 
 from tinydb import Query, TinyDB
+from tinydb.table import Document
 from sqlalchemy import create_engine, and_, or_
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool, NullPool
@@ -71,8 +72,20 @@ class AsimovDatabase:
 class AsimovTinyDatabase(AsimovDatabase):
     """TinyDB-based document database implementation."""
 
-    def __init__(self):
-        database_path = config.get("ledger", "location")
+    def __init__(self, database_path: Optional[str] = None):
+        """
+        Initialize the TinyDB backend.
+
+        Parameters
+        ----------
+        database_path : str, optional
+            Explicit path to the TinyDB JSON file, overriding the config.
+            Lets a caller select a specific project's database without
+            mutating the process-wide config, matching AsimovSQLDatabase's
+            `database_url` parameter.
+        """
+        if database_path is None:
+            database_path = config.get("ledger", "location")
         self.db = TinyDB(database_path)
         self.tables = {
             "event": self.db.table("event"),
@@ -108,14 +121,15 @@ class AsimovTinyDatabase(AsimovDatabase):
         return pages
 
     def get_config(self) -> Dict[str, Any]:
-        docs = self.tables["config"].all()
-        return docs[0]["data"] if docs else {}
+        doc = self.tables["config"].get(doc_id=1)
+        return doc["data"] if doc else {}
 
     def save_config(self, data: Dict[str, Any]) -> None:
-        # Always exactly one config document: replace it wholesale, mirroring
-        # how YAMLLedger dumps the whole of self.data on every save().
-        self.tables["config"].truncate()
-        self.tables["config"].insert({"data": data})
+        # Singleton document at a fixed doc_id: upsert is a single atomic
+        # TinyDB call (insert-or-replace), unlike a separate truncate()
+        # followed by insert(), which leaves a window where the table is
+        # empty if the process is interrupted between the two calls.
+        self.tables["config"].upsert(Document({"data": data}, doc_id=1))
 
 
 class AsimovSQLDatabase(AsimovDatabase):
