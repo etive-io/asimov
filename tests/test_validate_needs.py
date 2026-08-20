@@ -25,7 +25,11 @@ class ValidateNeedsTests(unittest.TestCase):
     def setUp(self):
         os.makedirs(f"{self.cwd}/tests/tmp/validate_needs_project", exist_ok=True)
         os.chdir(f"{self.cwd}/tests/tmp/validate_needs_project")
-        make_project(name="Test project", root=f"{self.cwd}/tests/tmp/validate_needs_project")
+        make_project(
+            name="Test project",
+            root=f"{self.cwd}/tests/tmp/validate_needs_project",
+            engine="yamlfile",
+        )
         self.ledger = YAMLLedger(".asimov/ledger.yml")
         apply_page(file=f"{self.cwd}/tests/test_data/testing_pe.yaml", event=None, ledger=self.ledger)
         apply_page(file=f"{self.cwd}/tests/test_data/events_blueprint.yaml", ledger=self.ledger)
@@ -39,7 +43,7 @@ class ValidateNeedsTests(unittest.TestCase):
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: uploaded
 """
         with open("test_no_required.yaml", "w") as f:
@@ -61,12 +65,12 @@ status: uploaded
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: uploaded
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipeline
 needs:
   - Prod0
 """
@@ -97,12 +101,12 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: uploaded
 ---
 kind: analysis
 name: Prod1
-pipeline: bilby
+pipeline: simpletestpipeline
 needs:
   - Prod0
 """
@@ -135,7 +139,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bilby
+pipeline: simpletestpipeline
 status: ready
 """
         with open("test_actual_inputs.yaml", "w") as f:
@@ -158,7 +162,7 @@ status: ready
         blueprint = """
 kind: analysis
 name: Prod0
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: uploaded
 """
         with open("test_actual_outputs.yaml", "w") as f:
@@ -181,12 +185,12 @@ status: uploaded
         blueprint = """
 kind: analysis
 name: PSD
-pipeline: bayeswave
+pipeline: simpletestpipeline
 status: uploaded
 ---
 kind: analysis
 name: PE
-pipeline: bilby
+pipeline: simpletestpipeline
 needs:
   - PSD
 """
@@ -221,7 +225,7 @@ needs:
         blueprint = """
 kind: analysis
 name: Standalone
-pipeline: bilby
+pipeline: simpletestpipeline
 status: ready
 """
         with open("test_standalone.yaml", "w") as f:
