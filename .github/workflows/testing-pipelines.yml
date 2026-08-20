@@ -49,6 +49,25 @@ jobs:
               git config --global user.name "Your Name"
               SUBMITUSER
 
+      - name: Diagnose workspace state (before init)
+        run: |
+          su - submituser <<SUBMITUSER
+          set -x
+          id
+          stat "$GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE"
+          if [ -e "$GITHUB_WORKSPACE/.asimov" ]; then
+            echo ".asimov already exists!"
+            stat "$GITHUB_WORKSPACE/.asimov"
+          else
+            echo ".asimov does not exist yet"
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/.diag_after" && echo "mkdir ok"
+          stat "$GITHUB_WORKSPACE/.diag_after"
+          echo test > "$GITHUB_WORKSPACE/.diag_after/f" && echo "write ok"
+          rm -rf "$GITHUB_WORKSPACE/.diag_after"
+          SUBMITUSER
+
       - name: Create asimov project
         uses: ./.github/actions/run-asimov-command
         with:
