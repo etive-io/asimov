@@ -1090,8 +1090,102 @@ class Slurm(Scheduler):
         return data
 
     def collect_history(self, cluster_id):
-        """Collect history for a Slurm job (not yet implemented)."""
-        raise NotImplementedError("Slurm history collection is not yet implemented")
+        """
+        Collect history information for a completed Slurm job.
+
+        Uses ``sacct`` (the Slurm accounting-history tool) rather than
+        ``squeue``, which only reports currently-queued/running jobs and
+        drops a job from its output once it's finished.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The Slurm job ID.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys ``end``, ``cpus``, ``gpus``, ``runtime``,
+            matching :meth:`HTCondor.collect_history`'s contract.
+
+        Raises
+        ------
+        ValueError
+            If no history record is found for *cluster_id*, or the job
+            hasn't finished yet.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "sacct", "-j", str(cluster_id),
+                    "--format=JobID,End,Elapsed,AllocTRES",
+                    "--noheader", "--parsable2",
+                ],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise ValueError(
+                f"Could not query sacct for job {cluster_id}: {e.stderr.strip()}"
+            ) from e
+
+        # sacct also reports sub-step rows for the same job (e.g. "123.batch",
+        # "123.extern") - only the top-level job ID row (exactly "123") has
+        # the fields we want.
+        job_row = None
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|")
+            if len(parts) >= 4 and parts[0] == str(cluster_id):
+                job_row = parts
+                break
+
+        if job_row is None:
+            raise ValueError(f"No history found for Slurm job {cluster_id}")
+
+        _, end_field, elapsed_field, alloc_tres = job_row
+
+        if not end_field or end_field == "Unknown":
+            raise ValueError(f"Slurm job {cluster_id} has not finished yet")
+
+        try:
+            end_dt = datetime.datetime.strptime(end_field, "%Y-%m-%dT%H:%M:%S")
+            end_str = end_dt.strftime("%Y-%m-%d")
+        except ValueError:
+            end_str = end_field
+
+        runtime = self._parse_slurm_elapsed(elapsed_field)
+
+        cpus = 1.0
+        gpus = 0.0
+        for item in alloc_tres.split(","):
+            item = item.strip()
+            if not item or "=" not in item:
+                continue
+            key, _, value = item.partition("=")
+            try:
+                value = float(value)
+            except ValueError:
+                continue
+            if key == "cpu":
+                cpus = value
+            elif key.startswith("gres/gpu"):
+                gpus = value
+
+        return {"end": end_str, "cpus": cpus, "gpus": gpus, "runtime": runtime}
+
+    @staticmethod
+    def _parse_slurm_elapsed(elapsed):
+        """Parse a Slurm ``Elapsed`` field (``[DD-]HH:MM:SS``) into seconds."""
+        days = 0
+        if "-" in elapsed:
+            day_part, elapsed = elapsed.split("-", 1)
+            days = int(day_part)
+        parts = [int(p) for p in elapsed.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        hours, minutes, seconds = parts[-3:]
+        return float(
+            days * 86400 + hours * 3600 + minutes * 60 + seconds
+        )
 
 
 class LocalProcessScheduler(Scheduler):
@@ -1114,9 +1208,19 @@ class LocalProcessScheduler(Scheduler):
     :class:`JobDescription` objects should be submitted.
     """
 
+    _HISTORY_LIMIT = 200
+
     def __init__(self):
         """Initialize the local process scheduler."""
-        self._processes = {}  # pid -> {"process": Popen, "command": str, "name": str}
+        self._processes = {}  # pid -> {"process": Popen, "command": str, "name": str, "start_time": float}
+        # Bounded record of completed processes, populated by query() just
+        # before it drops a PID from self._processes, so collect_history()
+        # has something to look up after the process has exited. A local
+        # subprocess has no external accounting system (unlike HTCondor's
+        # condor_history or Slurm's sacct) to ask after the fact, so this is
+        # the only record that will ever exist - capped since this scheduler
+        # is meant for many short-lived jobs, not unbounded retention.
+        self._history = {}  # pid -> {"start_time", "end_time", "exit_code"}
         self._lock = threading.Lock()
 
     def wait_for_job(self, job_id):
@@ -1227,6 +1331,7 @@ class LocalProcessScheduler(Scheduler):
                 "process": proc,
                 "command": " ".join(command),
                 "name": name,
+                "start_time": datetime.datetime.now(datetime.timezone.utc).timestamp(),
             }
         return proc.pid
 
@@ -1305,10 +1410,10 @@ class LocalProcessScheduler(Scheduler):
                 status = "running"
             elif poll == 0:
                 status = "completed"
-                completed_pids.append(pid)
+                completed_pids.append((pid, poll))
             else:
                 status = f"error (exit {poll})"
-                completed_pids.append(pid)
+                completed_pids.append((pid, poll))
             results.append(
                 {
                     "id": pid,
@@ -1319,10 +1424,23 @@ class LocalProcessScheduler(Scheduler):
                 }
             )
 
-        # Remove completed processes to prevent memory leaks and zombie accumulation.
+        # Remove completed processes to prevent memory leaks and zombie
+        # accumulation, but keep a bounded record of them first - this is
+        # the only place a completed local process's start/end time is ever
+        # available, since (unlike HTCondor/Slurm) there's no external
+        # accounting system to ask about it later via collect_history().
         with self._lock:
-            for pid in completed_pids:
-                self._processes.pop(pid, None)
+            for pid, exit_code in completed_pids:
+                proc_info = self._processes.pop(pid, None)
+                if proc_info is None:
+                    continue
+                self._history[pid] = {
+                    "start_time": proc_info.get("start_time"),
+                    "end_time": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+                    "exit_code": exit_code,
+                }
+                while len(self._history) > self._HISTORY_LIMIT:
+                    self._history.pop(next(iter(self._history)))
 
         return results
 
@@ -1346,8 +1464,47 @@ class LocalProcessScheduler(Scheduler):
         return self.query()
 
     def collect_history(self, cluster_id):
-        """Collect history for a Slurm job."""
-        raise NotImplementedError("Slurm scheduler is not yet implemented")
+        """
+        Collect history information for a completed local process.
+
+        Only available after :meth:`query` has observed the process exit at
+        least once (which is what moves it from live tracking into the
+        bounded history record) - and only while that record hasn't since
+        been evicted by :attr:`_HISTORY_LIMIT`.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The PID returned by :meth:`submit`.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys ``end``, ``cpus``, ``gpus``, ``runtime``,
+            matching :meth:`HTCondor.collect_history`'s contract. ``cpus``
+            is always ``1`` and ``gpus`` is always ``0``: a bare local
+            subprocess has no resource-allocation concept to report on,
+            unlike a real cluster scheduler.
+
+        Raises
+        ------
+        ValueError
+            If no history record is found for *cluster_id*.
+        """
+        with self._lock:
+            record = self._history.get(cluster_id)
+
+        if record is None:
+            raise ValueError(f"No history found for local process {cluster_id}")
+
+        start_time = record.get("start_time")
+        end_time = record.get("end_time")
+        runtime = (end_time - start_time) if (start_time and end_time) else 0.0
+        end_str = (
+            _datetime_from_epoch(end_time).strftime("%Y-%m-%d") if end_time else ""
+        )
+
+        return {"end": end_str, "cpus": 1.0, "gpus": 0.0, "runtime": runtime}
 
 
 class Job:

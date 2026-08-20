@@ -4,7 +4,9 @@ Analyses API blueprint.
 Provides CRUD operations for event analyses.
 """
 
+import json
 import logging
+import os
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from asimov.api.utils import get_ledger
@@ -48,10 +50,14 @@ def get_analysis(event_name, analysis_name):
     return jsonify({'analysis': analysis.to_dict(event=False)})
 
 
-@bp.route('/<event_name>/<analysis_name>/logs', methods=['GET'])
-def get_analysis_logs(event_name, analysis_name):
+@bp.route('/<event_name>/<analysis_name>/telemetry', methods=['GET'])
+def get_analysis_telemetry(event_name, analysis_name):
     """
-    Get log file contents for an analysis, independent of which scheduler ran it.
+    Get telemetry events recorded for an analysis.
+
+    Reads events live from the analysis's local ``telemetry.jsonl`` file -
+    the same run-directory-based storage the built-in local telemetry sink
+    writes to. Not cached, not stored in the ledger.
 
     Parameters
     ----------
@@ -60,10 +66,18 @@ def get_analysis_logs(event_name, analysis_name):
     analysis_name : str
         The analysis name.
 
+    Query parameters
+    -----------------
+    event_type : str, optional
+        Only return events with this ``event_type``.
+    since : str, optional
+        Only return events with a timestamp >= this ISO 8601 string
+        (compared as strings, which works for ISO 8601 timestamps).
+
     Returns
     -------
     json
-        A mapping of log file names to their contents, or an error message.
+        A list of telemetry events, or an error message.
     """
     ledger = get_ledger()
     try:
@@ -78,14 +92,38 @@ def get_analysis_logs(event_name, analysis_name):
         return jsonify({'error': 'Analysis not found'}), 404
 
     try:
-        logs = analysis.pipeline.collect_logs()
+        rundir = analysis.rundir
     except Exception:
-        logger.exception(
-            "Unexpected error collecting logs for %s/%s", event_name, analysis_name
-        )
-        return jsonify({'error': 'Could not collect logs'}), 500
+        rundir = None
 
-    return jsonify({'logs': logs})
+    telemetry_events = []
+    path = os.path.join(rundir, "telemetry.jsonl") if rundir else None
+    if path and os.path.isfile(path):
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        telemetry_events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            logger.exception(
+                "Unexpected error reading telemetry for %s/%s", event_name, analysis_name
+            )
+            return jsonify({'error': 'Could not read telemetry'}), 500
+
+    event_type = request.args.get('event_type')
+    if event_type:
+        telemetry_events = [e for e in telemetry_events if e.get('event_type') == event_type]
+
+    since = request.args.get('since')
+    if since:
+        telemetry_events = [e for e in telemetry_events if e.get('timestamp', '') >= since]
+
+    return jsonify({'telemetry': telemetry_events})
 
 
 @bp.route('/<event_name>', methods=['POST'])
