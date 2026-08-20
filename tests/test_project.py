@@ -22,9 +22,13 @@ class TestProject(unittest.TestCase):
         # engine (they don't pass one explicitly - that's the point). The
         # global config singleton is shared across the whole test process,
         # so another test file that ran earlier and explicitly requested
-        # a non-default engine would otherwise leak into these.
+        # a non-default engine would otherwise leak into these. Save
+        # whatever was there so tearDown can put it back, rather than
+        # leaking our own removal into whichever test happens to run next.
+        self._saved_ledger_options = {}
         for option in ("engine", "location"):
             try:
+                self._saved_ledger_options[option] = global_config.get("ledger", option)
                 global_config.remove_option("ledger", option)
             except Exception:
                 pass
@@ -33,6 +37,8 @@ class TestProject(unittest.TestCase):
         """Clean up test fixtures."""
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
+        for option, value in self._saved_ledger_options.items():
+            global_config.set("ledger", option, value)
     
     def test_project_creation(self):
         """Test that a project can be created programmatically."""

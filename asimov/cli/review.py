@@ -112,7 +112,7 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
                 found = True
                 click.secho(analysis.name, bold=True)
                 click.secho(analysis.pipeline)
-                click.secho(" ".join(analysis_subject_names))
+                click.secho(" ".join(sorted(analysis_subject_names)))
 
                 message = ReviewMessage(
                     message=message, status=status, production=production

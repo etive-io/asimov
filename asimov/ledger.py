@@ -67,7 +67,13 @@ class Ledger:
             return YAMLLedger(location=location)
 
         elif engine in {"tinydb", "mongodb", "sqlalchemy", "sqlite", "postgresql", "mysql"}:
-            return DatabaseLedger.create(engine=engine)
+            database_url = None
+            if location:
+                database_url = (
+                    location if "://" in location
+                    else f"sqlite:///{os.path.abspath(location)}"
+                )
+            return DatabaseLedger.create(engine=engine, location=database_url)
 
         raise ValueError(f"Unsupported ledger engine: {engine}")
 
@@ -380,7 +386,7 @@ class DatabaseLedger(Ledger):
         return {"project": {}, "pipelines": {}}
 
     @classmethod
-    def create(cls, engine=None):
+    def create(cls, engine=None, location=None):
         """
         Create a new database ledger.
 
@@ -388,13 +394,16 @@ class DatabaseLedger(Ledger):
         ----------
         engine : str, optional
             Database engine to use.
+        location : str, optional
+            Explicit database URL, overriding the config. See
+            ``DatabaseLedger.__init__``.
 
         Returns
         -------
         DatabaseLedger
             Initialized ledger instance.
         """
-        ledger = cls(engine=engine)
+        ledger = cls(engine=engine, location=location)
         ledger.db._create()
         return ledger
 
