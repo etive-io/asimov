@@ -2,6 +2,7 @@
 
 import configparser
 
+import glob
 import os
 import subprocess
 import time
@@ -173,8 +174,59 @@ class Pipeline:
         for asset in self.assets:
             repo.add_file(asset[0], asset[1])
 
+    log_patterns = ["*.out", "*.err", "*.log"]
+    """Glob patterns (relative to the run directory) used by the default
+    :meth:`collect_logs` to find log files. Every scheduler this project
+    supports (HTCondor, Slurm, the local process scheduler) writes its
+    stdout/stderr/scheduler log into the run directory using one of these
+    extensions, so this default works without a pipeline needing to know
+    which scheduler actually ran it. Override on a subclass to add
+    pipeline-specific log files.
+    """
+
+    _LOG_TAIL_BYTES = 1_000_000
+
     def collect_logs(self):
-        return {}
+        """
+        Collect log file contents from the run directory.
+
+        Reads every file matching :attr:`log_patterns` in the production's
+        run directory. Files are capped to the last
+        :attr:`_LOG_TAIL_BYTES` bytes so a runaway job can't pull an
+        unbounded amount of data into memory - long-running analyses are
+        the normal case here, not an edge case.
+
+        Returns
+        -------
+        dict
+            Maps each log file's basename to its (possibly tail-truncated)
+            text content.
+        """
+        rundir = self.production.rundir
+        if not rundir or not os.path.isdir(rundir):
+            return {}
+
+        logs = {}
+        for pattern in self.log_patterns:
+            for path in sorted(glob.glob(os.path.join(rundir, pattern))):
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    size = os.path.getsize(path)
+                    with open(path, "rb") as f:
+                        if size > self._LOG_TAIL_BYTES:
+                            f.seek(-self._LOG_TAIL_BYTES, os.SEEK_END)
+                            prefix = (
+                                f"[... truncated, showing last "
+                                f"{self._LOG_TAIL_BYTES} of {size} bytes ...]\n"
+                            )
+                        else:
+                            prefix = ""
+                        content = prefix + f.read().decode("utf-8", errors="replace")
+                except OSError as e:
+                    content = f"[Could not read log file: {e}]"
+                logs[os.path.basename(path)] = content
+        return logs
 
     def store_results(self):
         """
