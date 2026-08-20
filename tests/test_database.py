@@ -571,14 +571,14 @@ class TestDatabaseLedger(unittest.TestCase):
         self.ledger.db.insert_production({
             "name": "prod-a",
             "event_name": "GW150914",
-            "pipeline": "bilby",
+            "pipeline": "simpletestpipeline",
             "status": "ready",
             "meta": {},
         })
         self.ledger.db.insert_production({
             "name": "prod-b",
             "event_name": "GW151226",
-            "pipeline": "bilby",
+            "pipeline": "simpletestpipeline",
             "status": "ready",
             "meta": {},
         })

@@ -78,7 +78,9 @@ class ReviewTests(unittest.TestCase):
     def setUp(self):
         os.makedirs(f"{self.cwd}/tests/tmp/project")
         os.chdir(f"{self.cwd}/tests/tmp/project")
-        make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
+        make_project(
+            name="Test project", root=f"{self.cwd}/tests/tmp/project", engine="yamlfile"
+        )
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
         apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
         apply_page(file=GWTC21_EVENTS["GW150914_095045"], event=None, ledger=self.ledger)
@@ -133,7 +135,8 @@ class ReviewCliTests(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/project")
         runner = CliRunner()
         result = runner.invoke(project.init,
-                               ['Test Project', '--root', f"{self.cwd}/tests/tmp/project"])
+                               ['Test Project', '--root', f"{self.cwd}/tests/tmp/project",
+                                '--engine', 'yamlfile'])
         assert result.exit_code == 0
         assert result.output == '● New project created successfully!\n'
         self.ledger = YAMLLedger(".asimov/ledger.yml")
