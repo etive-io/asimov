@@ -1150,7 +1150,42 @@ def html(event, webdir):
                 document.getElementById('modal-analysis-dependencies').textContent = 'None';
                 document.getElementById('modal-dependencies-section').style.display = 'block';
             }
-            
+
+            // Handle labels
+            var labelsContainer = document.getElementById('modal-analysis-labels');
+            var labels = {};
+            try {
+                labels = analysisData.dataset.labels ? JSON.parse(analysisData.dataset.labels) : {};
+            } catch (e) {
+                labels = {};
+            }
+            var labelNames = Object.keys(labels);
+            if (labelNames.length > 0) {
+                labelsContainer.innerHTML = '';
+                labelNames.forEach(function(name) {
+                    var value = labels[name];
+                    var badgeClass, text;
+                    if (typeof value === 'boolean') {
+                        badgeClass = value ? 'badge-success' : 'badge-secondary';
+                        text = name;
+                    } else if (typeof value === 'number') {
+                        badgeClass = 'badge-info';
+                        text = name + ': ' + value;
+                    } else {
+                        badgeClass = 'badge-secondary';
+                        text = name + ': ' + value;
+                    }
+                    var span = document.createElement('span');
+                    span.className = 'badge ' + badgeClass;
+                    span.style.marginRight = '0.25rem';
+                    span.textContent = text;
+                    labelsContainer.appendChild(span);
+                });
+                document.getElementById('modal-labels-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-labels-section').style.display = 'none';
+            }
+
             // Handle results pages
             if (analysisData.dataset.resultPages) {
                 var resultPagesStr = analysisData.dataset.resultPages;
@@ -1459,6 +1494,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-dependencies-section">
             <h5>Dependencies</h5>
             <p id="modal-analysis-dependencies">-</p>
+        </div>
+        <div class="modal-section" id="modal-labels-section" style="display:none;">
+            <h5>Labels</h5>
+            <p id="modal-analysis-labels"></p>
         </div>
         <div class="modal-section" id="modal-profiling-section" style="display:none;">
             <h5>Resource Usage</h5>
