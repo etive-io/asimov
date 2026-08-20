@@ -364,6 +364,77 @@ class APIAnalysesTestCase(AsimovTestCase):
         response = self.client.get('/api/v1/analyses/GW150914/NonExistent')
         self.assertEqual(response.status_code, 404)
 
+    def test_get_analysis_telemetry_nonexistent_event(self):
+        """Test getting telemetry for a non-existent event returns 404."""
+        response = self.client.get('/api/v1/analyses/NonExistent/Prod_A/telemetry')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_telemetry_nonexistent_analysis(self):
+        """Test getting telemetry for a non-existent analysis returns 404."""
+        response = self.client.get('/api/v1/analyses/GW150914/NonExistent/telemetry')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_telemetry_empty(self):
+        """Test getting telemetry for an analysis with no events yet."""
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({'name': 'Prod_A', 'pipeline': 'simpletestpipeline'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A/telemetry')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['telemetry'], [])
+
+    def test_get_analysis_telemetry_reads_and_filters(self):
+        """Test that the telemetry endpoint reads real events and supports filtering."""
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({'name': 'Prod_A', 'pipeline': 'simpletestpipeline'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        from asimov.ledger import YAMLLedger
+        fresh_ledger = YAMLLedger(self.ledger.location)
+        analysis = next(
+            p for p in fresh_ledger.get_event('GW150914')[0].productions
+            if p.name == 'Prod_A'
+        )
+        os.makedirs(analysis.rundir, exist_ok=True)
+        with open(os.path.join(analysis.rundir, 'telemetry.jsonl'), 'w') as f:
+            f.write(json.dumps({
+                'timestamp': '2026-08-20T09:00:00+00:00', 'event_type': 'status_change',
+                'event_name': 'GW150914', 'analysis_name': 'Prod_A', 'rundir': analysis.rundir,
+                'data': {'from': 'ready', 'to': 'running'},
+            }) + '\n')
+            f.write(json.dumps({
+                'timestamp': '2026-08-20T10:00:00+00:00', 'event_type': 'resource_snapshot',
+                'event_name': 'GW150914', 'analysis_name': 'Prod_A', 'rundir': analysis.rundir,
+                'data': {'cpus': 4},
+            }) + '\n')
+
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A/telemetry')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(len(data['telemetry']), 2)
+
+        response = self.client.get(
+            '/api/v1/analyses/GW150914/Prod_A/telemetry?event_type=status_change'
+        )
+        data = json.loads(response.data)
+        self.assertEqual(len(data['telemetry']), 1)
+        self.assertEqual(data['telemetry'][0]['event_type'], 'status_change')
+
+        response = self.client.get(
+            '/api/v1/analyses/GW150914/Prod_A/telemetry?since=2026-08-20T09:30:00+00:00'
+        )
+        data = json.loads(response.data)
+        self.assertEqual(len(data['telemetry']), 1)
+        self.assertEqual(data['telemetry'][0]['event_type'], 'resource_snapshot')
+
     def test_update_analysis(self):
         """Test updating an analysis."""
         # Create analysis first

@@ -473,6 +473,94 @@ class SlurmSchedulerTests(unittest.TestCase):
                 job_id = scheduler.submit_dag(slurm_file, "test-job")
                 self.assertEqual(job_id, 12345)
 
+    @patch("subprocess.run")
+    def test_collect_history_success(self, mock_run):
+        """Test collecting history for a completed Slurm job."""
+        mock_run.return_value = Mock(
+            stdout=(
+                "12345|2026-08-20T10:30:00|01:00:30|cpu=4,mem=16G,gres/gpu=1\n"
+                "12345.batch|2026-08-20T10:30:00|01:00:30|cpu=4,mem=16G\n"
+            ),
+            returncode=0,
+        )
+
+        scheduler = Slurm()
+        history = scheduler.collect_history(12345)
+
+        self.assertEqual(history["end"], "2026-08-20")
+        self.assertEqual(history["cpus"], 4.0)
+        self.assertEqual(history["gpus"], 1.0)
+        self.assertEqual(history["runtime"], 3630.0)  # 1h 0m 30s
+
+    @patch("subprocess.run")
+    def test_collect_history_ignores_substep_rows(self, mock_run):
+        """The .batch/.extern sub-step rows must not be mistaken for the job's own row."""
+        mock_run.return_value = Mock(
+            stdout=(
+                "12345.extern|Unknown|00:00:01|cpu=1\n"
+                "12345.batch|2026-08-20T10:30:00|01:00:00|cpu=4\n"
+                "12345|2026-08-20T10:30:00|01:00:00|cpu=4,gres/gpu=0\n"
+            ),
+            returncode=0,
+        )
+
+        scheduler = Slurm()
+        history = scheduler.collect_history(12345)
+
+        self.assertEqual(history["cpus"], 4.0)
+        self.assertEqual(history["gpus"], 0.0)
+
+    @patch("subprocess.run")
+    def test_collect_history_defaults_gpus_to_zero(self, mock_run):
+        """AllocTRES with no gres/gpu entry should report 0 GPUs, not raise."""
+        mock_run.return_value = Mock(
+            stdout="12345|2026-08-20T10:30:00|00:10:00|cpu=2,mem=4G\n",
+            returncode=0,
+        )
+
+        scheduler = Slurm()
+        history = scheduler.collect_history(12345)
+
+        self.assertEqual(history["gpus"], 0.0)
+
+    @patch("subprocess.run")
+    def test_collect_history_still_running_raises(self, mock_run):
+        """A job with End=Unknown (still running) must raise ValueError."""
+        mock_run.return_value = Mock(
+            stdout="12345|Unknown|00:10:00|cpu=2\n", returncode=0,
+        )
+
+        scheduler = Slurm()
+        with self.assertRaises(ValueError):
+            scheduler.collect_history(12345)
+
+    @patch("subprocess.run")
+    def test_collect_history_no_record_raises(self, mock_run):
+        """No matching row at all must raise ValueError."""
+        mock_run.return_value = Mock(stdout="", returncode=0)
+
+        scheduler = Slurm()
+        with self.assertRaises(ValueError):
+            scheduler.collect_history(99999)
+
+    @patch("subprocess.run")
+    def test_collect_history_sacct_failure_raises(self, mock_run):
+        """A failing sacct invocation must raise ValueError, not propagate CalledProcessError."""
+        import subprocess as _subprocess
+        mock_run.side_effect = _subprocess.CalledProcessError(
+            1, ["sacct"], stderr="sacct: error: some failure"
+        )
+
+        scheduler = Slurm()
+        with self.assertRaises(ValueError):
+            scheduler.collect_history(12345)
+
+    def test_parse_slurm_elapsed(self):
+        """Test parsing of Slurm Elapsed field formats."""
+        self.assertEqual(Slurm._parse_slurm_elapsed("00:00:30"), 30.0)
+        self.assertEqual(Slurm._parse_slurm_elapsed("01:02:03"), 3723.0)
+        self.assertEqual(Slurm._parse_slurm_elapsed("2-01:02:03"), 2 * 86400 + 3723.0)
+
 
 class HTCondorSchedulerTests(unittest.TestCase):
     """Test the HTCondor scheduler implementation with symmetric conversion."""

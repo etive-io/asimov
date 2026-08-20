@@ -13,6 +13,7 @@ from asimov import current_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
+from asimov.telemetry import initialize_telemetry_sinks
 
 # Try to import crontab for Slurm cron support
 try:
@@ -325,6 +326,7 @@ def monitor(ctx, event, update, dry_run, chain):
         return False
 
     logger.info("Running asimov monitor")
+    initialize_telemetry_sinks()
 
     if chain:
         logger.info("Running in chain mode")

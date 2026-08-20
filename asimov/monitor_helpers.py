@@ -10,6 +10,7 @@ from asimov import logger, LOGGER_LEVEL
 from asimov.cli import ACTIVE_STATES
 from asimov.monitor_states import get_state_handler
 from asimov.monitor_context import MonitorContext
+from asimov.telemetry import emit_event
 
 logger = logger.getChild("monitor_helpers")
 logger.setLevel(LOGGER_LEVEL)
@@ -79,9 +80,9 @@ def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=No
         # Use the state handler to process this analysis
         # Note: State handlers are responsible for calling context.update_ledger()
         # when they make changes that need to be persisted
+        status_before = analysis.status
         try:
             success = state_handler.handle(context)
-            return success
         except Exception as e:
             logger.exception(f"Error handling state {analysis.status} for {analysis_path}")
             click.echo(
@@ -90,6 +91,19 @@ def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=No
                 + f" Error processing {analysis.name}: {e}"
             )
             return False
+
+        # Isolated from the try/except above: a telemetry hiccup must never
+        # be misreported as a state-handling failure for this analysis.
+        if analysis.status != status_before:
+            try:
+                emit_event(
+                    analysis, "status_change", ledger=ledger,
+                    **{"from": status_before, "to": analysis.status},
+                )
+            except Exception as e:
+                logger.warning(f"Could not emit status_change telemetry for {analysis_path}: {e}")
+
+        return success
     else:
         logger.warning(f"No state handler for status: {analysis.status}")
         click.echo(

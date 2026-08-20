@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 import sys
 import click
 from asimov import logger, LOGGER_LEVEL, condor
+from asimov.telemetry import emit_event
 
 if sys.version_info < (3, 10):
     from importlib_metadata import entry_points
@@ -26,6 +27,24 @@ def _get_job_status(job):
     if isinstance(job, dict):
         return _CONDOR_STATUSES.get(job.get("status", 0), "unexplained")
     return job.status.lower()
+
+
+def _collect_history_for(context, job_id):
+    """
+    Collect job history using whichever scheduler is actually configured.
+
+    ``context.job_list`` is normally a scheduler-agnostic
+    :class:`asimov.scheduler.JobList`, which carries a real ``.scheduler``
+    (HTCondor/Slurm/LocalProcessScheduler) to dispatch to. Falls back to the
+    legacy ``asimov.condor.collect_history`` for the older
+    ``condor.CondorJobList`` (used when ``get_job_list()`` itself raises -
+    see ``asimov/cli/monitor.py``), which predates the scheduler
+    abstraction and has no ``.scheduler`` attribute to dispatch through.
+    """
+    scheduler = getattr(getattr(context, "job_list", None), "scheduler", None)
+    if scheduler is not None:
+        return scheduler.collect_history(job_id)
+    return condor.collect_history(job_id)
 
 
 class MonitorState(ABC):
@@ -196,12 +215,26 @@ class RunningState(MonitorState):
             job_id = context.job_id
             if job_id:
                 try:
-                    analysis.meta["profiling"] = condor.collect_history(job_id)
+                    analysis.meta["profiling"] = _collect_history_for(context, job_id)
                 except ValueError:
                     logger.warning("Could not collect condor profiling data: no history record found.")
                 except Exception as e:
                     logger.warning("Could not collect condor profiling data.")
                     logger.exception(e)
+                else:
+                    # Isolated from the collection try/except above: a
+                    # telemetry hiccup must never be misreported as a
+                    # profiling-collection failure, and must never be
+                    # allowed to skip clear_job_id()/update_ledger() below.
+                    try:
+                        emit_event(
+                            analysis, "resource_snapshot",
+                            ledger=getattr(context, "ledger", None),
+                            **analysis.meta["profiling"],
+                        )
+                    except Exception as e:
+                        logger.warning("Could not emit resource_snapshot telemetry.")
+                        logger.exception(e)
                 finally:
                     context.clear_job_id()
                     context.update_ledger()

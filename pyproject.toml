@@ -114,3 +114,12 @@ simpletestpipelineb = "asimov.pipelines.testing:SimpleTestPipelineB"
 simpletestpipelinec = "asimov.pipelines.testing:SimpleTestPipelineC"
 subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"
 projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"
+
+# Entry point group for external telemetry sinks. Every event is always
+# recorded locally regardless of what's registered here (see
+# asimov.telemetry.LocalJSONLSink); sinks discovered through this group are
+# opt-in extras for forwarding the same events to a larger observability
+# stack. See docs/source/hooks.rst.
+# Example: my_sink = "my_package.telemetry:MySink"
+[project.entry-points."asimov.hooks.telemetry"]
+prometheus = "asimov.telemetry:PrometheusPushgatewaySink"
