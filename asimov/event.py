@@ -746,6 +746,26 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                     dependencies_str_escaped = html.escape(dependencies_str, quote=True)
                     review_message_escaped = html.escape(review_message, quote=True)
 
+                    # A small preview only - full logs are read live from disk via
+                    # collect_logs(), which can return megabytes per file. Embedding
+                    # that much text per analysis into every static report page
+                    # wouldn't scale to a real project's hundreds of analyses.
+                    _LOG_PREVIEW_CHARS = 4000
+                    log_preview = {}
+                    if hasattr(node, 'pipeline') and node.pipeline:
+                        try:
+                            for log_name, log_content in node.pipeline.collect_logs().items():
+                                if len(log_content) > _LOG_PREVIEW_CHARS:
+                                    log_content = (
+                                        f"[... preview truncated, "
+                                        f"{len(log_content)} characters total ...]\n"
+                                        + log_content[-_LOG_PREVIEW_CHARS:]
+                                    )
+                                log_preview[log_name] = log_content
+                        except Exception:
+                            pass
+                    log_preview_json_escaped = html.escape(_json.dumps(log_preview), quote=True)
+
                     card += f"""<div id="{data_id}" style="display:none;"
                          data-name="{node.name}"
                          data-status="{status}"
@@ -761,6 +781,7 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-pages-dir="{pages_dir_escaped}"
                          data-modal-plots="{modal_plots_str_escaped}"
                          data-modal-plot-labels="{modal_plot_labels_str_escaped}"
+                         data-logs="{log_preview_json_escaped}"
                          {get_profiling_attrs(node)}></div>"""
 
             except Exception as e:

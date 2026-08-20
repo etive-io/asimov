@@ -1240,6 +1240,33 @@ def html(event, webdir):
             } else {
                 document.getElementById('modal-profiling-section').style.display = 'none';
             }
+
+            // Handle log previews
+            var logsContainer = document.getElementById('modal-analysis-logs');
+            var logs = {};
+            try {
+                logs = analysisData.dataset.logs ? JSON.parse(analysisData.dataset.logs) : {};
+            } catch (e) {
+                logs = {};
+            }
+            var logNames = Object.keys(logs);
+            if (logNames.length > 0) {
+                logsContainer.innerHTML = '';
+                logNames.forEach(function(name) {
+                    var heading = document.createElement('p');
+                    heading.style.cssText = 'margin-bottom:0.25rem;font-weight:600;font-size:0.85rem;color:#586069;';
+                    heading.textContent = name;
+                    var pre = document.createElement('pre');
+                    pre.style.cssText = 'max-height:200px;overflow:auto;background:#f6f8fa;padding:0.5rem;border-radius:0.25rem;font-size:0.8rem;white-space:pre-wrap;word-break:break-all;';
+                    pre.textContent = logs[name];
+                    logsContainer.appendChild(heading);
+                    logsContainer.appendChild(pre);
+                });
+                document.getElementById('modal-logs-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-logs-section').style.display = 'none';
+            }
+
             modal.classList.add('show');
             backdrop.classList.add('show');
         }
@@ -1455,6 +1482,11 @@ def html(event, webdir):
                     </tr>
                 </tbody>
             </table>
+        </div>
+        <div class="modal-section" id="modal-logs-section" style="display:none;">
+            <h5>Logs</h5>
+            <p style="font-size:0.8rem;color:#586069;margin-bottom:0.5rem;">Preview only - see the run directory above for complete logs, or fetch them in full via the REST API's <code>/analyses/&lt;event&gt;/&lt;analysis&gt;/logs</code> endpoint.</p>
+            <div id="modal-analysis-logs"></div>
         </div>
         <div class="modal-section" id="modal-results-section" style="display:none;">
             <h5>Results</h5>

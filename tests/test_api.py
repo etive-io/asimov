@@ -364,6 +364,64 @@ class APIAnalysesTestCase(AsimovTestCase):
         response = self.client.get('/api/v1/analyses/GW150914/NonExistent')
         self.assertEqual(response.status_code, 404)
 
+    def test_get_analysis_logs_nonexistent_event(self):
+        """Test getting logs for a non-existent event returns 404."""
+        response = self.client.get('/api/v1/analyses/NonExistent/Prod_A/logs')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_logs_nonexistent_analysis(self):
+        """Test getting logs for a non-existent analysis returns 404."""
+        response = self.client.get('/api/v1/analyses/GW150914/NonExistent/logs')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_logs_empty(self):
+        """Test getting logs for an analysis with no run directory yet."""
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A/logs')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['logs'], {})
+
+    def test_get_analysis_logs_reads_run_directory(self):
+        """Test that the logs endpoint reads real log files from the run directory."""
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # The API wrote this analysis through its own request-scoped ledger
+        # instance. YAMLLedger loads its data once at construction time and
+        # never re-reads the file, so self.ledger (built in setUp, before
+        # the analysis existed) can't see that write - read it back with a
+        # fresh instance pointed at the same file instead.
+        from asimov.ledger import YAMLLedger
+        fresh_ledger = YAMLLedger(self.ledger.location)
+        events = fresh_ledger.get_event('GW150914')
+        analysis = next(p for p in events[0].productions if p.name == 'Prod_A')
+        os.makedirs(analysis.rundir, exist_ok=True)
+        with open(os.path.join(analysis.rundir, 'test_job.out'), 'w') as f:
+            f.write('job started\njob finished\n')
+
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A/logs')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('test_job.out', data['logs'])
+        self.assertEqual(data['logs']['test_job.out'], 'job started\njob finished\n')
+
     def test_update_analysis(self):
         """Test updating an analysis."""
         # Create analysis first

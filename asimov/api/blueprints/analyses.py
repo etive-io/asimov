@@ -48,6 +48,46 @@ def get_analysis(event_name, analysis_name):
     return jsonify({'analysis': analysis.to_dict(event=False)})
 
 
+@bp.route('/<event_name>/<analysis_name>/logs', methods=['GET'])
+def get_analysis_logs(event_name, analysis_name):
+    """
+    Get log file contents for an analysis, independent of which scheduler ran it.
+
+    Parameters
+    ----------
+    event_name : str
+        The event name.
+    analysis_name : str
+        The analysis name.
+
+    Returns
+    -------
+    json
+        A mapping of log file names to their contents, or an error message.
+    """
+    ledger = get_ledger()
+    try:
+        events = ledger.get_event(event_name)
+    except (KeyError, ValueError):
+        return jsonify({'error': 'Event not found'}), 404
+
+    event = events[0]
+    analysis = next((p for p in event.productions if p.name == analysis_name), None)
+
+    if not analysis:
+        return jsonify({'error': 'Analysis not found'}), 404
+
+    try:
+        logs = analysis.pipeline.collect_logs()
+    except Exception:
+        logger.exception(
+            "Unexpected error collecting logs for %s/%s", event_name, analysis_name
+        )
+        return jsonify({'error': 'Could not collect logs'}), 500
+
+    return jsonify({'logs': logs})
+
+
 @bp.route('/<event_name>', methods=['POST'])
 @require_auth
 def create_analysis(event_name):
