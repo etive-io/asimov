@@ -267,7 +267,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             content_type='application/json'
         )
@@ -289,7 +289,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/NonExistent',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             headers=self.auth_headers,
             content_type='application/json'
@@ -302,7 +302,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby',
+                'pipeline': 'simpletestpipeline',
                 'comment': 'Test production',
                 'meta': {'test': True}
             }),
@@ -313,7 +313,7 @@ class APIAnalysesTestCase(AsimovTestCase):
         data = json.loads(response.data)
         self.assertIn('analysis', data)
         self.assertEqual(data['analysis']['name'], 'Prod_A')
-        self.assertEqual(data['analysis']['pipeline'], 'bilby')
+        self.assertEqual(data['analysis']['pipeline'], 'simpletestpipeline')
 
     def test_create_duplicate_analysis(self):
         """Test creating duplicate analysis fails."""
@@ -322,7 +322,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             headers=self.auth_headers,
             content_type='application/json'
@@ -333,7 +333,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             headers=self.auth_headers,
             content_type='application/json'
@@ -347,7 +347,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             headers=self.auth_headers,
             content_type='application/json'
@@ -371,7 +371,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             headers=self.auth_headers,
             content_type='application/json'
@@ -408,7 +408,7 @@ class APIAnalysesTestCase(AsimovTestCase):
             '/api/v1/analyses/GW150914',
             data=json.dumps({
                 'name': 'Prod_A',
-                'pipeline': 'bilby'
+                'pipeline': 'simpletestpipeline'
             }),
             headers=self.auth_headers,
             content_type='application/json'
@@ -448,7 +448,7 @@ class APIAnalysesTestCase(AsimovTestCase):
                 '/api/v1/analyses/GW150914',
                 data=json.dumps({
                     'name': f'Prod_{i}',
-                    'pipeline': 'bilby'
+                    'pipeline': 'simpletestpipeline'
                 }),
                 headers=self.auth_headers,
                 content_type='application/json'
