@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 .. _pipeline-dev:
 
-=======
->>>>>>> v0.4-release
 Developing new pipelines
 ========================
 
@@ -393,3 +390,79 @@ A full example ``bilby`` template is available below:
     pn-amplitude-order=0
     mode-array=None
     frequency-domain-source-model=lal_binary_black_hole
+
+
+Migrating pipelines to asimov 0.8
+----------------------------------
+
+Asimov 0.8 adds several new hooks and default behaviours to ``asimov.pipeline.Pipeline`` and
+the wider plugin ecosystem. Existing pipeline interfaces built against 0.7 will keep working
+unchanged, but the items below are worth checking against your interface.
+
+Automatic environment capture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Pipeline.before_config`` now captures the current software environment (the conda/pip
+package list) by default, via a new ``Pipeline._capture_environment`` method, and records the
+resulting files under ``production.meta['environment']['files']``. ``Pipeline.store_results``
+now also calls a new ``Pipeline._store_environment_files`` method to place these files into
+the results store alongside the analysis' other outputs.
+
+If your pipeline interface overloads ``before_config`` or ``store_results``, make sure it
+calls the base class implementation (``super().before_config(dryrun=dryrun)`` /
+``super().store_results()``) so this capture still happens - otherwise it will be silently
+skipped for your pipeline.
+
+A real default for ``collect_logs``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Previously ``Pipeline.collect_logs`` had no default implementation - it just returned an empty
+dictionary - so log access depended entirely on whether a given pipeline interface chose to
+implement it. It now has a working, scheduler-independent default: it globs a new class
+attribute, ``Pipeline.log_patterns`` (default ``["*.out", "*.err", "*.log"]``), against the
+production's run directory, and returns the (tail-truncated) contents of whatever matches.
+This covers the naming conventions used by every scheduler asimov currently supports
+(HTCondor, Slurm, and the local process scheduler).
+
+If your pipeline's log files already match one of these patterns you don't need to do
+anything - ``collect_logs`` will find them automatically, and they'll be available via the new
+``GET /analyses/<event>/<analysis>/logs`` REST endpoint and the report page's log preview. If
+your pipeline uses different filenames, override the ``log_patterns`` class attribute rather
+than reimplementing ``collect_logs`` from scratch, unless you need genuinely different logic
+(for example, reading logs from somewhere other than the run directory).
+
+New entry point: ``asimov.labellers``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds a labeller plugin system, discovered through a new ``asimov.labellers`` entry
+point group, that lets plugins automatically attach labels (for example, "interesting" or
+"needs review") to analyses during the monitor loop. This isn't specific to any one pipeline,
+but a pipeline package is a reasonable place to ship a labeller specific to that pipeline's own
+outputs - for example, flagging low-SNR or high-mass-ratio results. Registration follows the
+same pattern as ``asimov.pipelines`` above, just under a different entry point group name.
+
+New entry point: ``asimov.hooks.telemetry``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds structured telemetry: every analysis state change and resource snapshot is
+recorded to a local ``telemetry.jsonl`` file in the run directory automatically, with no
+configuration required. Deployments can additionally register external sinks (for example, to
+forward events to Prometheus) through the ``asimov.hooks.telemetry`` entry point group - this
+is mostly a deployment-level concern rather than a pipeline one, but a pipeline interface can
+call ``asimov.telemetry.emit_event`` directly if it wants to record its own custom events
+alongside the built-in ones. See :doc:`hooks` for details on the hooks mechanism in general.
+
+Ledger changes to be aware of
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two changes to the ledger itself are unlikely to require changes to a pipeline interface, but
+are worth knowing about if your interface or its tests interact with the ledger directly
+rather than through the documented ``Pipeline``/``Analysis``/``Event`` API:
+
++ SQLite is now the default ledger backend, rather than the plain YAML file. Code that
+  constructs a ``YAMLLedger`` directly - most commonly test fixtures - needs to pass
+  ``engine="yamlfile"`` explicitly if it relies on the old default.
++ ``Analysis`` now implements ``__eq__``/``__hash__`` (based on the analysis name plus its
+  parent event), since analyses are reconstructed fresh from the ledger on essentially every
+  read. This only matters if your interface or its tests compare or deduplicate ``Analysis``
+  objects across separate ledger reads.
