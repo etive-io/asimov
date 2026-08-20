@@ -373,6 +373,7 @@ class DatabaseLedger(Ledger):
 
         self._events_cache = None
         self._project_analyses_cache = None
+        self._data_cache = None
 
     def __deepcopy__(self, memo):
         # Ledgers are shared singletons; deep-copying one would try to duplicate
@@ -382,8 +383,17 @@ class DatabaseLedger(Ledger):
 
     @property
     def data(self):
-        """Minimal dict compatible with YAMLLedger.data for analysis.py guards."""
-        return {"project": {}, "pipelines": {}}
+        """
+        The ledger-wide configuration dict (compatible with YAMLLedger.data).
+
+        Loaded from the database on first access and cached for the life of
+        this instance, so callers that do ``update(ledger.data, document)``
+        followed by ``ledger.save()`` (as ``kind: configuration`` blueprints
+        do) mutate and persist the same object rather than a throwaway copy.
+        """
+        if self._data_cache is None:
+            self._data_cache = self.db.get_config() or {"project": {}, "pipelines": {}}
+        return self._data_cache
 
     @classmethod
     def create(cls, engine=None, location=None):
@@ -825,8 +835,11 @@ class DatabaseLedger(Ledger):
         """
         Save changes to the ledger.
 
-        For database ledgers, this is typically a no-op since changes
-        are committed immediately in transactions.
+        Event/production/project-analysis writes are committed immediately
+        in their own transactions, so this only needs to flush the
+        ledger-wide configuration dict (``self.data``) — the one thing a
+        caller can mutate in memory (via ``update(ledger.data, ...)``)
+        without going through a dedicated write method.
         """
-        # Database transactions are handled automatically
-        pass
+        if self._data_cache is not None:
+            self.db.save_config(self._data_cache)

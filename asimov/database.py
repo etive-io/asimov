@@ -33,6 +33,7 @@ from asimov.models import (
     EventModel,
     ProductionModel,
     ProjectAnalysisModel,
+    LedgerConfigModel,
     EventSchema,
     ProductionSchema,
     ProjectAnalysisSchema,
@@ -58,6 +59,14 @@ class AsimovDatabase:
         """Delete a record from the database."""
         raise NotImplementedError
 
+    def get_config(self) -> Dict[str, Any]:
+        """Return the ledger-wide configuration dict, or {} if none is stored yet."""
+        raise NotImplementedError
+
+    def save_config(self, data: Dict[str, Any]) -> None:
+        """Persist the ledger-wide configuration dict, replacing whatever was stored."""
+        raise NotImplementedError
+
 
 class AsimovTinyDatabase(AsimovDatabase):
     """TinyDB-based document database implementation."""
@@ -68,6 +77,7 @@ class AsimovTinyDatabase(AsimovDatabase):
         self.tables = {
             "event": self.db.table("event"),
             "production": self.db.table("production"),
+            "config": self.db.table("config"),
         }
         self.Q = Query()
 
@@ -96,6 +106,16 @@ class AsimovTinyDatabase(AsimovDatabase):
             return self.tables[table].all()
         pages = self.tables[table].search(Query()[parameter] == value)
         return pages
+
+    def get_config(self) -> Dict[str, Any]:
+        docs = self.tables["config"].all()
+        return docs[0]["data"] if docs else {}
+
+    def save_config(self, data: Dict[str, Any]) -> None:
+        # Always exactly one config document: replace it wholesale, mirroring
+        # how YAMLLedger dumps the whole of self.data on every save().
+        self.tables["config"].truncate()
+        self.tables["config"].insert({"data": data})
 
 
 class AsimovSQLDatabase(AsimovDatabase):
@@ -617,6 +637,35 @@ class AsimovSQLDatabase(AsimovDatabase):
             event = session.query(EventModel).filter(EventModel.name == name).first()
             if not event:
                 raise ValueError(f"Event '{name}' not found")
-            
+
             session.delete(event)
             return True
+
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Return the ledger-wide configuration dict.
+
+        Returns
+        -------
+        dict
+            The stored configuration, or {} if none has been saved yet.
+        """
+        with self.get_session() as session:
+            row = session.query(LedgerConfigModel).filter(LedgerConfigModel.id == 1).first()
+            return dict(row.data) if row else {}
+
+    def save_config(self, data: Dict[str, Any]) -> None:
+        """
+        Persist the ledger-wide configuration dict, replacing whatever was stored.
+
+        Parameters
+        ----------
+        data : dict
+            The full configuration dict to store (singleton row, id=1).
+        """
+        with self.get_session() as session:
+            row = session.query(LedgerConfigModel).filter(LedgerConfigModel.id == 1).first()
+            if row:
+                row.data = data
+            else:
+                session.add(LedgerConfigModel(id=1, data=data))

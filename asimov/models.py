@@ -134,6 +134,29 @@ class ProjectAnalysisModel(Base):
         return data
 
 
+class LedgerConfigModel(Base):
+    """
+    SQLAlchemy model for ledger-wide configuration.
+
+    Singleton table (always id=1): holds the arbitrary nested dict that
+    ``kind: configuration`` blueprints merge into (e.g. "project",
+    "pipelines", "postprocessing", "labellers", "quality", "likelihood"),
+    mirroring what YAMLLedger keeps as ``self.data`` after popping out
+    "events"/"project analyses" into their own tables.
+    """
+
+    __tablename__ = "ledger_config"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    data = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
 # Pydantic validation models
 
 class EventSchema(BaseModel):
