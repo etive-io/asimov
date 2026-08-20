@@ -394,10 +394,13 @@ class DatabaseLedger(Ledger):
         """
         The ledger-wide configuration dict (compatible with YAMLLedger.data).
 
-        Loaded from the database on first access and cached for the life of
-        this instance, so callers that do ``update(ledger.data, document)``
-        followed by ``ledger.save()`` (as ``kind: configuration`` blueprints
-        do) mutate and persist the same object rather than a throwaway copy.
+        Loaded from the database on first access and cached, so callers
+        that do ``update(ledger.data, document)`` followed by
+        ``ledger.save()`` (as ``kind: configuration`` blueprints do) mutate
+        and persist the same object rather than a throwaway copy. The
+        cache can go stale relative to what another process has since
+        persisted; ``save()`` merges rather than overwrites for exactly
+        that reason, and refreshes this cache to the merged result.
         """
         if self._data_cache is None:
             self._data_cache = self.db.get_config() or {"project": {}, "pipelines": {}}
@@ -857,6 +860,16 @@ class DatabaseLedger(Ledger):
         ledger-wide configuration dict (``self.data``) — the one thing a
         caller can mutate in memory (via ``update(ledger.data, ...)``)
         without going through a dedicated write method.
+
+        Merges into the currently-persisted config rather than overwriting
+        it wholesale: this ledger instance may be long-lived (e.g. the
+        `asimov monitor` loop, which calls save() after every analysis it
+        touches) and its cached ``self.data`` can be stale relative to
+        config another process wrote in the meantime. An overwrite would
+        silently erase that; a merge only risks a conflict on keys this
+        instance itself changed. After merging, the cache is refreshed to
+        the true persisted state, so it doesn't keep drifting further out
+        of date across repeated save() calls in the same process.
         """
         if self._data_cache is not None:
-            self.db.save_config(self._data_cache)
+            self._data_cache = self.db.merge_config(self._data_cache)

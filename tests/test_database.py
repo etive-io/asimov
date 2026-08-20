@@ -449,6 +449,27 @@ class TestAsimovSQLDatabase(unittest.TestCase):
             second.get_config(), {"pipelines": {"bilby": {"scheduler": "condor"}}}
         )
 
+    def test_merge_config_preserves_untouched_keys(self):
+        """Test merge_config() adds/overwrites only the keys it's given,
+        leaving whatever else is already persisted alone."""
+        self.db.save_config({"project": {"name": "test"}, "quality": {"L1": "old"}})
+        result = self.db.merge_config({"labellers": {"interesting": "x"}})
+        self.assertEqual(
+            result,
+            {
+                "project": {"name": "test"},
+                "quality": {"L1": "old"},
+                "labellers": {"interesting": "x"},
+            },
+        )
+        self.assertEqual(self.db.get_config(), result)
+
+    def test_merge_config_on_empty_store_behaves_like_save(self):
+        """Test merge_config() works correctly with nothing stored yet."""
+        result = self.db.merge_config({"project": {"name": "brand-new"}})
+        self.assertEqual(result, {"project": {"name": "brand-new"}})
+        self.assertEqual(self.db.get_config(), result)
+
 
 class TestAsimovTinyDatabase(unittest.TestCase):
     """Tests for TinyDB backend (for backward compatibility)."""
@@ -504,6 +525,21 @@ class TestAsimovTinyDatabase(unittest.TestCase):
         self.db.save_config({"project": {"name": "test"}})
         self.db.save_config({"quality": {"L1": "foo"}})
         self.assertEqual(self.db.get_config(), {"quality": {"L1": "foo"}})
+
+    def test_merge_config_preserves_untouched_keys(self):
+        """Test merge_config() adds/overwrites only the keys it's given,
+        leaving whatever else is already persisted alone."""
+        self.db.save_config({"project": {"name": "test"}, "quality": {"L1": "old"}})
+        result = self.db.merge_config({"labellers": {"interesting": "x"}})
+        self.assertEqual(
+            result,
+            {
+                "project": {"name": "test"},
+                "quality": {"L1": "old"},
+                "labellers": {"interesting": "x"},
+            },
+        )
+        self.assertEqual(self.db.get_config(), result)
 
     def test_explicit_database_path_overrides_config(self):
         """Test that an explicit database_path is honored instead of the
@@ -783,6 +819,61 @@ class TestDatabaseLedger(unittest.TestCase):
         # The keys from the default dict should still be present too.
         self.assertIn("project", fresh.data)
         self.assertIn("pipelines", fresh.data)
+
+    def test_save_does_not_erase_a_concurrent_processs_unrelated_change(self):
+        """Test the exact scenario a blind save() used to be vulnerable to:
+        a long-lived process (like `asimov monitor`, which calls
+        ledger.save() after every analysis) holds a config snapshot from
+        before a second, independent process added something new. When the
+        long-lived process later saves for an unrelated reason, the second
+        process's addition must survive - not get wiped out by the first
+        process's stale snapshot."""
+        db_url = f"sqlite:///{self.db_path}"
+
+        # "monitor": a long-lived ledger that loads its cache early.
+        monitor_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        _ = monitor_ledger.data  # trigger the cache load, before anyone else writes
+
+        # "apply": an independent, short-lived process adds something new.
+        apply_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        apply_ledger.data["labellers"] = {"interesting": "x"}
+        apply_ledger.save()
+
+        # "monitor" now saves for an unrelated reason (e.g. a status update),
+        # without ever having touched "labellers" itself.
+        monitor_ledger.data["scheduler"] = {"cron_minute": "*/5"}
+        monitor_ledger.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        self.assertEqual(fresh.data["labellers"], {"interesting": "x"})
+        self.assertEqual(fresh.data["scheduler"], {"cron_minute": "*/5"})
+
+    def test_save_conflict_on_the_same_key_is_last_writer_wins_for_that_key_only(self):
+        """Test the honest remaining limitation: if two processes both
+        change the *same* top-level key, the second to save() wins for
+        that key - but unlike the old blind overwrite, this no longer
+        drags every *other* key down with it."""
+        db_url = f"sqlite:///{self.db_path}"
+
+        first = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        first.data["quality"] = {"L1": "first-value"}
+        first.save()
+
+        second = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        _ = second.data  # caches the state including first's "quality" write
+        second.data["labellers"] = {"interesting": "x"}  # unrelated key
+
+        first.data["quality"] = {"L1": "first-value-updated"}
+        first.save()
+
+        second.data["quality"] = {"L1": "second-value"}
+        second.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        # Last writer (second) wins for the key it actually conflicted on...
+        self.assertEqual(fresh.data["quality"], {"L1": "second-value"})
+        # ...but second's unrelated addition still made it through.
+        self.assertEqual(fresh.data["labellers"], {"interesting": "x"})
 
     def test_data_returns_same_object_on_repeat_access(self):
         """Test .data is cached (same object identity), not reloaded/rebuilt
