@@ -20,6 +20,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint-tutorials:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install asimov
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Lint tutorial CLI/API usage against the live asimov
+        run: python scripts/lint_tutorial_commands.py
+
   build:
     runs-on: ubuntu-latest
     steps:
