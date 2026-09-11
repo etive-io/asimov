@@ -147,6 +147,7 @@ class TestIsStale(unittest.TestCase):
 
         analysis = ProjectAnalysis.__new__(ProjectAnalysis)
         analysis.meta = {}
+        analysis._needs = []
         analysis.analyses = [self._Stub("bilby_1"), self._Stub("bayeswave_1")]
         analysis.resolved_dependencies = ["bilby_1", "bayeswave_1"]
 
@@ -157,10 +158,51 @@ class TestIsStale(unittest.TestCase):
 
         analysis = ProjectAnalysis.__new__(ProjectAnalysis)
         analysis.meta = {}
+        analysis._needs = []
         analysis.analyses = [self._Stub("bilby_1")]
         analysis.resolved_dependencies = ["bilby_1", "bilby_2"]
 
         self.assertTrue(analysis.is_stale)
+
+    def test_project_analysis_never_run_is_not_stale(self):
+        from asimov.analysis import ProjectAnalysis
+
+        analysis = ProjectAnalysis.__new__(ProjectAnalysis)
+        analysis.meta = {}
+        analysis._needs = []
+        analysis.analyses = [self._Stub("bilby_1")]
+
+        self.assertFalse(analysis.is_stale)
+
+    def test_project_analysis_not_stale_via_needs_path(self):
+        """ProjectAnalysis instances declared with `needs:` (rather than
+        `analyses:`) resolve their dependencies via the `_needs`-based
+        `dependencies` property instead of populating `self.analyses`, which
+        stays empty in that case.
+
+        Regression test: an earlier version of the #150 fix compared only
+        `self.analyses` against `resolved_dependencies`, which would report
+        a `needs:`-based ProjectAnalysis (whose `self.analyses` is always
+        empty) as permanently stale after it had run, even when nothing
+        about its actual (`_needs`-resolved) dependencies had changed.
+        """
+        from unittest.mock import PropertyMock, patch
+
+        from asimov.analysis import ProjectAnalysis
+
+        analysis = ProjectAnalysis.__new__(ProjectAnalysis)
+        analysis.meta = {}
+        analysis.analyses = []
+        analysis.resolved_dependencies = ["bilby_1", "bayeswave_1"]
+
+        with patch.object(
+            ProjectAnalysis, "dependencies", new_callable=PropertyMock
+        ) as mock_dependencies:
+            mock_dependencies.return_value = ["bilby_1", "bayeswave_1"]
+            self.assertFalse(analysis.is_stale)
+
+            mock_dependencies.return_value = ["bilby_1"]
+            self.assertTrue(analysis.is_stale)
 
 
 # class TestProjectAnalysis(TestBaseAnalysis):

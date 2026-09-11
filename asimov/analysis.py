@@ -1507,12 +1507,14 @@ class ProjectAnalysis(Analysis):
         """
         Check if this project analysis is stale.
 
-        Like ``SubjectAnalysis``, ``ProjectAnalysis`` resolves its upstream
-        analyses via the smart ``analyses`` spec into ``self.analyses``
-        rather than via ``_needs``, so the base ``Analysis.is_stale`` (which
-        compares ``self.dependencies`` against ``resolved_dependencies``)
-        does not reflect the analyses this production actually aggregates.
-        Compare the resolved analysis names directly instead.
+        Unlike ``SubjectAnalysis``, ``ProjectAnalysis`` can resolve its
+        upstream dependencies via *either* mechanism: the smart ``analyses``
+        spec into ``self.analyses``, or a plain ``needs`` filter into
+        ``_needs`` (resolved by this class's own ``dependencies`` override).
+        Either can be empty depending on which the blueprint uses, so
+        comparing only one against ``resolved_dependencies`` would report a
+        production using the other mechanism as permanently stale. Compare
+        the union of both against ``resolved_dependencies`` instead.
 
         Returns
         -------
@@ -1524,6 +1526,7 @@ class ProjectAnalysis(Analysis):
             return False
 
         current_names = {a.name for a in self.analyses}
+        current_names.update(self.dependencies)
         resolved_names = set(self.resolved_dependencies)
 
         return current_names != resolved_names
