@@ -449,6 +449,49 @@ class TestAsimovSQLDatabase(unittest.TestCase):
             second.get_config(), {"pipelines": {"bilby": {"scheduler": "condor"}}}
         )
 
+    def test_merge_config_preserves_untouched_keys(self):
+        """Test merge_config() adds/overwrites only the keys it's given,
+        leaving whatever else is already persisted alone."""
+        self.db.save_config({"project": {"name": "test"}, "quality": {"L1": "old"}})
+        result = self.db.merge_config({"labellers": {"interesting": "x"}})
+        self.assertEqual(
+            result,
+            {
+                "project": {"name": "test"},
+                "quality": {"L1": "old"},
+                "labellers": {"interesting": "x"},
+            },
+        )
+        self.assertEqual(self.db.get_config(), result)
+
+    def test_merge_config_on_empty_store_behaves_like_save(self):
+        """Test merge_config() works correctly with nothing stored yet."""
+        result = self.db.merge_config({"project": {"name": "brand-new"}})
+        self.assertEqual(result, {"project": {"name": "brand-new"}})
+        self.assertEqual(self.db.get_config(), result)
+
+    def test_merge_config_persists_a_change_to_an_existing_nested_key(self):
+        """Test merge_config() actually persists a change to a key that
+        already exists as a dict, not just a brand-new key.
+
+        Regression test: merge_config() used to build its merged result via
+        `dict(row.data)` (a *shallow* copy) and then mutate nested values
+        in place, which - for an update touching only already-existing
+        keys - left the merged result structurally equal to row.data's
+        prior value by the time SQLAlchemy checked whether anything had
+        changed. SQLAlchemy would then skip the UPDATE entirely, silently
+        dropping the merge, while merge_config()'s in-memory return value
+        still (incorrectly) reported success. A fresh connection is used
+        here specifically so the assertion can't be satisfied by an
+        in-memory object that was mutated without ever being persisted.
+        """
+        self.db.save_config({"quality": {"L1": "old"}})
+        result = self.db.merge_config({"quality": {"L1": "new"}})
+        self.assertEqual(result, {"quality": {"L1": "new"}})
+
+        fresh = AsimovSQLDatabase(database_url=self.db_url)
+        self.assertEqual(fresh.get_config(), {"quality": {"L1": "new"}})
+
 
 class TestAsimovTinyDatabase(unittest.TestCase):
     """Tests for TinyDB backend (for backward compatibility)."""
@@ -504,6 +547,55 @@ class TestAsimovTinyDatabase(unittest.TestCase):
         self.db.save_config({"project": {"name": "test"}})
         self.db.save_config({"quality": {"L1": "foo"}})
         self.assertEqual(self.db.get_config(), {"quality": {"L1": "foo"}})
+
+    def test_merge_config_preserves_untouched_keys(self):
+        """Test merge_config() adds/overwrites only the keys it's given,
+        leaving whatever else is already persisted alone."""
+        self.db.save_config({"project": {"name": "test"}, "quality": {"L1": "old"}})
+        result = self.db.merge_config({"labellers": {"interesting": "x"}})
+        self.assertEqual(
+            result,
+            {
+                "project": {"name": "test"},
+                "quality": {"L1": "old"},
+                "labellers": {"interesting": "x"},
+            },
+        )
+        self.assertEqual(self.db.get_config(), result)
+
+    def test_merge_config_persists_a_change_to_an_existing_nested_key(self):
+        """Test merge_config() actually persists a change to a key that
+        already exists as a dict, not just a brand-new key - see the
+        matching AsimovSQLDatabase test for why this is the case that
+        exposes the shallow-copy-then-mutate-in-place bug this guards
+        against. A fresh AsimovTinyDatabase against the same path is used
+        so the assertion can't be satisfied by TinyDB's own in-memory
+        cache having been mutated without the write ever reaching disk.
+        """
+        self.db.save_config({"quality": {"L1": "old"}})
+        result = self.db.merge_config({"quality": {"L1": "new"}})
+        self.assertEqual(result, {"quality": {"L1": "new"}})
+
+        fresh = AsimovTinyDatabase(database_path=self.db_path)
+        self.assertEqual(fresh.get_config(), {"quality": {"L1": "new"}})
+
+    def test_explicit_database_path_overrides_config(self):
+        """Test that an explicit database_path is honored instead of the
+        (mocked) config value, matching AsimovSQLDatabase's database_url."""
+        other_path = os.path.join(self.test_dir, "other_ledger.json")
+        db = AsimovTinyDatabase(database_path=other_path)
+        db.save_config({"project": {"name": "explicit-path"}})
+
+        # The mocked config still points at self.db_path; a database opened
+        # against that path should NOT see the write made via other_path.
+        self.assertEqual(self.db.get_config(), {})
+        self.assertTrue(os.path.exists(other_path))
+
+        # Re-opening the explicit path directly should see the write.
+        reopened = AsimovTinyDatabase(database_path=other_path)
+        self.assertEqual(
+            reopened.get_config(), {"project": {"name": "explicit-path"}}
+        )
 
 
 class TestDatabaseLedger(unittest.TestCase):
@@ -766,10 +858,134 @@ class TestDatabaseLedger(unittest.TestCase):
         self.assertIn("project", fresh.data)
         self.assertIn("pipelines", fresh.data)
 
+    def test_save_does_not_erase_a_concurrent_process_unrelated_change(self):
+        """Test the exact scenario a blind save() used to be vulnerable to:
+        a long-lived process (like `asimov monitor`, which calls
+        ledger.save() after every analysis) holds a config snapshot from
+        before a second, independent process added something new. When the
+        long-lived process later saves for an unrelated reason, the second
+        process's addition must survive - not get wiped out by the first
+        process's stale snapshot."""
+        db_url = f"sqlite:///{self.db_path}"
+
+        # "monitor": a long-lived ledger that loads its cache early.
+        monitor_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        _ = monitor_ledger.data  # trigger the cache load, before anyone else writes
+
+        # "apply": an independent, short-lived process adds something new.
+        apply_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        apply_ledger.data["labellers"] = {"interesting": "x"}
+        apply_ledger.save()
+
+        # "monitor" now saves for an unrelated reason (e.g. a status update),
+        # without ever having touched "labellers" itself.
+        monitor_ledger.data["scheduler"] = {"cron_minute": "*/5"}
+        monitor_ledger.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        self.assertEqual(fresh.data["labellers"], {"interesting": "x"})
+        self.assertEqual(fresh.data["scheduler"], {"cron_minute": "*/5"})
+
+    def test_save_conflict_on_the_same_key_is_last_writer_wins_for_that_key_only(self):
+        """Test the honest remaining limitation: if two processes both
+        change the *same* top-level key, the second to save() wins for
+        that key - but unlike the old blind overwrite, this no longer
+        drags every *other* key down with it."""
+        db_url = f"sqlite:///{self.db_path}"
+
+        first = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        first.data["quality"] = {"L1": "first-value"}
+        first.save()
+
+        second = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        _ = second.data  # caches the state including first's "quality" write
+        second.data["labellers"] = {"interesting": "x"}  # unrelated key
+
+        first.data["quality"] = {"L1": "first-value-updated"}
+        first.save()
+
+        second.data["quality"] = {"L1": "second-value"}
+        second.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        # Last writer (second) wins for the key it actually conflicted on...
+        self.assertEqual(fresh.data["quality"], {"L1": "second-value"})
+        # ...but second's unrelated addition still made it through.
+        self.assertEqual(fresh.data["labellers"], {"interesting": "x"})
+
+    def test_save_does_not_resurrect_a_stale_value_for_an_untouched_key(self):
+        """Test the specific gap flagged in review on an earlier version of
+        this fix: save() must not re-merge the *whole* cached snapshot, only
+        what this process actually changed. A process that merely *loaded*
+        an existing key (without changing it) before a second process
+        updated that same key must not drag the second process's update
+        back to the stale value it happened to see at load time."""
+        db_url = f"sqlite:///{self.db_path}"
+
+        seed = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        seed.data["quality"] = {"L1": "original"}
+        seed.save()
+
+        # "monitor": loads the cache - including "quality" - but never
+        # itself changes "quality".
+        monitor_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        self.assertEqual(monitor_ledger.data["quality"], {"L1": "original"})
+
+        # An independent process changes "quality" concurrently.
+        other_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        other_ledger.data["quality"] = {"L1": "updated-by-someone-else"}
+        other_ledger.save()
+
+        # "monitor" now saves for an unrelated reason, without ever having
+        # touched "quality" itself.
+        monitor_ledger.data["scheduler"] = {"cron_minute": "*/5"}
+        monitor_ledger.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        self.assertEqual(fresh.data["quality"], {"L1": "updated-by-someone-else"})
+        self.assertEqual(fresh.data["scheduler"], {"cron_minute": "*/5"})
+
     def test_data_returns_same_object_on_repeat_access(self):
         """Test .data is cached (same object identity), not reloaded/rebuilt
         on every access, matching update()'s in-place-mutation contract."""
         self.assertIs(self.ledger.data, self.ledger.data)
+
+    def test_create_seeds_project_name(self):
+        """Test that DatabaseLedger.create(name=...) seeds
+        data["project"]["name"], matching YAMLLedger.create(). Real CLI
+        callers (make_project() in asimov/cli/project.py) always pass
+        `name`, and `asimov monitor`/`asimov report` read
+        ledger.data["project"]["name"] unconditionally from project
+        creation onward - not only once a `kind: configuration` blueprint
+        happens to set it."""
+        other_path = os.path.join(self.test_dir, "seeded_ledger.db")
+        other_url = f"sqlite:///{other_path}"
+        ledger = DatabaseLedger.create(
+            name="GWTC-Test", engine="sqlalchemy", location=other_url
+        )
+        self.assertEqual(ledger.data["project"]["name"], "GWTC-Test")
+
+        # And it's genuinely persisted, not just held in the returned
+        # instance's cache.
+        fresh = DatabaseLedger(engine="sqlalchemy", location=other_url)
+        self.assertEqual(fresh.data["project"]["name"], "GWTC-Test")
+
+    def test_tinydb_engine_honors_sqlite_prefixed_location(self):
+        """Test the tinydb branch of DatabaseLedger.__init__ strips a
+        sqlite:/// prefix rather than trying to open a file literally named
+        "sqlite:///...". Ledger.create()'s dispatcher URL-ifies bare paths
+        for every non-yaml engine, tinydb included, since that's the form
+        AsimovSQLDatabase needs - tinydb has to defensively unwrap it."""
+        tinydb_path = os.path.join(self.test_dir, "tiny_ledger.json")
+        ledger = DatabaseLedger(engine="tinydb", location=f"sqlite:///{tinydb_path}")
+        ledger.data["project"] = {"name": "tiny-test"}
+        ledger.save()
+
+        self.assertTrue(os.path.exists(tinydb_path))
+        self.assertFalse(os.path.exists(f"sqlite:///{tinydb_path}"))
+
+        reopened = DatabaseLedger(engine="tinydb", location=tinydb_path)
+        self.assertEqual(reopened.data["project"]["name"], "tiny-test")
 
 
 if __name__ == "__main__":

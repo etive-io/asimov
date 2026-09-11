@@ -23,11 +23,13 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional, Any
 
 from tinydb import Query, TinyDB
+from tinydb.table import Document
 from sqlalchemy import create_engine, and_, or_
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool, NullPool
 
 from asimov import config
+from asimov.utils import update as asimov_update
 from asimov.models import (
     Base,
     EventModel,
@@ -67,12 +69,44 @@ class AsimovDatabase:
         """Persist the ledger-wide configuration dict, replacing whatever was stored."""
         raise NotImplementedError
 
+    def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge `updates` into whatever is currently persisted and save the
+        result, instead of blindly replacing it.
+
+        A long-lived caller (e.g. the `asimov monitor` loop, which calls
+        ledger.save() after every analysis it touches) can hold a config
+        snapshot that's minutes or hours stale. Overwriting wholesale from
+        that snapshot would silently erase any key a different process
+        added or changed in the meantime. Merging means only keys `updates`
+        actually touches can conflict with a concurrent writer - everything
+        else concurrently added/changed survives.
+
+        Returns
+        -------
+        dict
+            The merged, now-persisted configuration.
+        """
+        raise NotImplementedError
+
 
 class AsimovTinyDatabase(AsimovDatabase):
     """TinyDB-based document database implementation."""
 
-    def __init__(self):
-        database_path = config.get("ledger", "location")
+    def __init__(self, database_path: Optional[str] = None):
+        """
+        Initialize the TinyDB backend.
+
+        Parameters
+        ----------
+        database_path : str, optional
+            Explicit path to the TinyDB JSON file, overriding the config.
+            Lets a caller select a specific project's database without
+            mutating the process-wide config, matching AsimovSQLDatabase's
+            `database_url` parameter.
+        """
+        if database_path is None:
+            database_path = config.get("ledger", "location")
         self.db = TinyDB(database_path)
         self.tables = {
             "event": self.db.table("event"),
@@ -108,14 +142,32 @@ class AsimovTinyDatabase(AsimovDatabase):
         return pages
 
     def get_config(self) -> Dict[str, Any]:
-        docs = self.tables["config"].all()
-        return docs[0]["data"] if docs else {}
+        doc = self.tables["config"].get(doc_id=1)
+        return doc["data"] if doc else {}
 
     def save_config(self, data: Dict[str, Any]) -> None:
-        # Always exactly one config document: replace it wholesale, mirroring
-        # how YAMLLedger dumps the whole of self.data on every save().
-        self.tables["config"].truncate()
-        self.tables["config"].insert({"data": data})
+        # Singleton document at a fixed doc_id: a single insert-or-update
+        # call, unlike a separate truncate() followed by insert(), which
+        # leaves a window where the table is empty if the process is
+        # interrupted between the two calls. Not table.upsert(Document(...))
+        # without a `cond`: that relies on upsert() accepting a bare
+        # Document with a doc_id and no query, which isn't guaranteed across
+        # tinydb versions (unpinned here) - contains()/update()/insert() is
+        # the version-stable way to express the same insert-or-replace.
+        table = self.tables["config"]
+        if table.contains(doc_id=1):
+            table.update({"data": data}, doc_ids=[1])
+        else:
+            table.insert(Document({"data": data}, doc_id=1))
+
+    def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        # inplace=False: TinyDB's Table caches loaded documents in memory,
+        # so get_config() can return the same object across calls. Mutating
+        # it in place here (the default) would corrupt that cached document
+        # before save_config() below ever runs.
+        current = asimov_update(self.get_config(), updates, inplace=False)
+        self.save_config(current)
+        return current
 
 
 class AsimovSQLDatabase(AsimovDatabase):
@@ -669,3 +721,48 @@ class AsimovSQLDatabase(AsimovDatabase):
                 row.data = data
             else:
                 session.add(LedgerConfigModel(id=1, data=data))
+
+    def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge `updates` into whatever is currently persisted and save the
+        result, instead of blindly replacing it - see AsimovDatabase.merge_config.
+
+        The read, merge, and write happen inside a single session/transaction,
+        which is enough to stop this process's own save() calls (see
+        DatabaseLedger.save()) from losing data to each other. It is NOT a
+        full guarantee against two different *processes* both calling
+        merge_config() at close to the same moment: SQLite's default
+        (deferred) transaction mode only takes a write lock when a
+        statement actually writes, so two sessions can both SELECT the
+        same pre-update snapshot before either has written, and the first
+        to commit doesn't block the second's read - only its write, by
+        which point the second session's merge is already computed from a
+        stale snapshot. Closing that window needs an explicit `BEGIN
+        IMMEDIATE`-style write lock taken before the SELECT, which this
+        does not yet do. In practice this narrows to the same accepted
+        risk as DatabaseLedger.save()'s same-key-conflict case: worst case
+        is last-writer-wins on whatever key both processes changed, not
+        data loss across the whole document.
+
+        Returns
+        -------
+        dict
+            The merged, now-persisted configuration.
+        """
+        with self.get_session() as session:
+            row = session.query(LedgerConfigModel).filter(LedgerConfigModel.id == 1).first()
+            # `dict(row.data)` is only a *shallow* copy: nested values (e.g.
+            # current["quality"]) stay the same objects as row.data's. With
+            # inplace=True (the default), asimov_update() below would then
+            # mutate those nested objects in place - meaning row.data itself
+            # silently ends up equal to `current` before the `row.data =
+            # current` assignment even runs. SQLAlchemy compares old vs new
+            # to decide whether a column actually changed, finds them equal,
+            # and skips the UPDATE entirely: the merge is lost. inplace=False
+            # deep-copies instead, so nothing aliases row.data.
+            current = asimov_update(dict(row.data) if row else {}, updates, inplace=False)
+            if row:
+                row.data = current
+            else:
+                session.add(LedgerConfigModel(id=1, data=current))
+            return current

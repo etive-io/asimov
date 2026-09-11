@@ -4,6 +4,7 @@ Code for the project ledger.
 
 import yaml
 
+import copy
 import os
 import shutil
 from functools import reduce
@@ -13,7 +14,7 @@ import asimov.database
 from asimov import config
 from asimov.analysis import ProjectAnalysis
 from asimov.event import Event, Production
-from asimov.utils import update, set_directory
+from asimov.utils import update, diff_dict, set_directory
 from filelock import FileLock
 
 
@@ -73,7 +74,7 @@ class Ledger:
                     location if "://" in location
                     else f"sqlite:///{os.path.abspath(location)}"
                 )
-            return DatabaseLedger.create(engine=engine, location=database_url)
+            return DatabaseLedger.create(name=name, engine=engine, location=database_url)
 
         raise ValueError(f"Unsupported ledger engine: {engine}")
 
@@ -364,7 +365,15 @@ class DatabaseLedger(Ledger):
             engine = config.get("ledger", "engine")
 
         if engine == "tinydb":
-            self.db = asimov.database.AsimovTinyDatabase()
+            # `location` may arrive as a bare path (direct construction) or
+            # as a `sqlite:///`-prefixed URL (Ledger.create()'s dispatcher
+            # URL-ifies bare paths for every non-yaml engine, tinydb
+            # included, since that's what AsimovSQLDatabase needs). TinyDB
+            # itself just wants a plain path either way.
+            tinydb_path = location
+            if tinydb_path and tinydb_path.startswith("sqlite:///"):
+                tinydb_path = tinydb_path[len("sqlite:///"):]
+            self.db = asimov.database.AsimovTinyDatabase(database_path=tinydb_path)
         elif engine in {"sqlalchemy", "sqlite", "postgresql", "mysql"}:
             self.db = asimov.database.AsimovSQLDatabase(database_url=location)
         else:
@@ -374,6 +383,7 @@ class DatabaseLedger(Ledger):
         self._events_cache = None
         self._project_analyses_cache = None
         self._data_cache = None
+        self._data_cache_baseline = None
 
     def __deepcopy__(self, memo):
         # Ledgers are shared singletons; deep-copying one would try to duplicate
@@ -386,22 +396,41 @@ class DatabaseLedger(Ledger):
         """
         The ledger-wide configuration dict (compatible with YAMLLedger.data).
 
-        Loaded from the database on first access and cached for the life of
-        this instance, so callers that do ``update(ledger.data, document)``
-        followed by ``ledger.save()`` (as ``kind: configuration`` blueprints
-        do) mutate and persist the same object rather than a throwaway copy.
+        Loaded from the database on first access and cached, so callers
+        that do ``update(ledger.data, document)`` followed by
+        ``ledger.save()`` (as ``kind: configuration`` blueprints do) mutate
+        and persist the same object rather than a throwaway copy. The
+        cache can go stale relative to what another process has since
+        persisted; ``save()`` merges rather than overwrites for exactly
+        that reason, and refreshes this cache to the merged result.
+
+        A deep copy of what's actually persisted (before the ``project``/
+        ``pipelines`` defaults below are substituted in) is kept as
+        ``_data_cache_baseline``, so ``save()`` can diff against it and
+        merge only what this process actually changed rather than merging
+        the whole (possibly stale, possibly default-padded) snapshot back
+        in - the defaults are a caller convenience, not something that
+        was ever really persisted.
         """
         if self._data_cache is None:
-            self._data_cache = self.db.get_config() or {"project": {}, "pipelines": {}}
+            persisted = self.db.get_config() or {}
+            self._data_cache_baseline = copy.deepcopy(persisted)
+            self._data_cache = persisted or {"project": {}, "pipelines": {}}
         return self._data_cache
 
     @classmethod
-    def create(cls, engine=None, location=None):
+    def create(cls, name=None, engine=None, location=None):
         """
         Create a new database ledger.
 
         Parameters
         ----------
+        name : str, optional
+            Project name. Seeded into ``ledger.data["project"]["name"]``,
+            matching what YAMLLedger.create() does - several read paths
+            (`asimov monitor`, `asimov report`) expect it to be there from
+            project creation onward, not only once a `kind: configuration`
+            blueprint happens to set it.
         engine : str, optional
             Database engine to use.
         location : str, optional
@@ -415,6 +444,9 @@ class DatabaseLedger(Ledger):
         """
         ledger = cls(engine=engine, location=location)
         ledger.db._create()
+        if name is not None:
+            ledger.data["project"]["name"] = name
+            ledger.save()
         return ledger
 
     def _insert(self, payload):
@@ -840,6 +872,30 @@ class DatabaseLedger(Ledger):
         ledger-wide configuration dict (``self.data``) — the one thing a
         caller can mutate in memory (via ``update(ledger.data, ...)``)
         without going through a dedicated write method.
+
+        Merges into the currently-persisted config rather than overwriting
+        it wholesale: this ledger instance may be long-lived (e.g. the
+        `asimov monitor` loop, which calls save() after every analysis it
+        touches) and its cached ``self.data`` can be stale relative to
+        config another process wrote in the meantime. An overwrite would
+        silently erase that; a merge only risks a conflict on keys this
+        instance itself changed.
+
+        Only the delta between ``self.data`` and ``_data_cache_baseline``
+        (the snapshot as it was when last loaded/merged) is sent to
+        ``merge_config()`` - not the whole cache. Sending the whole cache
+        would re-merge every key this process loaded but never touched,
+        clobbering concurrent changes to those keys back to the stale
+        values this process happened to see at load time. After merging,
+        both the cache and the baseline are refreshed to the true
+        persisted state, so repeated save() calls in the same long-lived
+        process keep diffing against a fresh baseline instead of drifting
+        further out of date.
         """
         if self._data_cache is not None:
-            self.db.save_config(self._data_cache)
+            delta = diff_dict(self._data_cache_baseline, self._data_cache)
+            if delta:
+                self._data_cache = self.db.merge_config(delta)
+            else:
+                self._data_cache = self.db.get_config() or self._data_cache
+            self._data_cache_baseline = copy.deepcopy(self._data_cache)
