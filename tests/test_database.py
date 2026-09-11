@@ -470,6 +470,28 @@ class TestAsimovSQLDatabase(unittest.TestCase):
         self.assertEqual(result, {"project": {"name": "brand-new"}})
         self.assertEqual(self.db.get_config(), result)
 
+    def test_merge_config_persists_a_change_to_an_existing_nested_key(self):
+        """Test merge_config() actually persists a change to a key that
+        already exists as a dict, not just a brand-new key.
+
+        Regression test: merge_config() used to build its merged result via
+        `dict(row.data)` (a *shallow* copy) and then mutate nested values
+        in place, which - for an update touching only already-existing
+        keys - left the merged result structurally equal to row.data's
+        prior value by the time SQLAlchemy checked whether anything had
+        changed. SQLAlchemy would then skip the UPDATE entirely, silently
+        dropping the merge, while merge_config()'s in-memory return value
+        still (incorrectly) reported success. A fresh connection is used
+        here specifically so the assertion can't be satisfied by an
+        in-memory object that was mutated without ever being persisted.
+        """
+        self.db.save_config({"quality": {"L1": "old"}})
+        result = self.db.merge_config({"quality": {"L1": "new"}})
+        self.assertEqual(result, {"quality": {"L1": "new"}})
+
+        fresh = AsimovSQLDatabase(database_url=self.db_url)
+        self.assertEqual(fresh.get_config(), {"quality": {"L1": "new"}})
+
 
 class TestAsimovTinyDatabase(unittest.TestCase):
     """Tests for TinyDB backend (for backward compatibility)."""
@@ -540,6 +562,22 @@ class TestAsimovTinyDatabase(unittest.TestCase):
             },
         )
         self.assertEqual(self.db.get_config(), result)
+
+    def test_merge_config_persists_a_change_to_an_existing_nested_key(self):
+        """Test merge_config() actually persists a change to a key that
+        already exists as a dict, not just a brand-new key - see the
+        matching AsimovSQLDatabase test for why this is the case that
+        exposes the shallow-copy-then-mutate-in-place bug this guards
+        against. A fresh AsimovTinyDatabase against the same path is used
+        so the assertion can't be satisfied by TinyDB's own in-memory
+        cache having been mutated without the write ever reaching disk.
+        """
+        self.db.save_config({"quality": {"L1": "old"}})
+        result = self.db.merge_config({"quality": {"L1": "new"}})
+        self.assertEqual(result, {"quality": {"L1": "new"}})
+
+        fresh = AsimovTinyDatabase(database_path=self.db_path)
+        self.assertEqual(fresh.get_config(), {"quality": {"L1": "new"}})
 
     def test_explicit_database_path_overrides_config(self):
         """Test that an explicit database_path is honored instead of the
@@ -874,6 +912,38 @@ class TestDatabaseLedger(unittest.TestCase):
         self.assertEqual(fresh.data["quality"], {"L1": "second-value"})
         # ...but second's unrelated addition still made it through.
         self.assertEqual(fresh.data["labellers"], {"interesting": "x"})
+
+    def test_save_does_not_resurrect_a_stale_value_for_an_untouched_key(self):
+        """Test the specific gap flagged in review on an earlier version of
+        this fix: save() must not re-merge the *whole* cached snapshot, only
+        what this process actually changed. A process that merely *loaded*
+        an existing key (without changing it) before a second process
+        updated that same key must not drag the second process's update
+        back to the stale value it happened to see at load time."""
+        db_url = f"sqlite:///{self.db_path}"
+
+        seed = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        seed.data["quality"] = {"L1": "original"}
+        seed.save()
+
+        # "monitor": loads the cache - including "quality" - but never
+        # itself changes "quality".
+        monitor_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        self.assertEqual(monitor_ledger.data["quality"], {"L1": "original"})
+
+        # An independent process changes "quality" concurrently.
+        other_ledger = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        other_ledger.data["quality"] = {"L1": "updated-by-someone-else"}
+        other_ledger.save()
+
+        # "monitor" now saves for an unrelated reason, without ever having
+        # touched "quality" itself.
+        monitor_ledger.data["scheduler"] = {"cron_minute": "*/5"}
+        monitor_ledger.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=db_url)
+        self.assertEqual(fresh.data["quality"], {"L1": "updated-by-someone-else"})
+        self.assertEqual(fresh.data["scheduler"], {"cron_minute": "*/5"})
 
     def test_data_returns_same_object_on_repeat_access(self):
         """Test .data is cached (same object identity), not reloaded/rebuilt

@@ -153,8 +153,11 @@ class AsimovTinyDatabase(AsimovDatabase):
         self.tables["config"].upsert(Document({"data": data}, doc_id=1))
 
     def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
-        current = self.get_config()
-        asimov_update(current, updates)
+        # inplace=False: TinyDB's Table caches loaded documents in memory,
+        # so get_config() can return the same object across calls. Mutating
+        # it in place here (the default) would corrupt that cached document
+        # before save_config() below ever runs.
+        current = asimov_update(self.get_config(), updates, inplace=False)
         self.save_config(current)
         return current
 
@@ -728,8 +731,16 @@ class AsimovSQLDatabase(AsimovDatabase):
         """
         with self.get_session() as session:
             row = session.query(LedgerConfigModel).filter(LedgerConfigModel.id == 1).first()
-            current = dict(row.data) if row else {}
-            asimov_update(current, updates)
+            # `dict(row.data)` is only a *shallow* copy: nested values (e.g.
+            # current["quality"]) stay the same objects as row.data's. With
+            # inplace=True (the default), asimov_update() below would then
+            # mutate those nested objects in place - meaning row.data itself
+            # silently ends up equal to `current` before the `row.data =
+            # current` assignment even runs. SQLAlchemy compares old vs new
+            # to decide whether a column actually changed, finds them equal,
+            # and skips the UPDATE entirely: the merge is lost. inplace=False
+            # deep-copies instead, so nothing aliases row.data.
+            current = asimov_update(dict(row.data) if row else {}, updates, inplace=False)
             if row:
                 row.data = current
             else:

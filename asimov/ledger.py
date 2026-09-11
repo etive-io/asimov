@@ -4,6 +4,7 @@ Code for the project ledger.
 
 import yaml
 
+import copy
 import os
 import shutil
 from functools import reduce
@@ -13,7 +14,7 @@ import asimov.database
 from asimov import config
 from asimov.analysis import ProjectAnalysis
 from asimov.event import Event, Production
-from asimov.utils import update, set_directory
+from asimov.utils import update, diff_dict, set_directory
 from filelock import FileLock
 
 
@@ -382,6 +383,7 @@ class DatabaseLedger(Ledger):
         self._events_cache = None
         self._project_analyses_cache = None
         self._data_cache = None
+        self._data_cache_baseline = None
 
     def __deepcopy__(self, memo):
         # Ledgers are shared singletons; deep-copying one would try to duplicate
@@ -401,9 +403,19 @@ class DatabaseLedger(Ledger):
         cache can go stale relative to what another process has since
         persisted; ``save()`` merges rather than overwrites for exactly
         that reason, and refreshes this cache to the merged result.
+
+        A deep copy of what's actually persisted (before the ``project``/
+        ``pipelines`` defaults below are substituted in) is kept as
+        ``_data_cache_baseline``, so ``save()`` can diff against it and
+        merge only what this process actually changed rather than merging
+        the whole (possibly stale, possibly default-padded) snapshot back
+        in - the defaults are a caller convenience, not something that
+        was ever really persisted.
         """
         if self._data_cache is None:
-            self._data_cache = self.db.get_config() or {"project": {}, "pipelines": {}}
+            persisted = self.db.get_config() or {}
+            self._data_cache_baseline = copy.deepcopy(persisted)
+            self._data_cache = persisted or {"project": {}, "pipelines": {}}
         return self._data_cache
 
     @classmethod
@@ -867,9 +879,23 @@ class DatabaseLedger(Ledger):
         touches) and its cached ``self.data`` can be stale relative to
         config another process wrote in the meantime. An overwrite would
         silently erase that; a merge only risks a conflict on keys this
-        instance itself changed. After merging, the cache is refreshed to
-        the true persisted state, so it doesn't keep drifting further out
-        of date across repeated save() calls in the same process.
+        instance itself changed.
+
+        Only the delta between ``self.data`` and ``_data_cache_baseline``
+        (the snapshot as it was when last loaded/merged) is sent to
+        ``merge_config()`` - not the whole cache. Sending the whole cache
+        would re-merge every key this process loaded but never touched,
+        clobbering concurrent changes to those keys back to the stale
+        values this process happened to see at load time. After merging,
+        both the cache and the baseline are refreshed to the true
+        persisted state, so repeated save() calls in the same long-lived
+        process keep diffing against a fresh baseline instead of drifting
+        further out of date.
         """
         if self._data_cache is not None:
-            self._data_cache = self.db.merge_config(self._data_cache)
+            delta = diff_dict(self._data_cache_baseline, self._data_cache)
+            if delta:
+                self._data_cache = self.db.merge_config(delta)
+            else:
+                self._data_cache = self.db.get_config() or self._data_cache
+            self._data_cache_baseline = copy.deepcopy(self._data_cache)
