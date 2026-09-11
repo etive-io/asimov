@@ -30,7 +30,7 @@ During the monitoring process, registered labellers are automatically applied to
 
 Common use cases:
 
-* Setting ``interest status`` to ``True`` or ``False``
+* Setting ``interesting`` to ``True`` or ``False``
 * Adding custom tags or categories
 * Computing priority scores
 * Marking analyses for special handling
@@ -74,9 +74,9 @@ To create a custom labeller, subclass the ``Labeller`` abstract base class:
             # Check if this is a high-mass analysis
             if hasattr(analysis, 'meta') and 'mass' in analysis.meta:
                 if analysis.meta['mass'] > 50:
-                    return {"interest status": True, "category": "high_mass"}
+                    return {"interesting": True, "category": "high_mass"}
             
-            return {"interest status": False}
+            return {"interesting": False}
 
 Conditional Labelling
 ^^^^^^^^^^^^^^^^^^^^
@@ -98,7 +98,7 @@ You can control when a labeller runs using the ``should_label`` method:
         
         def label(self, analysis, context=None):
             # This only runs for finished analyses
-            return {"interest status": True}
+            return {"interesting": True}
 
 Using the Context
 ^^^^^^^^^^^^^^^^
@@ -122,7 +122,7 @@ The context parameter provides access to monitoring information:
             job = context.job
             if job and hasattr(job, 'status'):
                 if job.status == 'completed':
-                    return {"interest status": True, "job_completed": True}
+                    return {"interesting": True, "job_completed": True}
             
             return {}
 
@@ -336,7 +336,7 @@ Labellers should handle errors gracefully. If a labeller raises an exception, it
             try:
                 # Potentially risky operation
                 result = self.complex_computation(analysis)
-                return {"interest status": result}
+                return {"interesting": result}
             except Exception as e:
                 # Log error but return safely
                 logger.error(f"Error in labeller: {e}")
@@ -371,7 +371,7 @@ Write unit tests for your labellers:
             
             labels = labeller.label(analysis)
             
-            self.assertTrue(labels["interest status"])
+            self.assertTrue(labels["interesting"])
         
         def test_low_mass_not_interesting(self):
             labeller = HighMassLabeller()
@@ -381,7 +381,7 @@ Write unit tests for your labellers:
             
             labels = labeller.label(analysis)
             
-            self.assertFalse(labels["interest status"])
+            self.assertFalse(labels["interesting"])
 
 Complete Plugin Example
 ----------------------
@@ -439,11 +439,11 @@ Here's a complete example of creating a labeller plugin package:
             # Check quality metrics
             if self.passes_quality_checks(analysis):
                 return {
-                    "interest status": True,
+                    "interesting": True,
                     "quality": "high"
                 }
             return {
-                "interest status": False,
+                "interesting": False,
                 "quality": "low"
             }
         
@@ -465,7 +465,7 @@ Here's a complete example of creating a labeller plugin package:
         def label(self, analysis, context=None):
             if self.check_convergence(analysis):
                 return {
-                    "interest status": True,
+                    "interesting": True,
                     "converged": True
                 }
             return {"converged": False}
