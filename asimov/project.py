@@ -19,23 +19,30 @@ from asimov.cli.project import make_project
 logger = logger.getChild("project")
 logger.setLevel(LOGGER_LEVEL)
 
-# The Project currently active inside a `with project:` block, if any.
+# Stack of Projects currently active inside nested `with project:` blocks.
 # asimov.cli.application.get_ledger() consults this so that code called
 # from within a project context (rather than using `project.ledger`
-# directly) still operates on the ledger that will actually be saved.
-_active_project = None
+# directly) still operates on the ledger that will actually be saved. A
+# stack (rather than a single reference) is needed so that exiting an
+# inner `with project_b:` block, nested inside an outer `with project_a:`
+# block, correctly restores `project_a` as the active project rather than
+# clearing it entirely.
+_project_context_stack = []
 
 
 def get_active_project():
     """
-    Return the ``Project`` currently active inside a ``with project:`` block.
+    Return the innermost ``Project`` currently active inside a
+    ``with project:`` block.
 
     Returns
     -------
     Project or None
         The active project, or ``None`` if no project context is open.
     """
-    return _active_project
+    if _project_context_stack:
+        return _project_context_stack[-1]
+    return None
 
 
 class Project:
@@ -252,8 +259,7 @@ class Project:
         if "pipelines" not in self._ledger.data:
             self._ledger.data["pipelines"] = {}
 
-        global _active_project
-        _active_project = self
+        _project_context_stack.append(self)
 
         logger.debug(f"Entered context for project '{self.name}'")
         return self
@@ -291,9 +297,12 @@ class Project:
                     pass
         finally:
             self._in_context = False
-            global _active_project
-            if _active_project is self:
-                _active_project = None
+            if _project_context_stack and _project_context_stack[-1] is self:
+                _project_context_stack.pop()
+            elif self in _project_context_stack:
+                # Defensive: shouldn't happen with well-nested `with`
+                # blocks, but don't leave a stale entry on the stack.
+                _project_context_stack.remove(self)
             if self._original_dir:
                 os.chdir(self._original_dir)
                 logger.debug(f"Exited context for project '{self.name}'")

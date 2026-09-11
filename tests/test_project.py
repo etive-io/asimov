@@ -228,6 +228,38 @@ class TestProject(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].name, "GW150914")
 
+    def test_get_ledger_with_nested_project_contexts(self):
+        """get_active_project() should track nested `with project:` blocks
+        as a stack, so exiting an inner context restores the outer one
+        rather than clearing the active project entirely."""
+        outer_dir = self.test_dir
+        inner_dir = tempfile.mkdtemp()
+        try:
+            from asimov.cli.application import get_ledger
+            from asimov.project import get_active_project
+
+            outer = Project("Outer Project", location=outer_dir)
+            inner = Project("Inner Project", location=inner_dir)
+
+            self.assertIsNone(get_active_project())
+
+            with outer:
+                self.assertIs(get_active_project(), outer)
+                self.assertIs(get_ledger(), outer.ledger)
+
+                with inner:
+                    self.assertIs(get_active_project(), inner)
+                    self.assertIs(get_ledger(), inner.ledger)
+
+                # Back in the outer context: it should be active again,
+                # not None.
+                self.assertIs(get_active_project(), outer)
+                self.assertIs(get_ledger(), outer.ledger)
+
+            self.assertIsNone(get_active_project())
+        finally:
+            shutil.rmtree(inner_dir, ignore_errors=True)
+
     def test_context_manager_exception_handling(self):
         """Test that ledger is not saved when an exception occurs in context."""
         project = Project(self.project_name, location=self.test_dir)
