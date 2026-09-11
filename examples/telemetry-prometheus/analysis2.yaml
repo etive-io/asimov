@@ -1,0 +1,5 @@
+kind: analysis
+name: telemetry-demo-2
+pipeline: simpletestpipeline
+comment: A second job, so the dashboard has more than one data point to show.
+status: ready
