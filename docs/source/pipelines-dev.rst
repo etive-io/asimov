@@ -425,11 +425,11 @@ This covers the naming conventions used by every scheduler asimov currently supp
 (HTCondor, Slurm, and the local process scheduler).
 
 If your pipeline's log files already match one of these patterns you don't need to do
-anything - ``collect_logs`` will find them automatically, and they'll be available via the new
-``GET /analyses/<event>/<analysis>/logs`` REST endpoint and the report page's log preview. If
-your pipeline uses different filenames, override the ``log_patterns`` class attribute rather
-than reimplementing ``collect_logs`` from scratch, unless you need genuinely different logic
-(for example, reading logs from somewhere other than the run directory).
+anything - ``collect_logs`` will find them automatically, and they'll be available via the
+report page's log preview. If your pipeline uses different filenames, override the
+``log_patterns`` class attribute rather than reimplementing ``collect_logs`` from scratch,
+unless you need genuinely different logic (for example, reading logs from somewhere other
+than the run directory).
 
 New entry point: ``asimov.labellers``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
