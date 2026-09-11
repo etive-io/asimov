@@ -422,6 +422,33 @@ class TestAsimovSQLDatabase(unittest.TestCase):
                     "postgresql://user:pass@host/dbname",
                 )
 
+    def test_get_config_empty_by_default(self):
+        """Test that get_config() returns {} before anything has been saved."""
+        self.assertEqual(self.db.get_config(), {})
+
+    def test_save_and_get_config_round_trips(self):
+        """Test that save_config() persists and get_config() reads it back."""
+        self.db.save_config({"project": {"name": "test"}, "labellers": {"a": "b"}})
+        self.assertEqual(
+            self.db.get_config(),
+            {"project": {"name": "test"}, "labellers": {"a": "b"}},
+        )
+
+    def test_save_config_overwrites_previous_value(self):
+        """Test that a second save_config() call replaces, not merges."""
+        self.db.save_config({"project": {"name": "test"}})
+        self.db.save_config({"quality": {"L1": "foo"}})
+        self.assertEqual(self.db.get_config(), {"quality": {"L1": "foo"}})
+
+    def test_config_survives_a_fresh_connection(self):
+        """Test config is read back correctly by a brand new AsimovSQLDatabase
+        instance pointed at the same URL (not just cached in-process)."""
+        self.db.save_config({"pipelines": {"bilby": {"scheduler": "condor"}}})
+        second = AsimovSQLDatabase(database_url=self.db_url)
+        self.assertEqual(
+            second.get_config(), {"pipelines": {"bilby": {"scheduler": "condor"}}}
+        )
+
 
 class TestAsimovTinyDatabase(unittest.TestCase):
     """Tests for TinyDB backend (for backward compatibility)."""
@@ -462,6 +489,21 @@ class TestAsimovTinyDatabase(unittest.TestCase):
         self.db.insert("event", {"name": "GW151226", "meta": {}})
         results = self.db.query("event")
         self.assertEqual(len(results), 2)
+
+    def test_get_config_empty_by_default(self):
+        """Test that get_config() returns {} before anything has been saved."""
+        self.assertEqual(self.db.get_config(), {})
+
+    def test_save_and_get_config_round_trips(self):
+        """Test that save_config() persists and get_config() reads it back."""
+        self.db.save_config({"project": {"name": "test"}})
+        self.assertEqual(self.db.get_config(), {"project": {"name": "test"}})
+
+    def test_save_config_overwrites_previous_value(self):
+        """Test that a second save_config() call replaces, not merges."""
+        self.db.save_config({"project": {"name": "test"}})
+        self.db.save_config({"quality": {"L1": "foo"}})
+        self.assertEqual(self.db.get_config(), {"quality": {"L1": "foo"}})
 
 
 class TestDatabaseLedger(unittest.TestCase):
@@ -703,6 +745,31 @@ class TestDatabaseLedger(unittest.TestCase):
         # Verify productions are also deleted
         prods = self.ledger.db.query_productions(filters={"event_name": "GW150914"})
         self.assertEqual(len(prods), 0)
+
+    def test_data_defaults_to_minimal_dict(self):
+        """Test that .data starts out matching YAMLLedger's guard expectations."""
+        self.assertEqual(self.ledger.data, {"project": {}, "pipelines": {}})
+
+    def test_data_mutation_persists_across_save(self):
+        """Test the exact pattern `kind: configuration` blueprints use:
+        mutate ledger.data in place, then call ledger.save() to persist it.
+        This is the pattern that silently no-opped before this fix, since
+        the old `.data` getter returned a fresh throwaway dict every time."""
+        from asimov.utils import update as merge_update
+
+        merge_update(self.ledger.data, {"labellers": {"interesting": "x"}})
+        self.ledger.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        self.assertEqual(fresh.data["labellers"], {"interesting": "x"})
+        # The keys from the default dict should still be present too.
+        self.assertIn("project", fresh.data)
+        self.assertIn("pipelines", fresh.data)
+
+    def test_data_returns_same_object_on_repeat_access(self):
+        """Test .data is cached (same object identity), not reloaded/rebuilt
+        on every access, matching update()'s in-place-mutation contract."""
+        self.assertIs(self.ledger.data, self.ledger.data)
 
 
 if __name__ == "__main__":
