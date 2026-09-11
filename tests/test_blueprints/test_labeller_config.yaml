@@ -1,0 +1,11 @@
+kind: configuration
+# Labeller configuration for testing
+# This configures a labeller to mark test pipelines as interesting
+
+labellers:
+  test_pipeline_labeller:
+    asimov.example_labellers:PipelineInterestLabeller:
+      interesting_pipelines:
+        - simpletestpipeline
+        - subjecttestpipeline
+        - projecttestpipeline

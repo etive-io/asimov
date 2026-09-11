@@ -645,7 +645,19 @@ class Event:
                     pipeline_name = (node.pipeline.name
                                      if hasattr(node, 'pipeline') and node.pipeline else '')
                     prefix = _REVIEW_PREFIX.get(review_status, '')
+                    labels = (node.meta.get('labels', {}) or {}) if hasattr(node, 'meta') and isinstance(node.meta, dict) else {}
                     label = _escape_mermaid_label(f'{prefix}{node.name}') + ('<br/><small>' + _escape_mermaid_label(pipeline_name) + '</small>' if pipeline_name else '')
+                    if labels:
+                        badges = []
+                        for label_name, label_value in labels.items():
+                            if isinstance(label_value, bool):
+                                badge_class, badge_text = ('badge-success' if label_value else 'badge-secondary'), label_name
+                            elif isinstance(label_value, (int, float)):
+                                badge_class, badge_text = 'badge-info', f'{label_name}: {label_value}'
+                            else:
+                                badge_class, badge_text = 'badge-secondary', f'{label_name}: {label_value}'
+                            badges.append(f'<span class="badge {badge_class}">{_escape_mermaid_label(badge_text)}</span>')
+                        label += '<br/>' + ' '.join(badges)
                     is_subject = (getattr(node, 'category', '') == 'subject_analyses')
                     nodes_data.append({
                         'id': mid,
@@ -745,6 +757,8 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                     dependencies_str = ', '.join(dependencies) if dependencies else ''
                     dependencies_str_escaped = html.escape(dependencies_str, quote=True)
                     review_message_escaped = html.escape(review_message, quote=True)
+                    labels = (node.meta.get('labels', {}) or {}) if hasattr(node, 'meta') and isinstance(node.meta, dict) else {}
+                    labels_json_escaped = html.escape(_json.dumps(labels), quote=True)
 
                     # A small preview only - full logs are read live from disk via
                     # collect_logs(), which can return megabytes per file. Embedding
@@ -782,6 +796,7 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-modal-plots="{modal_plots_str_escaped}"
                          data-modal-plot-labels="{modal_plot_labels_str_escaped}"
                          data-logs="{log_preview_json_escaped}"
+                         data-labels="{labels_json_escaped}"
                          {get_profiling_attrs(node)}></div>"""
 
             except Exception as e:
