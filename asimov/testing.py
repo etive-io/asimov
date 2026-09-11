@@ -22,7 +22,9 @@ class AsimovTestCase(unittest.TestCase):
     def setUp(self):
         os.makedirs(f"{self.cwd}/tests/tmp/project")
         os.chdir(f"{self.cwd}/tests/tmp/project")
-        make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
+        make_project(
+            name="Test project", root=f"{self.cwd}/tests/tmp/project", engine="yamlfile"
+        )
         self.ledger = YAMLLedger(".asimov/ledger.yml")
 
     def tearDown(self):

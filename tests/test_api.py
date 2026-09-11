@@ -1,0 +1,669 @@
+"""
+Unit tests for the REST API.
+"""
+
+import unittest
+import json
+import os
+from asimov.api.app import create_app
+from asimov.testing import AsimovTestCase
+from asimov.event import Event
+
+# Set testing flag to avoid RuntimeError when no API keys / secret key configured
+os.environ['ASIMOV_TESTING'] = '1'
+
+
+class APIHealthTestCase(unittest.TestCase):
+    """Tests for API health check endpoint."""
+
+    def setUp(self):
+        """Set up test client."""
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+
+    def test_health_check(self):
+        """Test health check endpoint."""
+        response = self.client.get('/api/v1/health')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['status'], 'ok')
+        self.assertEqual(data['version'], 'v1')
+
+
+class APIEventsTestCase(AsimovTestCase):
+    """Tests for Events API endpoints."""
+
+    def setUp(self):
+        """Set up test environment."""
+        super().setUp()
+
+        # Inject test API keys before creating app
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = {'test-token-12345': 'test-user'}
+
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        self.auth_headers = {'Authorization': 'Bearer test-token-12345'}
+
+    def tearDown(self):
+        """Clean up test environment."""
+        # Reset API keys cache
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = None
+        super().tearDown()
+
+    def test_list_events_empty(self):
+        """Test listing events when none exist."""
+        response = self.client.get('/api/v1/events/')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('events', data)
+        self.assertEqual(len(data['events']), 0)
+
+    def test_create_event_no_auth(self):
+        """Test creating event without authentication fails."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertIn('error', data)
+
+    def test_create_event_invalid_auth(self):
+        """Test creating event with invalid token fails."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers={'Authorization': 'Bearer invalid-token'},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_event_missing_name(self):
+        """Test creating event without name fails validation."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'meta': {'test': True}}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.data)
+        self.assertIn('error', data)
+
+    def test_get_nonexistent_event(self):
+        """Test getting non-existent event returns 404."""
+        response = self.client.get('/api/v1/events/NonExistent')
+        self.assertEqual(response.status_code, 404)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'Event not found')
+
+    def test_update_nonexistent_event(self):
+        """Test updating non-existent event returns 404."""
+        response = self.client.put(
+            '/api/v1/events/NonExistent',
+            data=json.dumps({'meta': {'test': True}}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_nonexistent_event(self):
+        """Test deleting non-existent event returns 404."""
+        response = self.client.delete(
+            '/api/v1/events/NonExistent',
+            headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_list_analyses_nonexistent_event(self):
+        """Test listing analyses for non-existent event returns 404."""
+        response = self.client.get('/api/v1/events/NonExistent/analyses')
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_event_success(self):
+        """Test creating event successfully."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({
+                'name': 'GW150914',
+                'repository': 'https://git.ligo.org/test/repo.git',
+                'working_directory': '/tmp/test',
+                'meta': {'test': True}
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 201)
+        data = json.loads(response.data)
+        self.assertIn('event', data)
+        self.assertEqual(data['event']['name'], 'GW150914')
+
+    def test_update_event_success(self):
+        """Test updating event successfully."""
+        # Create event first
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Update event
+        response = self.client.put(
+            '/api/v1/events/GW150914',
+            data=json.dumps({
+                'repository': 'https://git.ligo.org/updated/repo.git',
+                'meta': {'updated': True}
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('event', data)
+        self.assertEqual(data['event']['name'], 'GW150914')
+
+    def test_delete_event_success(self):
+        """Test deleting event successfully."""
+        # Create event first
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Delete event
+        response = self.client.delete(
+            '/api/v1/events/GW150914',
+            headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 204)
+
+        # Verify it's deleted
+        response = self.client.get('/api/v1/events/GW150914')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_event_success(self):
+        """Test getting event successfully."""
+        # Create event first
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Get event
+        response = self.client.get('/api/v1/events/GW150914')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('event', data)
+        self.assertEqual(data['event']['name'], 'GW150914')
+
+    def test_list_events_with_data(self):
+        """Test listing events when events exist."""
+        # Create event
+        self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'GW150914'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # List events
+        response = self.client.get('/api/v1/events/')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('events', data)
+        self.assertEqual(len(data['events']), 1)
+        self.assertEqual(data['events'][0]['name'], 'GW150914')
+
+
+class APIAnalysesTestCase(AsimovTestCase):
+    """Tests for Analyses API endpoints."""
+
+    def setUp(self):
+        """Set up test environment with an event."""
+        super().setUp()
+
+        # Inject test API keys before creating app
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = {'test-token-12345': 'test-user'}
+
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        self.auth_headers = {'Authorization': 'Bearer test-token-12345'}
+
+        # Create a test event with a git repo
+        self.test_repo_path = os.path.join(self.cwd, "tests/tmp/test-repo")
+        os.makedirs(self.test_repo_path, exist_ok=True)
+        os.system(f'cd {self.test_repo_path} && git init --quiet 2>/dev/null')
+
+        # Manually add event to ledger to avoid git version issues
+        event = Event(
+            name='GW150914',
+            ledger=self.ledger,
+            repository=self.test_repo_path
+        )
+        self.ledger.add_event(event)
+
+    def tearDown(self):
+        """Clean up test environment."""
+        # Reset API keys cache
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = None
+        super().tearDown()
+
+    def test_create_analysis_no_auth(self):
+        """Test creating analysis without authentication fails."""
+        response = self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_analysis_invalid_data(self):
+        """Test creating analysis with invalid data fails."""
+        response = self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({'name': 'Prod_A'}),  # Missing required 'pipeline'
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_analysis_nonexistent_event(self):
+        """Test creating analysis for non-existent event fails."""
+        response = self.client.post(
+            '/api/v1/analyses/NonExistent',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_analysis_success(self):
+        """Test creating analysis successfully."""
+        response = self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline',
+                'comment': 'Test production',
+                'meta': {'test': True}
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 201)
+        data = json.loads(response.data)
+        self.assertIn('analysis', data)
+        self.assertEqual(data['analysis']['name'], 'Prod_A')
+        self.assertEqual(data['analysis']['pipeline'], 'simpletestpipeline')
+
+    def test_create_duplicate_analysis(self):
+        """Test creating duplicate analysis fails."""
+        # Create first analysis
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Try to create duplicate
+        response = self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 409)
+
+    def test_get_analysis(self):
+        """Test getting an analysis."""
+        # Create analysis first
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Get analysis
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['analysis']['name'], 'Prod_A')
+
+    def test_get_nonexistent_analysis(self):
+        """Test getting non-existent analysis returns 404."""
+        response = self.client.get('/api/v1/analyses/GW150914/NonExistent')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_telemetry_nonexistent_event(self):
+        """Test getting telemetry for a non-existent event returns 404."""
+        response = self.client.get('/api/v1/analyses/NonExistent/Prod_A/telemetry')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_telemetry_nonexistent_analysis(self):
+        """Test getting telemetry for a non-existent analysis returns 404."""
+        response = self.client.get('/api/v1/analyses/GW150914/NonExistent/telemetry')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_analysis_telemetry_empty(self):
+        """Test getting telemetry for an analysis with no events yet."""
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({'name': 'Prod_A', 'pipeline': 'simpletestpipeline'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A/telemetry')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['telemetry'], [])
+
+    def test_get_analysis_telemetry_reads_and_filters(self):
+        """Test that the telemetry endpoint reads real events and supports filtering."""
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({'name': 'Prod_A', 'pipeline': 'simpletestpipeline'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        from asimov.ledger import YAMLLedger
+        fresh_ledger = YAMLLedger(self.ledger.location)
+        analysis = next(
+            p for p in fresh_ledger.get_event('GW150914')[0].productions
+            if p.name == 'Prod_A'
+        )
+        os.makedirs(analysis.rundir, exist_ok=True)
+        with open(os.path.join(analysis.rundir, 'telemetry.jsonl'), 'w') as f:
+            f.write(json.dumps({
+                'timestamp': '2026-08-20T09:00:00+00:00', 'event_type': 'status_change',
+                'event_name': 'GW150914', 'analysis_name': 'Prod_A', 'rundir': analysis.rundir,
+                'data': {'from': 'ready', 'to': 'running'},
+            }) + '\n')
+            f.write(json.dumps({
+                'timestamp': '2026-08-20T10:00:00+00:00', 'event_type': 'resource_snapshot',
+                'event_name': 'GW150914', 'analysis_name': 'Prod_A', 'rundir': analysis.rundir,
+                'data': {'cpus': 4},
+            }) + '\n')
+
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A/telemetry')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(len(data['telemetry']), 2)
+
+        response = self.client.get(
+            '/api/v1/analyses/GW150914/Prod_A/telemetry?event_type=status_change'
+        )
+        data = json.loads(response.data)
+        self.assertEqual(len(data['telemetry']), 1)
+        self.assertEqual(data['telemetry'][0]['event_type'], 'status_change')
+
+        response = self.client.get(
+            '/api/v1/analyses/GW150914/Prod_A/telemetry?since=2026-08-20T09:30:00+00:00'
+        )
+        data = json.loads(response.data)
+        self.assertEqual(len(data['telemetry']), 1)
+        self.assertEqual(data['telemetry'][0]['event_type'], 'resource_snapshot')
+
+    def test_update_analysis(self):
+        """Test updating an analysis."""
+        # Create analysis first
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Update analysis
+        response = self.client.put(
+            '/api/v1/analyses/GW150914/Prod_A',
+            data=json.dumps({
+                'status': 'ready',
+                'comment': 'Updated comment'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data['analysis']['status'], 'ready')
+
+    def test_update_nonexistent_analysis(self):
+        """Test updating non-existent analysis returns 404."""
+        response = self.client.put(
+            '/api/v1/analyses/GW150914/NonExistent',
+            data=json.dumps({'status': 'ready'}),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_analysis(self):
+        """Test deleting an analysis."""
+        # Create analysis first
+        self.client.post(
+            '/api/v1/analyses/GW150914',
+            data=json.dumps({
+                'name': 'Prod_A',
+                'pipeline': 'simpletestpipeline'
+            }),
+            headers=self.auth_headers,
+            content_type='application/json'
+        )
+
+        # Delete analysis
+        response = self.client.delete(
+            '/api/v1/analyses/GW150914/Prod_A',
+            headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 204)
+
+        # Verify deletion
+        response = self.client.get('/api/v1/analyses/GW150914/Prod_A')
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_nonexistent_analysis(self):
+        """Test deleting non-existent analysis returns 404."""
+        response = self.client.delete(
+            '/api/v1/analyses/GW150914/NonExistent',
+            headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_list_analyses_empty(self):
+        """Test listing analyses when none exist."""
+        response = self.client.get('/api/v1/events/GW150914/analyses')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(len(data['analyses']), 0)
+
+    def test_list_analyses(self):
+        """Test listing analyses."""
+        # Create multiple analyses
+        for i in range(3):
+            self.client.post(
+                '/api/v1/analyses/GW150914',
+                data=json.dumps({
+                    'name': f'Prod_{i}',
+                    'pipeline': 'simpletestpipeline'
+                }),
+                headers=self.auth_headers,
+                content_type='application/json'
+            )
+
+        # List analyses
+        response = self.client.get('/api/v1/events/GW150914/analyses')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(len(data['analyses']), 3)
+
+
+class APIAuthenticationTestCase(unittest.TestCase):
+    """Tests for API authentication."""
+
+    def setUp(self):
+        """Set up test client."""
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+
+    def test_missing_authorization_header(self):
+        """Test request without Authorization header is rejected."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'Test'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'Authorization header missing')
+
+    def test_invalid_authorization_scheme(self):
+        """Test request with invalid scheme is rejected."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'Test'}),
+            headers={'Authorization': 'Basic invalid'},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'Invalid authorization scheme')
+
+    def test_malformed_authorization_header(self):
+        """Test request with malformed header is rejected."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'Test'}),
+            headers={'Authorization': 'InvalidFormat'},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_invalid_token(self):
+        """Test request with invalid token is rejected."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data=json.dumps({'name': 'Test'}),
+            headers={'Authorization': 'Bearer invalid-token'},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertEqual(data['error'], 'Invalid token')
+
+
+class APICORSTestCase(unittest.TestCase):
+    """Tests for CORS configuration."""
+
+    def _make_mock_config(self, cors_origins):
+        """Return a mock config that returns known values for api options."""
+        from unittest.mock import MagicMock
+        mock = MagicMock()
+        mock.get.side_effect = lambda section, option, **kw: {
+            ('api', 'secret_key'): None,
+            ('api', 'cors_origins'): cors_origins,
+        }.get((section, option), kw.get('fallback'))
+        return mock
+
+    def test_cors_initialised_with_wildcard(self):
+        """CORS(app) is called with origins='*' when cors_origins is set to '*'."""
+        from unittest.mock import patch
+        with patch('asimov.api.app.config', self._make_mock_config('*')), \
+             patch('asimov.api.app.CORS') as mock_cors:
+            create_app()
+            mock_cors.assert_called_once()
+            _, kwargs = mock_cors.call_args
+            self.assertEqual(kwargs.get('origins'), '*')
+
+    def test_cors_initialised_with_specific_origins(self):
+        """CORS(app) is called with the configured origin list."""
+        from unittest.mock import patch
+        origins_str = 'https://example.com, https://other.com'
+        with patch('asimov.api.app.config', self._make_mock_config(origins_str)), \
+             patch('asimov.api.app.CORS') as mock_cors:
+            create_app()
+            mock_cors.assert_called_once()
+            _, kwargs = mock_cors.call_args
+            self.assertIn('https://example.com', kwargs.get('origins', []))
+            self.assertIn('https://other.com', kwargs.get('origins', []))
+
+    def test_cors_not_initialised_without_config(self):
+        """CORS(app) is not called when cors_origins is not configured."""
+        from unittest.mock import patch
+        with patch('asimov.api.app.config', self._make_mock_config(None)), \
+             patch('asimov.api.app.CORS') as mock_cors:
+            create_app()
+            mock_cors.assert_not_called()
+
+
+class APIErrorHandlingTestCase(unittest.TestCase):
+    """Tests for API error handling."""
+
+    def setUp(self):
+        """Set up test client."""
+        # Set up API keys for authentication
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = {'test-token': 'test-user'}
+        
+        self.app = create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        """Clean up after tests."""
+        import asimov.api.auth as auth_module
+        auth_module._api_keys_cache = None
+
+    def test_404_not_found(self):
+        """Test 404 error handling."""
+        response = self.client.get('/api/v1/nonexistent')
+        self.assertEqual(response.status_code, 404)
+
+    def test_invalid_json(self):
+        """Test invalid JSON is handled."""
+        response = self.client.post(
+            '/api/v1/events/',
+            data='invalid json',
+            headers={'Authorization': 'Bearer test-token', 'Content-Type': 'application/json'}
+        )
+        # Should return an error (400 or 500)
+        self.assertIn(response.status_code, [400, 500])
+
+
+if __name__ == '__main__':
+    unittest.main()

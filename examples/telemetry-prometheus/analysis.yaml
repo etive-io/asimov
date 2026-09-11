@@ -1,0 +1,5 @@
+kind: analysis
+name: telemetry-demo
+pipeline: simpletestpipeline
+comment: Drives a couple of real, quick local-process jobs so there's telemetry to look at.
+status: ready

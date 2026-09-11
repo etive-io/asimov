@@ -158,10 +158,12 @@ Advanced topics
    :caption: Advanced topics
 
    analyses
+   environment-reproducibility
    build-process
    scheduler-integration
    dag-translation-examples
    monitor-state-machine
+   labeller-plugins
    monitor-api
    configuration
    test-interface
@@ -206,7 +208,16 @@ Tutorials
    tutorials/analysing-gw150914
    tutorials/adding-a-pipeline
    tutorials/remixing-analyses
-   
+
+
+REST API
+--------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: REST API
+
+   rest-api
 
 Python API
 ----------

@@ -38,7 +38,7 @@ class TestingPipelineTests(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(
             project.init,
-            ['Test Project', '--root', self.test_dir]
+            ['Test Project', '--root', self.test_dir, '--engine', 'yamlfile']
         )
         self.assertEqual(result.exit_code, 0)
         self.ledger = YAMLLedger(f"{self.test_dir}/.asimov/ledger.yml")
@@ -272,7 +272,7 @@ class SubjectPipelineTests(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(
             project.init,
-            ['Test Project', '--root', self.test_dir]
+            ['Test Project', '--root', self.test_dir, '--engine', 'yamlfile']
         )
         self.assertEqual(result.exit_code, 0)
         self.ledger = YAMLLedger(f"{self.test_dir}/.asimov/ledger.yml")
@@ -368,7 +368,7 @@ class ProjectPipelineTests(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(
             project.init,
-            ['Test Project', '--root', self.test_dir]
+            ['Test Project', '--root', self.test_dir, '--engine', 'yamlfile']
         )
         self.assertEqual(result.exit_code, 0)
         self.ledger = YAMLLedger(f"{self.test_dir}/.asimov/ledger.yml")
