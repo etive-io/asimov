@@ -1161,6 +1161,34 @@ class SubjectAnalysis(Analysis):
         # Keep productions in sync
         self.productions = self.analyses
 
+    @property
+    def is_stale(self):
+        """
+        Check if this subject analysis is stale.
+
+        ``SubjectAnalysis`` does not participate in the ``_needs``-based
+        dependency graph (``self._needs`` is always empty); its upstream
+        analyses are instead resolved via the smart ``analyses``/``needs``
+        spec into ``self.analyses``. The base ``Analysis.is_stale`` compares
+        ``self.dependencies`` (derived from ``_needs``) against
+        ``resolved_dependencies``, which would always see an empty set here.
+        Compare the resolved analysis names directly instead, matching the
+        refresh logic in ``asimov.cli.monitor``.
+
+        Returns
+        -------
+        bool
+            True if the set of resolved analyses has changed since this
+            analysis was last run, False otherwise.
+        """
+        if self.resolved_dependencies is None:
+            return False
+
+        current_names = {a.name for a in self.analyses}
+        resolved_names = set(self.resolved_dependencies)
+
+        return current_names != resolved_names
+
     def source_analyses_ready(self):
         """
         Check if all source analyses are finished and ready for processing.
@@ -1473,6 +1501,32 @@ class ProjectAnalysis(Analysis):
                     for analysis in filtered_analyses:
                         if analysis not in self.analyses:
                             self.analyses.append(analysis)
+
+    @property
+    def is_stale(self):
+        """
+        Check if this project analysis is stale.
+
+        Like ``SubjectAnalysis``, ``ProjectAnalysis`` resolves its upstream
+        analyses via the smart ``analyses`` spec into ``self.analyses``
+        rather than via ``_needs``, so the base ``Analysis.is_stale`` (which
+        compares ``self.dependencies`` against ``resolved_dependencies``)
+        does not reflect the analyses this production actually aggregates.
+        Compare the resolved analysis names directly instead.
+
+        Returns
+        -------
+        bool
+            True if the set of resolved analyses has changed since this
+            analysis was last run, False otherwise.
+        """
+        if self.resolved_dependencies is None:
+            return False
+
+        current_names = {a.name for a in self.analyses}
+        resolved_names = set(self.resolved_dependencies)
+
+        return current_names != resolved_names
 
     @classmethod
     def from_dict(cls, parameters, ledger=None):

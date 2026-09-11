@@ -19,6 +19,24 @@ from asimov.cli.project import make_project
 logger = logger.getChild("project")
 logger.setLevel(LOGGER_LEVEL)
 
+# The Project currently active inside a `with project:` block, if any.
+# asimov.cli.application.get_ledger() consults this so that code called
+# from within a project context (rather than using `project.ledger`
+# directly) still operates on the ledger that will actually be saved.
+_active_project = None
+
+
+def get_active_project():
+    """
+    Return the ``Project`` currently active inside a ``with project:`` block.
+
+    Returns
+    -------
+    Project or None
+        The active project, or ``None`` if no project context is open.
+    """
+    return _active_project
+
 
 class Project:
     """
@@ -233,7 +251,10 @@ class Project:
         # This is needed for production.to_dict() to work correctly
         if "pipelines" not in self._ledger.data:
             self._ledger.data["pipelines"] = {}
-        
+
+        global _active_project
+        _active_project = self
+
         logger.debug(f"Entered context for project '{self.name}'")
         return self
     
@@ -270,6 +291,9 @@ class Project:
                     pass
         finally:
             self._in_context = False
+            global _active_project
+            if _active_project is self:
+                _active_project = None
             if self._original_dir:
                 os.chdir(self._original_dir)
                 logger.debug(f"Exited context for project '{self.name}'")

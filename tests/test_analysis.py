@@ -95,6 +95,74 @@ class TestSubjectAnalysis(TestBaseAnalysis):
         pass
 
 
+class TestIsStale(unittest.TestCase):
+    """
+    Regression tests for #150.
+
+    ``SubjectAnalysis`` and ``ProjectAnalysis`` both resolve their upstream
+    analyses via the smart ``analyses``/``needs`` spec into ``self.analyses``,
+    leaving ``_needs`` (and therefore the base ``Analysis.dependencies``)
+    empty. The base ``Analysis.is_stale`` compared ``dependencies`` against
+    ``resolved_dependencies``, so it was permanently ``True`` for any of
+    these productions that had ever run. Both classes now override
+    ``is_stale`` to compare ``self.analyses`` against ``resolved_dependencies``
+    directly, matching the refresh logic in ``asimov.cli.monitor``.
+    """
+
+    class _Stub:
+        def __init__(self, name):
+            self.name = name
+
+    def test_subject_analysis_not_stale_after_matching_refresh(self):
+        from asimov.analysis import SubjectAnalysis
+
+        analysis = SubjectAnalysis.__new__(SubjectAnalysis)
+        analysis.meta = {}
+        analysis.analyses = [self._Stub("bilby_1"), self._Stub("bayeswave_1")]
+        analysis.resolved_dependencies = ["bilby_1", "bayeswave_1"]
+
+        self.assertFalse(analysis.is_stale)
+
+    def test_subject_analysis_stale_when_analyses_change(self):
+        from asimov.analysis import SubjectAnalysis
+
+        analysis = SubjectAnalysis.__new__(SubjectAnalysis)
+        analysis.meta = {}
+        analysis.analyses = [self._Stub("bilby_1"), self._Stub("bilby_2")]
+        analysis.resolved_dependencies = ["bilby_1"]
+
+        self.assertTrue(analysis.is_stale)
+
+    def test_subject_analysis_never_run_is_not_stale(self):
+        from asimov.analysis import SubjectAnalysis
+
+        analysis = SubjectAnalysis.__new__(SubjectAnalysis)
+        analysis.meta = {}
+        analysis.analyses = [self._Stub("bilby_1")]
+
+        self.assertFalse(analysis.is_stale)
+
+    def test_project_analysis_not_stale_after_matching_refresh(self):
+        from asimov.analysis import ProjectAnalysis
+
+        analysis = ProjectAnalysis.__new__(ProjectAnalysis)
+        analysis.meta = {}
+        analysis.analyses = [self._Stub("bilby_1"), self._Stub("bayeswave_1")]
+        analysis.resolved_dependencies = ["bilby_1", "bayeswave_1"]
+
+        self.assertFalse(analysis.is_stale)
+
+    def test_project_analysis_stale_when_analyses_change(self):
+        from asimov.analysis import ProjectAnalysis
+
+        analysis = ProjectAnalysis.__new__(ProjectAnalysis)
+        analysis.meta = {}
+        analysis.analyses = [self._Stub("bilby_1")]
+        analysis.resolved_dependencies = ["bilby_1", "bilby_2"]
+
+        self.assertTrue(analysis.is_stale)
+
+
 # class TestProjectAnalysis(TestBaseAnalysis):
 #     """
 #     Tests for Project Analysis code.
