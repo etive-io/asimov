@@ -858,7 +858,7 @@ class TestDatabaseLedger(unittest.TestCase):
         self.assertIn("project", fresh.data)
         self.assertIn("pipelines", fresh.data)
 
-    def test_save_does_not_erase_a_concurrent_processs_unrelated_change(self):
+    def test_save_does_not_erase_a_concurrent_process_unrelated_change(self):
         """Test the exact scenario a blind save() used to be vulnerable to:
         a long-lived process (like `asimov monitor`, which calls
         ledger.save() after every analysis) holds a config snapshot from

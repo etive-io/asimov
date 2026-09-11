@@ -146,11 +146,19 @@ class AsimovTinyDatabase(AsimovDatabase):
         return doc["data"] if doc else {}
 
     def save_config(self, data: Dict[str, Any]) -> None:
-        # Singleton document at a fixed doc_id: upsert is a single atomic
-        # TinyDB call (insert-or-replace), unlike a separate truncate()
-        # followed by insert(), which leaves a window where the table is
-        # empty if the process is interrupted between the two calls.
-        self.tables["config"].upsert(Document({"data": data}, doc_id=1))
+        # Singleton document at a fixed doc_id: a single insert-or-update
+        # call, unlike a separate truncate() followed by insert(), which
+        # leaves a window where the table is empty if the process is
+        # interrupted between the two calls. Not table.upsert(Document(...))
+        # without a `cond`: that relies on upsert() accepting a bare
+        # Document with a doc_id and no query, which isn't guaranteed across
+        # tinydb versions (unpinned here) - contains()/update()/insert() is
+        # the version-stable way to express the same insert-or-replace.
+        table = self.tables["config"]
+        if table.contains(doc_id=1):
+            table.update({"data": data}, doc_ids=[1])
+        else:
+            table.insert(Document({"data": data}, doc_id=1))
 
     def merge_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         # inplace=False: TinyDB's Table caches loaded documents in memory,
@@ -720,9 +728,21 @@ class AsimovSQLDatabase(AsimovDatabase):
         result, instead of blindly replacing it - see AsimovDatabase.merge_config.
 
         The read, merge, and write happen inside a single session/transaction,
-        so two concurrent merge_config() calls can't interleave their reads:
-        SQLite serializes writers at the file level, so the second call's
-        SELECT effectively blocks until the first call's transaction commits.
+        which is enough to stop this process's own save() calls (see
+        DatabaseLedger.save()) from losing data to each other. It is NOT a
+        full guarantee against two different *processes* both calling
+        merge_config() at close to the same moment: SQLite's default
+        (deferred) transaction mode only takes a write lock when a
+        statement actually writes, so two sessions can both SELECT the
+        same pre-update snapshot before either has written, and the first
+        to commit doesn't block the second's read - only its write, by
+        which point the second session's merge is already computed from a
+        stale snapshot. Closing that window needs an explicit `BEGIN
+        IMMEDIATE`-style write lock taken before the SELECT, which this
+        does not yet do. In practice this narrows to the same accepted
+        risk as DatabaseLedger.save()'s same-key-conflict case: worst case
+        is last-writer-wins on whatever key both processes changed, not
+        data loss across the whole document.
 
         Returns
         -------
