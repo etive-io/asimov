@@ -99,7 +99,7 @@ Save this blueprint as ``bilby-IMRPhenomPv2.yaml`` and apply it to your project:
 
 .. code-block :: console
 
-    $ asimov apply -f get-data.yaml -e GW150914_095045
+    $ asimov apply -f bilby-IMRPhenomPv2.yaml -e GW150914_095045
 
 Run your remixed analysis
 -------------------------

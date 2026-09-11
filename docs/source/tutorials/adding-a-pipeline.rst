@@ -38,9 +38,9 @@ For example, here we'll start by writing this to make the class:
 
 .. code-block:: python
 
-   import asimov.pipeline.Pipeline
+   from asimov.pipeline import Pipeline
 
-   class pyRing(asimov.pipeline.Pipeline):
+   class pyRing(Pipeline):
      """
      The pyRing Pipeline.
      """
@@ -52,7 +52,7 @@ we can now add various bits of logic as methods on this class which will overloa
 ``build_dag``
 -------------
 
-The ``build_dag`` method is used to tell asimov how to run the pipeline (and is only required if the pipeline constructs its own submission information for the ``htcondor`` scheduler. pyRing does not do this, so we can skip this method in this instance.
+The ``build_dag`` method is used to tell asimov how to run the pipeline (and is only required if the pipeline constructs its own submission information for the ``htcondor`` scheduler). pyRing does not do this, so we can skip this method in this instance.
 
 ``submit_dag``
 --------------
@@ -126,27 +126,27 @@ Putting everything together our ``build_dag`` method looks like this:
                "+DESIRED_Sites": htcondor.classad.quote("nogrid"),
       }
     
-       job = htcondor.Submit(description)
-       os.makedirs(self.production.rundir, exist_ok=True)
-       with set_directory(self.production.rundir):
-           os.makedirs("results", exist_ok=True)
+      job = htcondor.Submit(description)
+      os.makedirs(self.production.rundir, exist_ok=True)
+      with set_directory(self.production.rundir):
+          os.makedirs("results", exist_ok=True)
 
-           with open(f"{name}.sub", "w") as subfile:
-               subfile.write(job.__str__()+r"\n queue")
+          with open(f"{name}.sub", "w") as subfile:
+              subfile.write(job.__str__()+r"\n queue")
 
-           with open(f"{name}.sh", "w") as bashfile:
-               bashfile.write(str(full_command))
+          with open(f"{name}.sh", "w") as bashfile:
+              bashfile.write(str(full_command))
 
-       with set_directory(self.production.rundir):
-           try:
-               schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler"))
-           except configparser.NoOptionError:
-               schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
-           schedd = htcondor.Schedd(schedulers)
-           with schedd.transaction() as txn:
-               cluster_id = job.queue(txn)
+      with set_directory(self.production.rundir):
+          try:
+              schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd, config.get("condor", "scheduler"))
+          except configparser.NoOptionError:
+              schedulers = htcondor.Collector().locate(htcondor.DaemonTypes.Schedd)
+          schedd = htcondor.Schedd(schedulers)
+          with schedd.transaction() as txn:
+              cluster_id = job.queue(txn)
 
-       self.clusterid = cluster_id
+      self.clusterid = cluster_id
 
 Analysis assets
 ---------------
@@ -331,13 +331,13 @@ The final bit of engineering we'll need to do is to add some information to the 
                "pyRing = pyRing.pyRing:main",
            ],
            "asimov.pipelines": [
-                  "pyRing = pyRing.asimov:pyRing"
+                  "pyring = pyRing.asimov:pyRing"
               ]
        },
        ...
        )
 
-The entry point needs to be ``asimov.pipelines``, and since we're only specifying a single pipeline we make a list with just one entry. The pipeline will be called ``pyRing`` by Asimov, and the class which describes it has an import path of ``pyRing.asimov`` and is called ``pyRing`` which gives is the rather complex-looking syntax above.
+The entry point needs to be ``asimov.pipelines``, and since we're only specifying a single pipeline we make a list with just one entry. The name on the left of ``=`` (here ``pyring``) is how asimov looks the pipeline up, and it's used exactly as written — asimov lower-cases the ``pipeline:`` value from a blueprint before looking it up, but does *not* lower-case what's registered here, so this name must already be lowercase or the pipeline can never be found. The class which describes it has an import path of ``pyRing.asimov`` and is called ``pyRing``, which gives us the rather complex-looking syntax above; a blueprint can still write ``pipeline: pyRing`` or ``pipeline: pyring`` interchangeably, since that value does get lower-cased.
 
 Writing blueprints for your pipeline
 ------------------------------------
