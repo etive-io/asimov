@@ -204,9 +204,10 @@ Tutorials
    :Caption: Tutorials
 
    tutorials/analysing-gw150914
+   tutorials/python-api-tutorial
    tutorials/adding-a-pipeline
    tutorials/remixing-analyses
-   
+
 
 Python API
 ----------
