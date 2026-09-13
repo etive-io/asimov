@@ -6,10 +6,12 @@ and the ledger should expose `get_subject()` as an alias of `get_event()`.
 """
 import os
 import shutil
+import tempfile
 import unittest
 
+from asimov import config
 from asimov.event import Event, Subject
-from asimov.ledger import YAMLLedger
+from asimov.ledger import DatabaseLedger, YAMLLedger
 from asimov.cli.project import make_project
 from asimov.cli.application import apply_page
 
@@ -77,3 +79,33 @@ class SubjectTerminologyTests(unittest.TestCase):
 
     def test_subject_is_an_alias_for_event(self):
         self.assertIs(Subject, Event)
+
+
+class DatabaseLedgerSubjectTests(unittest.TestCase):
+    """`DatabaseLedger.get_subject`/`get_event` should support no-argument lookups too."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.original_location = config.get("ledger", "location")
+        config.set("ledger", "location", os.path.join(self.test_dir, "ledger.json"))
+        self.ledger = DatabaseLedger.create()
+        self.ledger.db.insert("event", {"name": "GW150914_095045"})
+        self.ledger.db.insert("event", {"name": "J1909-3744"})
+
+    def tearDown(self):
+        config.set("ledger", "location", self.original_location)
+        shutil.rmtree(self.test_dir)
+
+    def test_get_subject_with_no_argument_returns_all_subjects(self):
+        names = {subject.name for subject in self.ledger.get_subject()}
+        self.assertEqual(names, {"GW150914_095045", "J1909-3744"})
+
+    def test_get_event_with_no_argument_matches_get_subject(self):
+        self.assertEqual(
+            {s.name for s in self.ledger.get_event()},
+            {s.name for s in self.ledger.get_subject()},
+        )
+
+    def test_get_subject_with_name_returns_matching_subject(self):
+        subject = self.ledger.get_subject("J1909-3744")
+        self.assertEqual(subject.name, "J1909-3744")
