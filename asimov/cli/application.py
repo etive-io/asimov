@@ -116,7 +116,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
     )  # Load as a dictionary so we can identify the object type it contains
 
     for document in quick_parse:
-        if document["kind"] == "event":
+        if document["kind"] in ("event", "subject"):
             logger.info("Found an event")
             document.pop("kind")
             event_obj = asimov.event.Event.from_yaml(yaml.dump(document))

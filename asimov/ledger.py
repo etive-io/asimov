@@ -196,13 +196,16 @@ class YAMLLedger(Ledger):
             for analysis in self.data.get("project analyses", [])
         ]
 
-    def get_event(self, event=None):
-        if event:
-            kwargs = self.events[event]
+    def get_subject(self, subject=None):
+        if subject:
+            kwargs = self.events[subject]
             kwargs.pop("ledger", None)
             return [Event(**kwargs, ledger=self)]
         else:
             return self._all_events
+
+    def get_event(self, event=None):
+        return self.get_subject(subject=event)
 
     def get_productions(self, event=None, filters=None):
         """Get a list of productions either for a single event or for all events.
@@ -291,12 +294,22 @@ class DatabaseLedger(Ledger):
     def get_defaults(self):
         raise NotImplementedError
 
+    def get_subject(self, subject=None):
+        """
+        Find a specific subject in the ledger and return it.
+
+        If no subject name is given, all subjects are returned instead.
+        """
+        if subject is None:
+            return self.events
+        event_dict = self.db.query("event", "name", subject)[0]
+        return Event.from_dict(event_dict)
+
     def get_event(self, event=None):
         """
         Find a specific event in the ledger and return it.
         """
-        event_dict = self.db.query("event", "name", event)[0]
-        return Event.from_dict(event_dict)
+        return self.get_subject(subject=event)
 
     def get_productions(self, event, filters=None, query=None):
         """
