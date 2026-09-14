@@ -12,7 +12,7 @@ import asimov
 import asimov.database
 from asimov import config
 from asimov.analysis import ProjectAnalysis
-from asimov.event import Event, Production
+from asimov.event import Event, Production, Subject
 from asimov.utils import update, set_directory
 
 
@@ -200,7 +200,7 @@ class YAMLLedger(Ledger):
         if subject:
             kwargs = self.events[subject]
             kwargs.pop("ledger", None)
-            return [Event(**kwargs, ledger=self)]
+            return [Subject(**kwargs, ledger=self)]
         else:
             return self._all_events
 
@@ -303,7 +303,7 @@ class DatabaseLedger(Ledger):
         if subject is None:
             return self.events
         event_dict = self.db.query("event", "name", subject)[0]
-        return Event.from_dict(event_dict)
+        return Subject.from_dict(event_dict)
 
     def get_event(self, event=None):
         """
