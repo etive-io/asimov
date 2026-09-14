@@ -184,8 +184,15 @@ class MultiplePSDsPerEventTests(unittest.TestCase):
 
     def test_pe_production_with_no_psd_dependency_has_no_psds(self):
         """A PE production that doesn't depend on any PSD-producing job
-        should simply have no PSDs, rather than picking one up by accident."""
+        should simply have no PSDs, rather than picking one up by accident.
+
+        Deliberately applies an *unrelated* PSD-producing production to the
+        same event first, so this actually exercises "there is a PSD source
+        in this event, but I don't depend on it" rather than trivially
+        passing because the event has no PSD source at all.
+        """
         self._apply(EVENT_BLUEPRINT, "event")
+        self._apply(_psd_blueprint("UnrelatedPSD"), "psd_unrelated")
         self._apply(_pe_blueprint("Bilby_NoPSD"), "pe_no_psd")
 
         event = self.ledger.get_event("GW150914_095045")[0]
