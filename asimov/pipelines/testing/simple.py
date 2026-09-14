@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from ...pipeline import Pipeline
+from ._util import accounting_submit_lines
 
 
 class SimpleTestPipeline(Pipeline):
@@ -143,7 +144,8 @@ class SimpleTestPipeline(Pipeline):
                     f.write("output = test_job.out\n")
                     f.write("error = test_job.err\n")
                     f.write("log = test_job.log\n")
-                    f.write("getenv = True\n")
+                    for line in accounting_submit_lines(self.production):
+                        f.write(line)
                     f.write("queue 1\n")
                 
                 # Create a minimal DAG file (HTCondor)

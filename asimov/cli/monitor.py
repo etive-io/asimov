@@ -61,10 +61,25 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
     except (configparser.NoOptionError, configparser.NoSectionError):
         minute_expression = "*/15"
 
+    try:
+        getenv = config.get("condor", "monitor_getenv")
+    except (configparser.NoOptionError, configparser.NoSectionError):
+        # Production LIGO Data Grid pools reject a blanket "getenv = True"
+        # outright once they set SUBMIT_ALLOW_GETENV = False (see
+        # https://computing.docs.ligo.org/guide/compsoft/roadmap/LVK/htcondor_getenv_true/),
+        # so an explicit variable list is required rather than "true".
+        # This default covers what running `asimov` from a conda/venv
+        # environment normally needs; sites needing more can override it
+        # via the condor/monitor_getenv config option.
+        getenv = (
+            "PATH,PYTHONPATH,CONDA_PREFIX,CONDA_DEFAULT_ENV,VIRTUAL_ENV,"
+            "LD_LIBRARY_PATH,HOME,USER,X509_USER_PROXY,BEARER_TOKEN_FILE,"
+            "SCITOKENS_FILE,GWDATAFIND_SERVER"
+        )
+
     submit_description = {
         "executable": shutil.which("asimov"),
         "arguments": "monitor --chain",
-        "accounting_group": config.get("asimov start", "accounting"),
         "output": os.path.join(".asimov", "asimov_cron.out"),
         "on_exit_remove": "false",
         "universe": "local",
@@ -72,7 +87,7 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
         "log": os.path.join(".asimov", "asimov_cron.log"),
         "request_cpus": "1",
         "cron_minute": minute_expression,
-        "getenv": "true",
+        "getenv": getenv,
         "batch_name": f"asimov/monitor/{ledger.data['project']['name']}",
         "request_memory": "8192MB",
         "request_disk": "8192MB",
@@ -80,15 +95,19 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
         "+DESIRED_Sites": "nogrid",
     }
 
-    try:
-        submit_description["accounting_group_user"] = config.get("condor", "user")
-        if "asimov start" in config:
-            submit_description["accounting_group"] = config["asimov start"].get(
-                "accounting"
-            )
-        else:
-            submit_description["accounting_group"] = config["condor"].get("accounting")
-    except (configparser.NoOptionError, configparser.NoSectionError):
+    accounting_group = None
+    if "asimov start" in config:
+        accounting_group = config["asimov start"].get("accounting")
+    if not accounting_group and "condor" in config:
+        accounting_group = config["condor"].get("accounting")
+
+    if accounting_group:
+        submit_description["accounting_group"] = accounting_group
+        try:
+            submit_description["accounting_group_user"] = config.get("condor", "user")
+        except (configparser.NoOptionError, configparser.NoSectionError):
+            pass
+    else:
         logger.warning(
             "This asimov project does not supply any accounting"
             " information, which may prevent it running on"

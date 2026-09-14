@@ -117,6 +117,50 @@ class TestingPipelineTests(unittest.TestCase):
             os.path.exists(os.path.join(analysis.rundir, "test_job.sh"))
         )
 
+    @patch('subprocess.run')
+    def test_simple_pipeline_submit_file_is_ldg_compatible(self, mock_run):
+        """
+        The generated .sub file must not rely on `getenv = True` (rejected
+        outright by a real LIGO Data Grid pool once it sets
+        SUBMIT_ALLOW_GETENV = False) and must carry an accounting_group and
+        explicit request_disk (both required by that pool's submit
+        requirements) instead.
+        """
+        mock_result = MagicMock()
+        mock_result.stdout = "1 job(s) submitted to cluster 12345."
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_pe.yaml",
+            event=None,
+            ledger=self.ledger
+        )
+        apply_page(
+            file=f"{self.cwd}/tests/test_data/testing_events.yaml",
+            ledger=self.ledger
+        )
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+
+        analysis = SimpleAnalysis(
+            subject=event,
+            name="test-simple",
+            pipeline="simpletestpipeline",
+            status="ready",
+            ledger=self.ledger,
+            rundir=os.path.join(self.test_dir, "simple_run")
+        )
+        analysis.pipeline.build_dag(dryrun=False)
+
+        submit_file = os.path.join(analysis.rundir, "test_job.sub")
+        with open(submit_file) as f:
+            contents = f.read()
+
+        self.assertNotIn("getenv", contents.lower())
+        self.assertIn("accounting_group = ", contents)
+        self.assertIn("request_disk = ", contents)
+
     def test_simple_pipeline_submit_slurm(self):
         """Test that SimpleTestPipeline can submit a Slurm wrapper."""
         apply_page(

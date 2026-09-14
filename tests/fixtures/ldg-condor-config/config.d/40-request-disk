@@ -1,0 +1,13 @@
+# Adapted from ldas-grid.ligo.caltech.edu's 99-request-disk (2026-09-14).
+#
+# The runtime "hold the job if it exceeds request_disk" policy from the
+# original file is deliberately left out here: this fixture targets
+# submission-time compatibility (can asimov's generated jobs even get past
+# the schedd?), not runtime resource-usage enforcement.
+
+JOB_DEFAULT_REQUESTDISK = ifThenElse(JobUniverse != 7, 1000000, DiskUsage)
+
+# Display warning for jobs without request_disk
+SUBMIT_REQUIREMENT_NAMES = $(SUBMIT_REQUIREMENT_NAMES) REQUESTDISK
+SUBMIT_REQUIREMENT_REQUESTDISK = (JobUniverse == 7) || (JobUniverse == 12) || (RequestDisk != $(JOB_DEFAULT_REQUESTDISK))
+SUBMIT_REQUIREMENT_REQUESTDISK_REASON = "Please specify the amount of disk needed using \"request_disk\" (https://htcondor.readthedocs.io/en/v9_0/man-pages/condor_submit.html?highlight=request_disk)."
