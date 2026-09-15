@@ -187,6 +187,8 @@ class YAMLLedger(Ledger):
             defaults["likelihood"] = self.data["likelihood"]
         if "scheduler" in self.data:
             defaults["scheduler"] = self.data["scheduler"]
+        if "waveform" in self.data:
+            defaults["waveform"] = self.data["waveform"]
         return defaults
 
     @property
