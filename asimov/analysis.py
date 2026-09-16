@@ -698,7 +698,14 @@ class Analysis:
             template_ext = ".ini"
 
         if "template" in self.meta:
-            template = f"{self.meta['template']}{template_ext}"
+            # An explicit --template value may already carry its own
+            # extension (e.g. `testinggr.ini`); only append the derived
+            # extension when the name doesn't already have one.
+            template_name = str(self.meta["template"])
+            if os.path.splitext(template_name)[1]:
+                template = template_name
+            else:
+                template = f"{template_name}{template_ext}"
 
         else:
             template = f"{pipeline}{template_ext}"

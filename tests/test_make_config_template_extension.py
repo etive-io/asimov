@@ -47,6 +47,46 @@ class MakeConfigTemplateExtensionTests(unittest.TestCase):
             os.path.join("/deployment/templates", "myplugin.toml"),
         )
 
+    def test_explicit_template_extension_is_preserved_with_override(self):
+        """An explicit --template value that already has its own extension
+        (e.g. `testinggr.ini`) must not get a second extension appended."""
+        analysis = self._make_analysis(FakePipeline())
+        analysis.meta["template"] = "testinggr.ini"
+
+        config.add_section("templating")
+        config.set("templating", "directory", "/deployment/templates")
+
+        with patch("asimov.analysis.Liquid") as mock_liquid, \
+                patch("builtins.open", mock_open()):
+            mock_liquid.return_value.render.return_value = "rendered"
+            analysis.make_config("/tmp/out.ini")
+
+        template_file_arg = mock_liquid.call_args[0][0]
+        self.assertEqual(
+            template_file_arg,
+            os.path.join("/deployment/templates", "testinggr.ini"),
+        )
+
+    def test_explicit_template_without_extension_gets_pipeline_extension(self):
+        """An extensionless explicit --template value still gets the
+        pipeline's derived extension appended."""
+        analysis = self._make_analysis(FakePipeline())
+        analysis.meta["template"] = "custom-template"
+
+        config.add_section("templating")
+        config.set("templating", "directory", "/deployment/templates")
+
+        with patch("asimov.analysis.Liquid") as mock_liquid, \
+                patch("builtins.open", mock_open()):
+            mock_liquid.return_value.render.return_value = "rendered"
+            analysis.make_config("/tmp/out.toml")
+
+        template_file_arg = mock_liquid.call_args[0][0]
+        self.assertEqual(
+            template_file_arg,
+            os.path.join("/deployment/templates", "custom-template.toml"),
+        )
+
     def test_default_bundled_template_used_without_override(self):
         """Without a [templating] directory override, the pipeline's own
         config_template path should be used directly, as before."""

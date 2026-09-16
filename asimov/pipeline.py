@@ -328,8 +328,8 @@ class Pipeline:
                 f"""I wanted to run {" ".join(command)}."""
             ) from error
 
-        stdout, stderr = dagman.communicate()
-        if not stderr:
+        dagman.communicate()
+        if dagman.returncode == 0:
             time.sleep(20)
             self.production.meta.get("scheduler", {}).pop("job id", None)
 

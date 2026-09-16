@@ -35,7 +35,10 @@ class EjectJobTests(unittest.TestCase):
         production.job_id = 12345
 
         mock_process = MagicMock()
-        mock_process.communicate.return_value = (b"", b"")
+        # stderr=subprocess.STDOUT means communicate() always returns None
+        # for the stderr half, regardless of success or failure.
+        mock_process.communicate.return_value = (b"", None)
+        mock_process.returncode = 0
         mock_popen.return_value = mock_process
 
         pipeline = self._make_pipeline(production)
@@ -47,12 +50,15 @@ class EjectJobTests(unittest.TestCase):
         self.assertIsNone(production.job_id)
 
     @patch("asimov.pipeline.subprocess.Popen")
-    def test_eject_job_leaves_job_id_on_stderr(self, mock_popen):
+    def test_eject_job_leaves_job_id_on_nonzero_exit(self, mock_popen):
+        """A failed condor_rm (non-zero exit) must not discard the job ID,
+        even though stderr is always None due to the STDOUT redirect."""
         production = FakeProduction()
         production.job_id = 12345
 
         mock_process = MagicMock()
-        mock_process.communicate.return_value = (b"", b"error")
+        mock_process.communicate.return_value = (b"some error output", None)
+        mock_process.returncode = 1
         mock_popen.return_value = mock_process
 
         pipeline = self._make_pipeline(production)
