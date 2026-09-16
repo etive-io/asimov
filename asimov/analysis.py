@@ -684,13 +684,25 @@ class Analysis:
            Defaults to the directory specified in the asimov configuration file.
         """
 
+        pipeline = self.pipeline
+
+        # Derive the expected extension from the pipeline's own config
+        # template (if it has one) rather than assuming `.ini`, so the
+        # `[templating] directory` override and the default bundled-template
+        # lookup agree on what filename to look for.
+        if hasattr(pipeline, "config_template"):
+            _, template_ext = os.path.splitext(str(pipeline.config_template))
+        else:
+            template_ext = ""
+        if not template_ext:
+            template_ext = ".ini"
+
         if "template" in self.meta:
-            template = f"{self.meta['template']}.ini"
+            template = f"{self.meta['template']}{template_ext}"
 
         else:
-            template = f"{self.pipeline}.ini"
+            template = f"{pipeline}{template_ext}"
 
-        pipeline = self.pipeline
         try:
             template_directory = config.get("templating", "directory")
             template_file = os.path.join(f"{template_directory}", template)

@@ -115,6 +115,8 @@ def create_job_from_dict(job_dict):
         kwargs["memory"] = kwargs.pop("request_memory")
     if "request_disk" in kwargs:
         kwargs["disk"] = kwargs.pop("request_disk")
+    if "request_gpus" in kwargs:
+        kwargs["gpus"] = kwargs.pop("request_gpus")
     
     return JobDescription(
         executable=executable,
