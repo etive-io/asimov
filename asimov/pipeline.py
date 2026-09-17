@@ -316,7 +316,7 @@ class Pipeline:
         """
         Remove a job from the cluster.
         """
-        command = ["condor_rm", f"{self.production.meta['job id']}"]
+        command = ["condor_rm", f"{self.production.job_id}"]
         try:
             dagman = subprocess.Popen(
                 command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
@@ -328,10 +328,10 @@ class Pipeline:
                 f"""I wanted to run {" ".join(command)}."""
             ) from error
 
-        stdout, stderr = dagman.communicate()
-        if not stderr:
+        dagman.communicate()
+        if dagman.returncode == 0:
             time.sleep(20)
-            self.production.meta.pop("job id")
+            self.production.meta.get("scheduler", {}).pop("job id", None)
 
     def clean(self, dryrun=False):
         """
