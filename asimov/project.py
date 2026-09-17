@@ -178,11 +178,41 @@ class Project:
         
         return project
     
+    def _load_ledger(self):
+        """
+        Construct the ledger for this project, honouring its configured
+        engine (``[ledger] engine`` in the project's ``asimov.conf``)
+        rather than assuming YAML. Must be called with the current working
+        directory already set to ``self.location``.
+
+        Reads the project's own config into a local parser rather than the
+        process-wide global config, so that using several ``Project``
+        instances in one process (e.g. a test suite, or a long-running
+        agent) doesn't leak one project's ledger settings into another.
+        """
+        project_config = configparser.ConfigParser()
+        project_config.read(os.path.join(".asimov", "asimov.conf"))
+        engine = project_config.get("ledger", "engine", fallback="yamlfile")
+        location = project_config.get("ledger", "location", fallback=None)
+
+        if engine == "yamlfile":
+            ledger_path = location or os.path.join(".asimov", "ledger.yml")
+            return YAMLLedger(location=ledger_path)
+        else:
+            from asimov.ledger import DatabaseLedger
+            database_url = None
+            if location:
+                database_url = (
+                    location if "://" in location
+                    else f"sqlite:///{os.path.abspath(location)}"
+                )
+            return DatabaseLedger(engine=engine, location=database_url)
+
     @property
     def ledger(self):
         """
         Get the project ledger.
-        
+
         Returns
         -------
         Ledger
@@ -194,11 +224,10 @@ class Project:
             original_dir = os.getcwd()
             try:
                 os.chdir(self.location)
-                ledger_path = os.path.join(".asimov", "ledger.yml")
-                self._ledger = YAMLLedger(location=ledger_path)
+                self._ledger = self._load_ledger()
             finally:
                 os.chdir(original_dir)
-        
+
         return self._ledger
     
     def __enter__(self):
@@ -226,8 +255,7 @@ class Project:
         
         # Load the ledger in the project directory if it hasn't been loaded yet
         if self._ledger is None:
-            ledger_path = os.path.join(".asimov", "ledger.yml")
-            self._ledger = YAMLLedger(location=ledger_path)
+            self._ledger = self._load_ledger()
         
         # Ensure pipelines section exists in ledger data
         # This is needed for production.to_dict() to work correctly

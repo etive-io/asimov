@@ -118,6 +118,9 @@ jobs:
           print(f'All {len(statuses)} analyses are complete!')
           EOF
 
+      - name: Verify telemetry functionality
+        run: python "$GITHUB_WORKSPACE/tests/verify_telemetry.py"
+
       - name: Archive artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4

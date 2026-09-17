@@ -34,10 +34,27 @@ class EventRepo:
         self.event = directory.split("/")[-1]
         self.directory = directory
         self.update_needed = update
-        self.repo = git.Repo(directory)
+        self._repo = None
         self.url = url
 
         self.logger = logger
+
+    @property
+    def repo(self):
+        """
+        The underlying ``git.Repo`` handle, opened lazily.
+
+        Every Event gets its own EventRepo, and every ledger read
+        reconstructs Event objects - opening the repo eagerly here made
+        constructing an Event (and therefore just listing events) require
+        the checkout to already exist at a resolvable path, which broke as
+        soon as it was read from a different working directory than where
+        it was created. Deferring this to first actual use means listing
+        events never needs to touch git at all.
+        """
+        if self._repo is None:
+            self._repo = git.Repo(self.directory)
+        return self._repo
 
     def get_default_branch(self):
         """

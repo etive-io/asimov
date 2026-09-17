@@ -5,6 +5,7 @@ Supported Schedulers are:
 
 - HTCondor
 - Slurm
+- Local (lightweight subprocess-based scheduler for short-running jobs)
 
 """
 
@@ -13,10 +14,12 @@ import re
 import shlex
 import subprocess
 import tempfile
+import threading
 import datetime
 import yaml
 import warnings
 from abc import ABC, abstractmethod
+from dateutil import tz
 
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
@@ -31,6 +34,25 @@ except ImportError:
     warnings.filterwarnings("ignore", module="htcondor")
     import htcondor  # NoQA
     import classad  # NoQA
+
+UTC = tz.tzutc()
+
+
+def _datetime_from_epoch(dt, tzinfo=UTC):
+    """Return a :class:`datetime.datetime` for a given Unix epoch.
+
+    Parameters
+    ----------
+    dt : float
+        A Unix timestamp.
+    tzinfo : datetime.tzinfo, optional
+        The desired timezone for the output datetime.
+
+    Returns
+    -------
+    datetime.datetime
+    """
+    return datetime.datetime.fromtimestamp(dt, tz=datetime.timezone.utc).astimezone(tzinfo)
 
 
 class Scheduler(ABC):
@@ -146,12 +168,51 @@ class Scheduler(ABC):
         except Exception:
             return False
 
+    @abstractmethod
+    def collect_history(self, cluster_id):
+        """
+        Collect history information for a completed job.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The cluster ID of the completed job.
+
+        Returns
+        -------
+        dict
+            A dictionary containing job history with keys:
+            - end: completion date as a ``YYYY-MM-DD`` string
+            - cpus: number of CPUs provisioned
+            - gpus: number of GPUs provisioned
+            - runtime: effective wall-clock time in seconds
+              (``RemoteWallClockTime`` minus ``CumulativeSuspensionTime``)
+
+        Raises
+        ------
+        ValueError
+            If no history is found for the given cluster ID.
+        """
+        raise NotImplementedError
+
 
 class HTCondor(Scheduler):
     """
     Scheduler implementation for HTCondor.
     """
-    
+
+    _HISTORY_CLASSADS = [
+        "CompletionDate",
+        "CpusProvisioned",
+        "GpusProvisioned",
+        "CumulativeSuspensionTime",
+        "EnteredCurrentStatus",
+        "MaxHosts",
+        "RemoteWallClockTime",
+        "RequestCpus",
+        "RequestGpus",
+    ]
+
     def __init__(self, schedd_name=None):
         """
         Initialize the HTCondor scheduler.
@@ -458,6 +519,85 @@ class HTCondor(Scheduler):
                 pass
         
         return data
+
+    def collect_history(self, cluster_id):
+        """
+        Collect history information for a completed HTCondor job.
+
+        The method first tries the configured schedd; if no history is found
+        there it searches all available schedds.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The cluster ID of the completed job.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys:
+            - ``end``: completion date as a ``YYYY-MM-DD`` string
+            - ``cpus``: number of CPUs provisioned
+            - ``gpus``: number of GPUs provisioned
+            - ``runtime``: effective wall-clock time in seconds
+
+        Raises
+        ------
+        ValueError
+            If no history record is found for *cluster_id*.
+        """
+        constraint = f"ClusterId == {cluster_id}"
+
+        # First try the configured schedd
+        try:
+            jobs = list(self.schedd.history(constraint, projection=self._HISTORY_CLASSADS))
+        except Exception:
+            jobs = []
+
+        # If nothing found, search all available schedds
+        if not jobs:
+            try:
+                collectors = htcondor.Collector().locateAll(htcondor.DaemonTypes.Schedd)
+            except htcondor.HTCondorLocateError:
+                collectors = []
+
+            for collector in collectors:
+                try:
+                    schedd = htcondor.Schedd(collector)
+                    jobs = list(schedd.history(constraint, projection=self._HISTORY_CLASSADS))
+                    if jobs:
+                        break
+                except htcondor.HTCondorIOError:
+                    continue
+
+        if not jobs:
+            raise ValueError(
+                f"No history found for cluster ID {cluster_id}"
+            )
+
+        # For a DAG cluster there may be multiple subjob records; use the first
+        # one returned, which is the summary/parent record for the cluster.
+        job = jobs[0]
+
+        end = float(job.get("CompletionDate", 0)) or float(
+            job.get("EnteredCurrentStatus", 0)
+        )
+        end_str = _datetime_from_epoch(end).strftime("%Y-%m-%d") if end else ""
+
+        try:
+            cpus = float(job["CpusProvisioned"])
+        except (KeyError, ValueError):
+            cpus = float(job.get("RequestCpus", 1))
+        try:
+            gpus = float(job["GpusProvisioned"])
+        except (KeyError, ValueError):
+            gpus = float(job.get("RequestGpus", 0))
+
+        runtime = float(job.get("RemoteWallClockTime", 0)) - float(
+            job.get("CumulativeSuspensionTime", 0)
+        )
+
+        return {"end": end_str, "cpus": cpus, "gpus": gpus, "runtime": runtime}
 
 
 class Slurm(Scheduler):
@@ -949,6 +1089,423 @@ class Slurm(Scheduler):
                 continue
         return data
 
+    def collect_history(self, cluster_id):
+        """
+        Collect history information for a completed Slurm job.
+
+        Uses ``sacct`` (the Slurm accounting-history tool) rather than
+        ``squeue``, which only reports currently-queued/running jobs and
+        drops a job from its output once it's finished.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The Slurm job ID.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys ``end``, ``cpus``, ``gpus``, ``runtime``,
+            matching :meth:`HTCondor.collect_history`'s contract.
+
+        Raises
+        ------
+        ValueError
+            If no history record is found for *cluster_id*, or the job
+            hasn't finished yet.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "sacct", "-j", str(cluster_id),
+                    "--format=JobID,End,Elapsed,AllocTRES",
+                    "--noheader", "--parsable2",
+                ],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise ValueError(
+                f"Could not query sacct for job {cluster_id}: {e.stderr.strip()}"
+            ) from e
+
+        # sacct also reports sub-step rows for the same job (e.g. "123.batch",
+        # "123.extern") - only the top-level job ID row (exactly "123") has
+        # the fields we want.
+        job_row = None
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|")
+            if len(parts) >= 4 and parts[0] == str(cluster_id):
+                job_row = parts
+                break
+
+        if job_row is None:
+            raise ValueError(f"No history found for Slurm job {cluster_id}")
+
+        _, end_field, elapsed_field, alloc_tres = job_row
+
+        if not end_field or end_field == "Unknown":
+            raise ValueError(f"Slurm job {cluster_id} has not finished yet")
+
+        try:
+            end_dt = datetime.datetime.strptime(end_field, "%Y-%m-%dT%H:%M:%S")
+            end_str = end_dt.strftime("%Y-%m-%d")
+        except ValueError:
+            end_str = end_field
+
+        runtime = self._parse_slurm_elapsed(elapsed_field)
+
+        cpus = 1.0
+        gpus = 0.0
+        for item in alloc_tres.split(","):
+            item = item.strip()
+            if not item or "=" not in item:
+                continue
+            key, _, value = item.partition("=")
+            try:
+                value = float(value)
+            except ValueError:
+                continue
+            if key == "cpu":
+                cpus = value
+            elif key.startswith("gres/gpu"):
+                gpus = value
+
+        return {"end": end_str, "cpus": cpus, "gpus": gpus, "runtime": runtime}
+
+    @staticmethod
+    def _parse_slurm_elapsed(elapsed):
+        """Parse a Slurm ``Elapsed`` field (``[DD-]HH:MM:SS``) into seconds."""
+        days = 0
+        if "-" in elapsed:
+            day_part, elapsed = elapsed.split("-", 1)
+            days = int(day_part)
+        parts = [int(p) for p in elapsed.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        hours, minutes, seconds = parts[-3:]
+        return float(
+            days * 86400 + hours * 3600 + minutes * 60 + seconds
+        )
+
+
+class LocalProcessScheduler(Scheduler):
+    """
+    A lightweight scheduler that runs jobs as local subprocesses.
+
+    This scheduler is designed for jobs that complete quickly (seconds),
+    where the overhead of submitting to a cluster scheduler (HTCondor, Slurm)
+    exceeds the actual job runtime.  Jobs are launched as background
+    subprocesses on the machine running asimov and are tracked by their
+    operating-system process ID (PID).
+
+    Notes
+    -----
+    The ``log`` field of a :class:`JobDescription` is not used by this
+    scheduler; only ``output`` (stdout) and ``error`` (stderr) are redirected.
+
+    Security note: the ``executable`` field is passed directly to the OS
+    without further sanitisation.  Only trusted, application-constructed
+    :class:`JobDescription` objects should be submitted.
+    """
+
+    _HISTORY_LIMIT = 200
+
+    def __init__(self):
+        """Initialize the local process scheduler."""
+        self._processes = {}  # pid -> {"process": Popen, "command": str, "name": str, "start_time": float}
+        # Bounded record of completed processes, populated by query() just
+        # before it drops a PID from self._processes, so collect_history()
+        # has something to look up after the process has exited. A local
+        # subprocess has no external accounting system (unlike HTCondor's
+        # condor_history or Slurm's sacct) to ask after the fact, so this is
+        # the only record that will ever exist - capped since this scheduler
+        # is meant for many short-lived jobs, not unbounded retention.
+        self._history = {}  # pid -> {"start_time", "end_time", "exit_code"}
+        self._lock = threading.Lock()
+
+    def wait_for_job(self, job_id):
+        """
+        Block until the process identified by *job_id* has exited.
+
+        Parameters
+        ----------
+        job_id : int
+            The PID returned by :meth:`submit`.
+
+        Returns
+        -------
+        int or None
+            The process exit code, or ``None`` if the job is not tracked.
+        """
+        with self._lock:
+            info = self._processes.get(job_id)
+        if info is None:
+            return None
+        return info["process"].wait()
+
+    # ------------------------------------------------------------------
+    # Scheduler interface
+    # ------------------------------------------------------------------
+
+    def submit(self, job_description):
+        """
+        Run a job as a local background subprocess.
+
+        Parameters
+        ----------
+        job_description : JobDescription or dict
+            The job description to submit.  At minimum the description must
+            supply an ``executable``.  The optional keys ``arguments``,
+            ``output``, and ``error`` are also recognised.  The ``log`` key
+            is accepted but ignored (not applicable to local subprocesses).
+            Arguments are parsed with :func:`shlex.split` so quoted strings
+            and paths that contain spaces are handled correctly.
+
+        Returns
+        -------
+        int
+            The process ID (PID) of the launched subprocess.
+
+        Raises
+        ------
+        RuntimeError
+            If the subprocess cannot be started.
+        """
+        if isinstance(job_description, JobDescription):
+            executable = job_description.executable
+            arguments = job_description.kwargs.get("arguments", "")
+            output_file = job_description.output
+            error_file = job_description.error
+            name = job_description.kwargs.get(
+                "batch_name", job_description.kwargs.get("name", "asimov job")
+            )
+        else:
+            executable = job_description.get("executable")
+            arguments = job_description.get("arguments", "")
+            output_file = job_description.get("output")
+            error_file = job_description.get("error")
+            name = job_description.get(
+                "batch_name", job_description.get("name", "asimov job")
+            )
+
+        if not executable:
+            raise RuntimeError("No executable specified in job description")
+
+        if arguments:
+            if isinstance(arguments, str):
+                command = [executable] + shlex.split(arguments)
+            else:
+                command = [executable] + list(arguments)
+        else:
+            command = [executable]
+
+        # Open file handles before forking so that any IOError surfaces here
+        # rather than being silently lost inside Popen.
+        stdout_handle = open(output_file, "w") if output_file else subprocess.DEVNULL
+        try:
+            stderr_handle = (
+                open(error_file, "w") if error_file else subprocess.DEVNULL
+            )
+        except OSError:
+            # `open()` and all subclasses of OSError (including PermissionError) are caught.
+            if stdout_handle is not subprocess.DEVNULL:
+                stdout_handle.close()
+            raise
+
+        try:
+            proc = subprocess.Popen(command, stdout=stdout_handle, stderr=stderr_handle)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to start local process '{executable}': {exc}"
+            ) from exc
+        finally:
+            # Close parent-side handles; the child process has inherited its own
+            # file descriptors and will continue writing after these are closed.
+            if stdout_handle is not subprocess.DEVNULL:
+                stdout_handle.close()
+            if stderr_handle is not subprocess.DEVNULL:
+                stderr_handle.close()
+
+        with self._lock:
+            self._processes[proc.pid] = {
+                "process": proc,
+                "command": " ".join(command),
+                "name": name,
+                "start_time": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+            }
+        return proc.pid
+
+    def delete(self, job_id):
+        """
+        Terminate a running local process.
+
+        Parameters
+        ----------
+        job_id : int
+            The PID of the process to terminate.  Only PIDs that were
+            returned by :meth:`submit` on *this* scheduler instance are
+            acted upon; unknown PIDs are ignored with a warning to avoid
+            accidentally killing unrelated OS processes.
+        """
+        with self._lock:
+            info = self._processes.pop(job_id, None)
+
+        if info is None:
+            warnings.warn(
+                f"LocalProcessScheduler.delete called with unknown job_id {job_id}; "
+                "no process was terminated.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return
+
+        proc = info["process"]
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait()
+            except (ProcessLookupError, PermissionError):
+                # ProcessLookupError: process exited between kill() and wait().
+                # PermissionError: insufficient privileges (should not normally occur).
+                pass
+        except (ProcessLookupError, PermissionError):
+            # Process already exited before terminate() was called.
+            pass
+
+    def query(self, job_id=None):
+        """
+        Query the status of one or all managed local processes.
+
+        Parameters
+        ----------
+        job_id : int, optional
+            The PID to query.  If *None*, all tracked processes are returned.
+            If the PID is not known to this scheduler instance, an empty list
+            is returned.
+
+        Returns
+        -------
+        list of dict
+            Each dictionary contains ``id``, ``command``, ``hosts``,
+            ``status``, and ``name`` keys compatible with :class:`JobList`.
+            Completed processes are removed from internal tracking after
+            being reported.
+        """
+        with self._lock:
+            pids = [job_id] if job_id is not None else list(self._processes.keys())
+
+        results = []
+        completed_pids = []
+
+        for pid in pids:
+            with self._lock:
+                proc_info = self._processes.get(pid)
+            if proc_info is None:
+                continue
+            poll = proc_info["process"].poll()
+            if poll is None:
+                status = "running"
+            elif poll == 0:
+                status = "completed"
+                completed_pids.append((pid, poll))
+            else:
+                status = f"error (exit {poll})"
+                completed_pids.append((pid, poll))
+            results.append(
+                {
+                    "id": pid,
+                    "command": proc_info["command"],
+                    "hosts": 1,
+                    "status": status,
+                    "name": proc_info.get("name", "asimov job"),
+                }
+            )
+
+        # Remove completed processes to prevent memory leaks and zombie
+        # accumulation, but keep a bounded record of them first - this is
+        # the only place a completed local process's start/end time is ever
+        # available, since (unlike HTCondor/Slurm) there's no external
+        # accounting system to ask about it later via collect_history().
+        with self._lock:
+            for pid, exit_code in completed_pids:
+                proc_info = self._processes.pop(pid, None)
+                if proc_info is None:
+                    continue
+                self._history[pid] = {
+                    "start_time": proc_info.get("start_time"),
+                    "end_time": datetime.datetime.now(datetime.timezone.utc).timestamp(),
+                    "exit_code": exit_code,
+                }
+                while len(self._history) > self._HISTORY_LIMIT:
+                    self._history.pop(next(iter(self._history)))
+
+        return results
+
+    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+        """Not supported for the local process scheduler."""
+        raise NotImplementedError(
+            "LocalProcessScheduler does not support DAG submission. "
+            "Use submit() with a shell script instead."
+        )
+
+    def query_all_jobs(self):
+        """
+        Return status information for all tracked local processes.
+
+        Returns
+        -------
+        list of dict
+            A list of dictionaries with job information, compatible with
+            :class:`JobList`.
+        """
+        return self.query()
+
+    def collect_history(self, cluster_id):
+        """
+        Collect history information for a completed local process.
+
+        Only available after :meth:`query` has observed the process exit at
+        least once (which is what moves it from live tracking into the
+        bounded history record) - and only while that record hasn't since
+        been evicted by :attr:`_HISTORY_LIMIT`.
+
+        Parameters
+        ----------
+        cluster_id : int
+            The PID returned by :meth:`submit`.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys ``end``, ``cpus``, ``gpus``, ``runtime``,
+            matching :meth:`HTCondor.collect_history`'s contract. ``cpus``
+            is always ``1`` and ``gpus`` is always ``0``: a bare local
+            subprocess has no resource-allocation concept to report on,
+            unlike a real cluster scheduler.
+
+        Raises
+        ------
+        ValueError
+            If no history record is found for *cluster_id*.
+        """
+        with self._lock:
+            record = self._history.get(cluster_id)
+
+        if record is None:
+            raise ValueError(f"No history found for local process {cluster_id}")
+
+        start_time = record.get("start_time")
+        end_time = record.get("end_time")
+        runtime = (end_time - start_time) if (start_time and end_time) else 0.0
+        end_str = (
+            _datetime_from_epoch(end_time).strftime("%Y-%m-%d") if end_time else ""
+        )
+
+        return {"end": end_str, "cpus": 1.0, "gpus": 0.0, "runtime": runtime}
+
 
 class Job:
     """
@@ -1186,7 +1743,7 @@ def get_scheduler(scheduler_type="htcondor", **kwargs):
     Parameters
     ----------
     scheduler_type : str
-        The type of scheduler to create. Options: "htcondor", "slurm"
+        The type of scheduler to create. Options: "htcondor", "slurm", "local"
     **kwargs
         Additional keyword arguments to pass to the scheduler constructor.
         For HTCondor: schedd_name (str)
@@ -1208,6 +1765,13 @@ def get_scheduler(scheduler_type="htcondor", **kwargs):
         return HTCondor(**kwargs)
     elif scheduler_type == "slurm":
         return Slurm(**kwargs)
+    elif scheduler_type == "local":
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs.keys()))
+            raise TypeError(
+                f"LocalProcessScheduler does not accept configuration options: {unexpected}"
+            )
+        return LocalProcessScheduler()
     else:
         raise ValueError(f"Unknown scheduler type: {scheduler_type}")
 

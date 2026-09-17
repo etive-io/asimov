@@ -26,7 +26,11 @@ class SubjectAnalysisTests(unittest.TestCase):
     def setUp(self):
         os.makedirs(f"{self.cwd}/tests/tmp/subject_analysis_project")
         os.chdir(f"{self.cwd}/tests/tmp/subject_analysis_project")
-        make_project(name="Test project", root=f"{self.cwd}/tests/tmp/subject_analysis_project")
+        make_project(
+            name="Test project",
+            root=f"{self.cwd}/tests/tmp/subject_analysis_project",
+            engine="yamlfile",
+        )
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
         apply_page(file=f"{self.cwd}/tests/test_data/testing_pe.yaml", event=None, ledger=self.ledger)
         apply_page(file=f"{self.cwd}/tests/test_data/events_blueprint.yaml", ledger=self.ledger)

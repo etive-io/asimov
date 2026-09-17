@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from ...pipeline import Pipeline
+from ._util import accounting_submit_lines
 
 
 class ProjectTestPipeline(Pipeline):
@@ -142,7 +143,8 @@ class ProjectTestPipeline(Pipeline):
                     f.write("output = test_project_job.out\n")
                     f.write("error = test_project_job.err\n")
                     f.write("log = test_project_job.log\n")
-                    f.write("getenv = True\n")
+                    for line in accounting_submit_lines(self.production):
+                        f.write(line)
                     f.write("queue 1\n")
                 
                 # Create a minimal DAG file (HTCondor)
@@ -185,7 +187,7 @@ class ProjectTestPipeline(Pipeline):
         """
         import subprocess
         import re
-        from asimov.scheduler import Slurm
+        from asimov.scheduler import LocalProcessScheduler, Slurm
 
         if not self.production.rundir:
             self.logger.warning("No run directory specified")
@@ -201,7 +203,17 @@ class ProjectTestPipeline(Pipeline):
         original_dir = os.getcwd()
         os.chdir(self.production.rundir)
         try:
-            if isinstance(self.scheduler, Slurm):
+            if isinstance(self.scheduler, LocalProcessScheduler):
+                job_id = self.scheduler.submit({
+                    "executable": "/bin/bash",
+                    "arguments": "test_project_job.sh",
+                    "output": "local_job.out",
+                    "error": "local_job.err",
+                    "name": f"test-project/{self.production.name}",
+                })
+                self.logger.info(f"Local process job submitted: {job_id}")
+                return job_id
+            elif isinstance(self.scheduler, Slurm):
                 job_id = self.scheduler.submit("sbatch_submit.sh")
                 self.logger.info(f"Slurm job submitted: {job_id}")
                 return job_id

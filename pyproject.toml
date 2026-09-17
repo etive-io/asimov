@@ -44,9 +44,13 @@ dependencies = [
 	     "pyyaml",
 	     "requests",
 	     "flask",
+	     "flask-cors>=4.0.0",
+	     "filelock>=3.13.0",
 	     "tinydb",
 	     "pillow>=10.2.0",
-	     "pydantic>=2.0.0"
+	     "pydantic>=2.0.0",
+	     "sqlalchemy>=2.0.0",
+	     "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]
@@ -96,7 +100,9 @@ packages = [
 	"asimov.pipelines",
 	"asimov.pipelines.testing",
 	"asimov.cli",
-	"asimov.configs"
+	"asimov.configs",
+	"asimov.api",
+	"asimov.api.blueprints"
 ]
 
 [tool.setuptools.package-data]
@@ -108,3 +114,18 @@ simpletestpipelineb = "asimov.pipelines.testing:SimpleTestPipelineB"
 simpletestpipelinec = "asimov.pipelines.testing:SimpleTestPipelineC"
 subjecttestpipeline = "asimov.pipelines.testing:SubjectTestPipeline"
 projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"
+
+# Entry point group for external telemetry sinks. Every event is always
+# recorded locally regardless of what's registered here (see
+# asimov.telemetry.LocalJSONLSink); sinks discovered through this group are
+# opt-in extras for forwarding the same events to a larger observability
+# stack. See docs/source/hooks.rst.
+# Example: my_sink = "my_package.telemetry:MySink"
+[project.entry-points."asimov.hooks.telemetry"]
+prometheus = "asimov.telemetry:PrometheusPushgatewaySink"
+
+# Entry point group for labeller plugins
+# Labellers can automatically assign labels like "interest status" to analyses
+# during monitoring. See docs/source/labeller-plugins.rst for details.
+[project.entry-points."asimov.labellers"]
+# Example: my_labeller = "my_package.labellers:MyLabeller"

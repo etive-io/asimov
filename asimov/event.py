@@ -132,6 +132,7 @@ class Event:
             self.psds = {}
 
         self.meta = kwargs
+        self.meta.pop('ledger', None)
 
         self.productions = []
         self.graph = nx.DiGraph()
@@ -191,6 +192,15 @@ class Event:
                 return False
         else:
             return False
+
+    def __hash__(self):
+        # Defining __eq__ without __hash__ makes instances unhashable in
+        # Python, which broke silently until something tried to put an
+        # Event in a set or use one as a dict key. Two Event objects
+        # representing the same underlying event (e.g. reconstructed
+        # independently from the ledger) should hash the same way they
+        # already compare equal.
+        return hash(self.name)
 
     def update_data(self):
         if self.ledger:
@@ -556,6 +566,24 @@ class Event:
                     review_message = latest_review.message if latest_review.message else ''
             return review_status, review_message
         
+        def get_profiling_attrs(node):
+            """Extract profiling data attributes from a node's meta."""
+            profiling = {}
+            if hasattr(node, 'meta') and isinstance(node.meta, dict):
+                profiling = node.meta.get('profiling', {}) or {}
+            esc = lambda v: html.escape(str(v), quote=True)
+            runtime = esc(profiling.get('runtime', ''))
+            cpus = esc(profiling.get('cpus', ''))
+            gpus = esc(profiling.get('gpus', ''))
+            end = esc(profiling.get('end', ''))
+            return (
+                f'data-profiling-runtime="{runtime}" '
+                f'data-profiling-cpus="{cpus}" '
+                f'data-profiling-gpus="{gpus}" '
+                f'data-profiling-end="{end}"'
+            )
+
+
         card = f"""
         <div class="card event-data" id="card-{self.name}" data-event-name="{self.name}">
         <div class="card-body">
@@ -617,7 +645,19 @@ class Event:
                     pipeline_name = (node.pipeline.name
                                      if hasattr(node, 'pipeline') and node.pipeline else '')
                     prefix = _REVIEW_PREFIX.get(review_status, '')
+                    labels = (node.meta.get('labels', {}) or {}) if hasattr(node, 'meta') and isinstance(node.meta, dict) else {}
                     label = _escape_mermaid_label(f'{prefix}{node.name}') + ('<br/><small>' + _escape_mermaid_label(pipeline_name) + '</small>' if pipeline_name else '')
+                    if labels:
+                        badges = []
+                        for label_name, label_value in labels.items():
+                            if isinstance(label_value, bool):
+                                badge_class, badge_text = ('badge-success' if label_value else 'badge-secondary'), label_name
+                            elif isinstance(label_value, (int, float)):
+                                badge_class, badge_text = 'badge-info', f'{label_name}: {label_value}'
+                            else:
+                                badge_class, badge_text = 'badge-secondary', f'{label_name}: {label_value}'
+                            badges.append(f'<span class="badge {badge_class}">{_escape_mermaid_label(badge_text)}</span>')
+                        label += '<br/>' + ' '.join(badges)
                     is_subject = (getattr(node, 'category', '') == 'subject_analyses')
                     nodes_data.append({
                         'id': mid,
@@ -717,6 +757,28 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                     dependencies_str = ', '.join(dependencies) if dependencies else ''
                     dependencies_str_escaped = html.escape(dependencies_str, quote=True)
                     review_message_escaped = html.escape(review_message, quote=True)
+                    labels = (node.meta.get('labels', {}) or {}) if hasattr(node, 'meta') and isinstance(node.meta, dict) else {}
+                    labels_json_escaped = html.escape(_json.dumps(labels), quote=True)
+
+                    # A small preview only - full logs are read live from disk via
+                    # collect_logs(), which can return megabytes per file. Embedding
+                    # that much text per analysis into every static report page
+                    # wouldn't scale to a real project's hundreds of analyses.
+                    _LOG_PREVIEW_CHARS = 4000
+                    log_preview = {}
+                    if hasattr(node, 'pipeline') and node.pipeline:
+                        try:
+                            for log_name, log_content in node.pipeline.collect_logs().items():
+                                if len(log_content) > _LOG_PREVIEW_CHARS:
+                                    log_content = (
+                                        f"[... preview truncated, "
+                                        f"{len(log_content)} characters total ...]\n"
+                                        + log_content[-_LOG_PREVIEW_CHARS:]
+                                    )
+                                log_preview[log_name] = log_content
+                        except Exception:
+                            pass
+                    log_preview_json_escaped = html.escape(_json.dumps(log_preview), quote=True)
 
                     card += f"""<div id="{data_id}" style="display:none;"
                          data-name="{node.name}"
@@ -732,7 +794,10 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-result-pages="{result_pages_str_escaped}"
                          data-pages-dir="{pages_dir_escaped}"
                          data-modal-plots="{modal_plots_str_escaped}"
-                         data-modal-plot-labels="{modal_plot_labels_str_escaped}"></div>"""
+                         data-modal-plot-labels="{modal_plot_labels_str_escaped}"
+                         data-logs="{log_preview_json_escaped}"
+                         data-labels="{labels_json_escaped}"
+                         {get_profiling_attrs(node)}></div>"""
 
             except Exception as e:
                 card += f'<p class="text-muted">Error generating modal data: {str(e)}</p>'

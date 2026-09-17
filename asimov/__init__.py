@@ -174,14 +174,35 @@ def setup_file_logging(logfile=None):
 
 
 try:
-    if config.get("ledger", "engine") == "yamlfile":
+    _engine = config.get("ledger", "engine")
+    if _engine == "yamlfile":
         from .ledger import YAMLLedger
 
         current_ledger = YAMLLedger(config.get("ledger", "location"))
-    elif config.get("ledger", "engine") == "gitlab":
+    elif _engine == "gitlab":
         logger.error("The gitlab interface has been removed from v0.6 of asimov")
+        current_ledger = None
+    elif _engine in {"tinydb", "sqlalchemy", "sqlite", "postgresql", "mysql"}:
+        from .ledger import DatabaseLedger
+
+        # For a file-backed database (sqlite, the common case) only attach
+        # to it if it already exists. AsimovSQLDatabase.__init__ will
+        # happily create a brand new database file (and its parent
+        # directory) the moment it's asked to connect to one that isn't
+        # there yet - appropriate for an explicit `asimov init`, but not
+        # for this best-effort "is there a project here?" probe that runs
+        # on every `import asimov`, in whatever directory that happens to
+        # be. Network-backed URLs (postgresql://, mysql://) have no local
+        # path to check, so those are left to connect as before.
+        _location = config.get("ledger", "location", fallback=None)
+        if _location and "://" not in _location and not os.path.exists(_location):
+            current_ledger = None
+        else:
+            current_ledger = DatabaseLedger(engine=_engine)
     else:
         current_ledger = None
 except FileNotFoundError:
-    # logger.error("Could not find a valid ledger file.")
+    current_ledger = None
+except Exception as e:
+    logger.debug("Could not initialise ledger at startup: %s", e)
     current_ledger = None

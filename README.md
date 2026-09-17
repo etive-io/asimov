@@ -414,6 +414,10 @@ We're grateful to all our contributors! See the full list in [CONTRIBUTORS.md](C
 [![Bilby Pipeline CI](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml)
 [![Bilby Pipeline CI (Slurm)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml)
 
+## Testing Status
+
+[![Bilby Pipeline CI](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby.yml)
+[![Bilby Pipeline CI (Slurm)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml/badge.svg)](https://github.com/etive-io/asimov/actions/workflows/ci-bilby-slurm.yml)
 
 ## 📄 License
 

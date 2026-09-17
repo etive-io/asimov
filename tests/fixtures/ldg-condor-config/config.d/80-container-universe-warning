@@ -1,0 +1,21 @@
+# Verbatim from ldas-grid.ligo.caltech.edu's 99-transform-container-warning
+# (2026-09-14). A warning, not a hard submit failure -- included for
+# completeness since it's part of the real pool's submit-time behaviour.
+# https://git.ligo.org/computing/distributed/igwn-htcondor-config/-/issues/19
+
+SUBMIT_REQUIREMENT_NAMES = UseContainerUniverse $(SUBMIT_REQUIREMENT_NAMES)
+
+SUBMIT_REQUIREMENT_UseContainerUniverse = \
+    !( JobUniverse == 5 && ( SingularityImage =!= undefined || ApptainerImage =!= undefined ) )
+
+SUBMIT_REQUIREMENT_UseContainerUniverse_IS_WARNING = true
+
+SUBMIT_REQUIREMENT_UseContainerUniverse_REASON = \
+    strcat( \
+        "WARNING: This vanilla-universe job specifies a container image (", \
+        ifThenElse(SingularityImage =!= undefined, \
+            strcat("SingularityImage=", SingularityImage), \
+            strcat("ApptainerImage=",  ApptainerImage)), \
+        "). Consider using 'universe = container' with 'container_image' instead. ", \
+        "See: https://htcondor.readthedocs.io/en/latest/users-manual/env-of-job.html#container-universe-jobs" \
+    )

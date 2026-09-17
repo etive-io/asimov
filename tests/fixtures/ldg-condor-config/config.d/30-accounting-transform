@@ -1,0 +1,55 @@
+# Verbatim from ldas-grid.ligo.caltech.edu's 99-transform (2026-09-14),
+# sourced from the igwn-htcondor-config Puppet module
+# (git.ligo.org/computing/distributed/igwn-htcondor-config, issue #19).
+#
+# This is the actual "accounting group" enforcement mechanism on the LIGO
+# Data Grid: condor_submit's `accounting_group`/`accounting_group_user`
+# keys get copied onto the AcctGroup/AcctGroupUser classads, this job
+# transform copies those onto LigoSearchTag/LigoSearchUser, and the two
+# submit requirements below reject the job outright unless LigoSearchTag is
+# a recognised tag and LigoSearchUser matches what that submitting user is
+# allowed to claim -- for any job that isn't itself a DAGMan scheduler-
+# universe job (JobUniverse == 7) or an OSG glidein.
+#
+# See tests/fixtures/ldg-condor-config/accounting/ for the (CI-only, not
+# real) tag/user maps this fixture pool validates against.
+
+JOB_TRANSFORM_NAMES = TagJob,RemoveAcctGroup
+
+JOB_TRANSFORM_TagJob @=end
+  COPY AcctGroup LigoSearchTag
+  COPY AcctGroupUser LigoSearchUser
+  EVALSET LigoSearchTag (LigoSearchTag ?: "None")
+  EVALSET LigoSearchUser (LigoSearchUser ?: Owner)
+@end
+
+# do not strip accounting classads from scheduler universe
+# because their presence is necessary to propagate to child
+# jobs and sub-DAGs
+JOB_TRANSFORM_RemoveAcctGroup @=end
+  REQUIREMENTS JobUniverse != 7
+  DELETE AccountingGroup
+  DELETE AcctGroup
+  DELETE AcctGroupUser
+@end
+
+SCHEDD_CLASSAD_USER_MAP_NAMES = $(SCHEDD_CLASSAD_USER_MAP_NAMES) ValidSearchTags ValidSearchUsers
+CLASSAD_USER_MAPFILE_ValidSearchTags = /etc/condor/accounting/valid_tags
+CLASSAD_USER_MAPFILE_ValidSearchUsers = /etc/condor/accounting/valid_users
+
+SUBMIT_REQUIREMENT_NAMES = $(SUBMIT_REQUIREMENT_NAMES) ValidateSearchTag ValidateSearchUser
+
+SUBMIT_REQUIREMENT_ValidateSearchTag = JobUniverse == 7 || \
+  userMap("ValidSearchTags",LigoSearchTag) isnt undefined || \
+  GlideinClient isnt undefined
+SUBMIT_REQUIREMENT_ValidateSearchTag_REASON = \
+  strcat("Invalid value for search tag: ",LigoSearchTag ?: "<undefined>")
+
+SUBMIT_REQUIREMENT_ValidateSearchUser = \
+  JobUniverse == 7 || \
+  userMap("ValidSearchUsers",Owner,LigoSearchUser) is LigoSearchUser || \
+  userMap("ValidSearchUsers",Owner) is undefined && Owner =?= LigoSearchUser || \
+  GlideinClient isnt undefined
+SUBMIT_REQUIREMENT_ValidateSearchUser_REASON = \
+  strcat("Invalid value for search user: ", LigoSearchUser ?: "<undefined>", "\n", \
+    "       Valid values are: ",userMap("ValidSearchUsers",Owner))

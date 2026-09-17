@@ -28,12 +28,21 @@ def make_project(
     results="results",
     logs="logs",
     user=None,
+    engine=None,
 ):
     """
     Create a new project called NAME.
 
     This command creates a new asimov project, creating the appropriate
     directory structure, and creating a blank ledger.
+
+    Parameters
+    ----------
+    engine : str, optional
+        Ledger engine to use for this project ('yamlfile', 'sqlite', ...).
+        Defaults to the configured default (sqlite) if not given. Legacy
+        projects that already have an asimov.conf are unaffected by this
+        default either way - it only applies to newly created projects.
     """
     import pathlib
 
@@ -75,8 +84,11 @@ def make_project(
 
     # Make the ledger and operative files
     pathlib.Path(".asimov").mkdir(parents=True, exist_ok=True)
-    config.set("ledger", "engine", "yamlfile")
-    config.set("ledger", "location", os.path.join(".asimov", "ledger.yml"))
+    if engine is None:
+        engine = config.get("ledger", "engine", fallback="sqlite")
+    ledger_filename = "ledger.yml" if engine == "yamlfile" else "ledger.db"
+    config.set("ledger", "engine", engine)
+    config.set("ledger", "location", os.path.join(".asimov", ledger_filename))
 
     # Set the default environment
     if (python_loc := shutil.which("python")) is not None:
@@ -136,14 +148,22 @@ def make_project(
         else:
             config.set("slurm", "user", user)
 
-    Ledger.create(
-        engine="yamlfile",
-        name=project_name,
-        location=os.path.join(".asimov", "ledger.yml"),
-    )
-
+    # Write asimov.conf before creating the ledger. This used to be the
+    # other way round, which was fine while ledger creation just meant
+    # writing a small YAML file - but creating the SQLite database (real
+    # file creation + table setup via SQLAlchemy) immediately before this
+    # write intermittently raised PermissionError on some Docker/overlayfs
+    # CI runners writing the *next* file in the same freshly-created
+    # directory. Writing the plain config file first sidesteps whatever
+    # that interaction is, and is arguably the more sensible order anyway.
     with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
         config.write(config_file)
+
+    Ledger.create(
+        engine=engine,
+        name=project_name,
+        location=os.path.join(".asimov", ledger_filename),
+    )
 
 
 @click.command()
@@ -174,14 +194,28 @@ def make_project(
     default=None,
     help="The user account to be used for accounting purposes. Defaults to the current user if not set.",
 )
+@click.option(
+    "--engine",
+    default=None,
+    help="The ledger engine to use for this project ('yamlfile', 'sqlite', ...). "
+    "Defaults to the configured default (sqlite) if not given.",
+)
 def init(
-    name, root, working="working", checkouts="checkouts", results="results", user=None
+    name,
+    root,
+    working="working",
+    checkouts="checkouts",
+    results="results",
+    user=None,
+    engine=None,
 ):
     """
     Roll-out a new project.
     """
     from asimov import setup_file_logging
-    make_project(name, root, working=working, checkouts=checkouts, results=results)
+    make_project(
+        name, root, working=working, checkouts=checkouts, results=results, engine=engine
+    )
     click.echo(click.style("●", fg="green") + " New project created successfully!")
     
     # Log the project creation message

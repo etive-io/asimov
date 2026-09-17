@@ -264,6 +264,43 @@ jobs:
         with:
           script: asimov monitor
 
+      - name: Verify profiling data collected for completed analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            python3 << 'EOF'
+            import sys
+            import yaml
+
+            with open('.asimov/ledger.yml') as f:
+                ledger = yaml.safe_load(f)
+
+            missing = []
+            checked = []
+            for event in ledger.get('events', []):
+                for prod in event.get('productions', []):
+                    for name, data in prod.items():
+                        status = data.get('status', '')
+                        if status not in ('finished', 'complete', 'uploaded'):
+                            continue
+                        profiling = (data.get('meta') or {}).get('profiling', {})
+                        checked.append(name)
+                        if not profiling.get('runtime'):
+                            missing.append(f"{name} (status={status})")
+
+            if not checked:
+                print("WARNING: No completed analyses found to verify profiling data")
+            elif missing:
+                print(f"FAIL: Profiling data missing for {len(missing)} completed analysis/analyses:")
+                for m in missing:
+                    print(f"  - {m}")
+                sys.exit(1)
+            else:
+                print(f"OK: Profiling data present for all {len(checked)} completed analysis/analyses:")
+                for name in checked:
+                    print(f"  - {name}")
+            EOF
+
       - name: Test New Monitor API (programmatic)
         uses: ./.github/actions/run-asimov-command
         with:
