@@ -530,7 +530,7 @@ Resolving a "requires X but no dependency provides it" warning
 builds a configuration for, and prints (and logs) a line like this for each unsatisfied
 requirement it finds::
 
-    ● Production 'Prod1' requires 'psd' but no dependency provides it
+    ● Analysis 'Prod1' requires 'psd' but no dependency provides it
 
 This is a warning, not an error: it never stops the build, since it's meant to catch likely
 misconfigurations early rather than gate submission on a feature that isn't universally adopted

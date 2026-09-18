@@ -640,7 +640,7 @@ class Analysis:
         Examples
         --------
         >>> analysis.validate_needs()
-        UserWarning: Production requires 'psd' but no dependency provides it
+        UserWarning: Analysis 'my-analysis' requires 'psd' but no dependency provides it
         """
         required = self.pipeline.get_actual_inputs(self)
         dep_analyses = self._dependency_analyses()
@@ -651,7 +651,7 @@ class Analysis:
             )
             if not satisfied:
                 warnings.warn(
-                    f"Production '{self.name}' requires '{requirement}' but no dependency provides it"
+                    f"Analysis '{self.name}' requires '{requirement}' but no dependency provides it"
                 )
 
     def matches_filter(self, attribute, match, negate=False):
