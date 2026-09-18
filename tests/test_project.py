@@ -198,6 +198,68 @@ class TestProject(unittest.TestCase):
         
         self.assertIn("incomplete or malformed", str(context.exception))
     
+    def test_get_ledger_inside_context_uses_project_ledger(self):
+        """Regression test for #148.
+
+        Calling ``get_ledger()`` (or ``apply_page`` without an explicit
+        ``ledger=``) inside a ``with project:`` block used to construct a
+        separate ``Ledger`` instance from ``project.ledger``, so mutations
+        made through it were silently discarded on context exit. It should
+        instead return ``project.ledger`` itself.
+        """
+        project = Project(self.project_name, location=self.test_dir)
+
+        from asimov.cli.application import get_ledger, apply_page
+
+        event_file = os.path.join(self.test_dir, "event.yaml")
+        with open(event_file, "w") as f:
+            f.write("kind: event\nname: GW150914\n")
+
+        with project:
+            ledger = get_ledger()
+            self.assertIs(ledger, project.ledger)
+
+            # Not passing ledger= at all hits the same code path, since
+            # apply_page() calls get_ledger() internally when ledger is None.
+            apply_page(event_file)
+
+        # After exiting the context, the event should have been saved.
+        events = project.get_event()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].name, "GW150914")
+
+    def test_get_ledger_with_nested_project_contexts(self):
+        """get_active_project() should track nested `with project:` blocks
+        as a stack, so exiting an inner context restores the outer one
+        rather than clearing the active project entirely."""
+        outer_dir = self.test_dir
+        inner_dir = tempfile.mkdtemp()
+        try:
+            from asimov.cli.application import get_ledger
+            from asimov.project import get_active_project
+
+            outer = Project("Outer Project", location=outer_dir)
+            inner = Project("Inner Project", location=inner_dir)
+
+            self.assertIsNone(get_active_project())
+
+            with outer:
+                self.assertIs(get_active_project(), outer)
+                self.assertIs(get_ledger(), outer.ledger)
+
+                with inner:
+                    self.assertIs(get_active_project(), inner)
+                    self.assertIs(get_ledger(), inner.ledger)
+
+                # Back in the outer context: it should be active again,
+                # not None.
+                self.assertIs(get_active_project(), outer)
+                self.assertIs(get_ledger(), outer.ledger)
+
+            self.assertIsNone(get_active_project())
+        finally:
+            shutil.rmtree(inner_dir, ignore_errors=True)
+
     def test_context_manager_exception_handling(self):
         """Test that ledger is not saved when an exception occurs in context."""
         project = Project(self.project_name, location=self.test_dir)
