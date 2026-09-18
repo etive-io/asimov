@@ -743,3 +743,4 @@ Object.assign(window.asimovNodeMap, {node_map_js});
 
 
 Production = GravitationalWaveTransient
+Subject = Event
