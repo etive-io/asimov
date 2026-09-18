@@ -1,3 +1,71 @@
+0.7.1
+=====
+
+This is a bug-fix release for the v0.7 series, which also finishes some work
+left in progress at 0.7.0 and adds test and documentation coverage.
+
+Improvements
+------------
+
+**Subject Terminology**
+  Completes the event -> subject terminology generalisation started in 0.7.0.
+  ``kind: subject`` is now accepted as an alias for ``kind: event`` in
+  ``apply_page()``, and ``Ledger.get_subject()`` is now the primary
+  implementation, with ``get_event()`` kept as a backward-compatible wrapper
+  (mirroring the existing ``add_subject``/``add_event`` pair).
+
+**Waveform Defaults**
+  ``YAMLLedger`` now supports specifying waveform defaults.
+
+**Python API Tutorial**
+  Adds a new Python API tutorial covering the ``gwdata``/``bayeswave``/``bilby``
+  GW150914 workflow using ``apply_page()`` and ``project.ledger``, and adds a
+  CI lint job which checks the CLI and API usage shown in the tutorials
+  against the live asimov interfaces.
+
+**Multiple PSDs Test Coverage**
+  Adds end-to-end tests confirming that a production can pick up PSDs either
+  from its own ``psds:`` block or from a ``needs:`` dependency's collected
+  assets, and that an explicit ``psds:`` block correctly overrides a
+  dependency.
+
+Bug Fixes
+---------
+
+**Analysis Staleness**
+  ``SubjectAnalysis`` and ``ProjectAnalysis`` resolve their dependencies via
+  the ``analyses``/``needs`` spec rather than ``_needs``, so the inherited
+  ``is_stale`` always reported ``True`` once ``resolved_dependencies`` was
+  set, even immediately after a fresh refresh. Both classes now compare their
+  resolved analyses against ``resolved_dependencies`` directly.
+
+**Ledger Persistence Inside a Project Context**
+  ``get_ledger()`` could construct a ``Ledger`` instance independent of
+  ``project.ledger`` when called inside a ``with project:`` block, so
+  mutations made through it were silently discarded when the context exited.
+  ``get_ledger()`` is now context-aware, and the active project is tracked as
+  a stack to correctly support nested ``with project:`` blocks.
+
+**Documentation Fixes**
+  Fixes an incorrect import and an indentation error in the
+  ``adding-a-pipeline.rst`` tutorial, a pipeline entry-point case mismatch
+  which meant the ``pyRing`` pipeline could never be resolved, and a step in
+  ``remixing-analyses.rst`` which re-applied the wrong blueprint.
+
+Breaking Changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+GitHub Pull Requests
+--------------------
+
++ `github#149 <https://github.com/etive-io/asimov/pull/149>`_: Add Python API tutorial for 0.7, fix a docs bug, add tutorial CI lint
++ `github#155 <https://github.com/etive-io/asimov/pull/155>`_: Fix two 0.7.0 bugs: SubjectAnalysis/ProjectAnalysis.is_stale, and get_ledger() inside a project context
++ `github#156 <https://github.com/etive-io/asimov/pull/156>`_: Finish event -> subject terminology generalization
++ `github#157 <https://github.com/etive-io/asimov/pull/157>`_: Add end-to-end tests confirming multiple PSDs per event works
++ `github#159 <https://github.com/etive-io/asimov/pull/159>`_: Add waveform defaults handling in YAMLLedger
+
 0.7.0
 =====
 
