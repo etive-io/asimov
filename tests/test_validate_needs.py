@@ -319,6 +319,60 @@ needs:
                 self.assertEqual(len(user_warnings), 1)
                 self.assertIn("psd", str(user_warnings[0].message))
 
+    def test_project_analysis_validate_needs_safe_after_prior_dependencies_read(self):
+        """
+        validate_needs() must not crash when something else has already read
+        `.dependencies` on the same ProjectAnalysis instance first.
+
+        `_dependency_analyses()` caching its own result only protects repeat
+        calls to that method - it does nothing for a caller (to_dict(), for
+        instance, which serialises `self.dependencies` into `needs`) that
+        reads the `dependencies` property directly before validate_needs()
+        is ever called. That property has to be safe to call more than once
+        in its own right; this exercises exactly that sequence.
+        """
+        from asimov.pipelines.testing.project import ProjectTestPipeline
+
+        blueprint = """
+kind: analysis
+name: Prod0
+pipeline: simpletestpipeline
+status: uploaded
+"""
+        with open("test_prior_read_prod0.yaml", "w") as f:
+            f.write(blueprint)
+        apply_page(file="test_prior_read_prod0.yaml", event="GW150914_095045", ledger=self.ledger)
+
+        pa_blueprint = """
+kind: ProjectAnalysis
+name: pop-study-prior-read
+pipeline: projecttestpipeline
+status: ready
+subjects:
+  - GW150914_095045
+needs:
+  - Prod0
+"""
+        with open("test_prior_read_pa.yaml", "w") as f:
+            f.write(pa_blueprint)
+        apply_page(file="test_prior_read_pa.yaml", ledger=self.ledger)
+
+        with patch.object(ProjectTestPipeline, "required_inputs", ["psd"]):
+            ledger = YAMLLedger(".asimov/ledger.yml")
+            pop_study = [a for a in ledger.project_analyses if a.name == "pop-study-prior-read"][0]
+
+            # A prior, unrelated read of `dependencies` (as to_dict() does,
+            # e.g. when the ledger is saved) before validate_needs() is ever
+            # called on this instance.
+            self.assertEqual(pop_study.to_dict()["needs"], ["Prod0"])
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                pop_study.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(len(user_warnings), 1)
+            self.assertIn("psd", str(user_warnings[0].message))
+
     def test_subject_analysis_validate_needs_uses_resolved_analyses(self):
         """
         SubjectAnalysis always has an empty `needs`/`dependencies` (it does not

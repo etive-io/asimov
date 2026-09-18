@@ -581,19 +581,17 @@ class Analysis:
         Note that :class:`ProjectAnalysis` resolves its ``needs`` names by
         querying the ledger for each of its subjects as a side effect of
         reading :attr:`dependencies`, caching the resulting event objects in
-        ``self._subject_obs``. Within a single call here, that cache is
-        reused rather than querying the ledger again, since
-        ``self.events``/``self.subjects`` would otherwise re-fetch (and
-        reconstruct) the same events a second time in the same call.
-
-        Reading :attr:`dependencies` on a :class:`ProjectAnalysis` is itself
-        not safe to do more than once per instance: each access re-queries
-        the ledger for its subjects, and a second, independent
-        reconstruction of an event that already has productions can raise
+        ``self._subject_obs``. That property caches and reuses those events
+        itself (querying the ledger for the same subjects more than once is
+        not safe - a second, independent reconstruction of an event that
+        already has productions can raise
         ``AttributeError: 'Event' object has no attribute 'name'`` deep in
-        the reconstruction. To keep this method idempotent regardless of how
-        many times it (or :meth:`validate_needs`) is called on the same
-        analysis instance, the result is computed once and cached.
+        the reconstruction), so this method doesn't need to re-derive that
+        protection; it just reads ``_subject_obs`` directly.
+
+        This method's own result is additionally cached on the instance so
+        that calling it (or :meth:`validate_needs`) many times over doesn't
+        repeat the name-matching work above.
 
         Returns
         -------
@@ -1708,7 +1706,15 @@ class ProjectAnalysis(Analysis):
         - Top-level items in needs are OR'd together
         - Nested lists represent AND conditions (all must match)
         - Individual filters can be negated with !
-        
+
+        Resolving the subjects queries the ledger for each of them, which
+        reconstructs a fresh :class:`~asimov.event.Event` every time. Doing
+        that twice for an event that already has productions can raise
+        ``AttributeError`` deep inside the second reconstruction, so once all
+        subjects have been fetched here they're cached in
+        :attr:`_subject_obs` and reused on subsequent accesses of this
+        property, rather than querying the ledger again.
+
         Returns
         -------
         list
@@ -1721,12 +1727,14 @@ class ProjectAnalysis(Analysis):
             matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
             analyses = []
-            for subject in self._subjects:
-                sub = self.ledger.get_event(subject)[0]
-                self._subject_obs.append(sub)
+            if len(self._subject_obs) != len(self._subjects):
+                self._subject_obs = [
+                    self.ledger.get_event(subject)[0] for subject in self._subjects
+                ]
+            for sub in self._subject_obs:
                 for analysis in sub.analyses:
                     analyses.append(analysis)
-            
+
             for requirement in requirements:
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
