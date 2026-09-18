@@ -373,6 +373,73 @@ needs:
             self.assertEqual(len(user_warnings), 1)
             self.assertIn("psd", str(user_warnings[0].message))
 
+    def test_subject_analysis_validate_needs_reflects_later_resolved_analyses(self):
+        """
+        validate_needs() must not cache a stale, incomplete `self.analyses`
+        list across calls on the same instance.
+
+        A SubjectAnalysis can be constructed before all the productions its
+        smart `analyses` spec refers to exist yet - `Event.update_graph()`
+        re-runs `resolve_analyses()` on it once they do (this is also what
+        happens for a `SubjectAnalysis` loaded from a blueprint alongside
+        productions listed after it). If validate_needs() had already been
+        called on that same instance beforehand and cached its result, it
+        would keep reporting the dependency as missing even after
+        `self.analyses` is updated to include it.
+        """
+        from asimov.analysis import SubjectAnalysis
+        from asimov.pipelines.testing.subject import SubjectTestPipeline
+        from asimov.pipelines.testing.simple import SimpleTestPipeline
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+
+        # "Combined" is constructed while its only smart dependency, "Prod0",
+        # does not exist yet - so self.analyses starts out empty, same as it
+        # would if Event.update_graph() had not yet run a second time.
+        combined = SubjectAnalysis(
+            subject=event, name="Combined", pipeline="subjecttestpipeline",
+            status="ready", analyses=["Prod0"],
+        )
+        event.add_production(combined)
+        self.assertEqual(combined.analyses, [])
+
+        with patch.object(SubjectTestPipeline, "required_inputs", ["psd"]), \
+             patch.object(SimpleTestPipeline, "available_outputs", ["psd"]):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                combined.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(len(user_warnings), 1)
+            self.assertIn("psd", str(user_warnings[0].message))
+
+            # Prod0 is added afterwards, and the event's graph refreshed -
+            # exactly what Event.update_graph() does when a SubjectAnalysis's
+            # dependency becomes available after it was first constructed.
+            blueprint = """
+kind: analysis
+name: Prod0
+pipeline: simpletestpipeline
+status: uploaded
+"""
+            with open("test_stale_prod0.yaml", "w") as f:
+                f.write(blueprint)
+            apply_page(file="test_stale_prod0.yaml", event="GW150914_095045", ledger=self.ledger)
+            event.add_production(
+                [p for p in self.ledger.get_event("GW150914_095045")[0].productions
+                 if p.name == "Prod0"][0]
+            )
+            event.update_graph()
+            self.assertIn("Prod0", [a.name for a in combined.analyses])
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                combined.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(
+                len(user_warnings), 0,
+                "validate_needs() must reflect Prod0 now being resolved, not a stale cache",
+            )
+
     def test_subject_analysis_validate_needs_uses_resolved_analyses(self):
         """
         SubjectAnalysis always has an empty `needs`/`dependencies` (it does not

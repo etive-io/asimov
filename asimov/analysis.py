@@ -589,18 +589,22 @@ class Analysis:
         the reconstruction), so this method doesn't need to re-derive that
         protection; it just reads ``_subject_obs`` directly.
 
-        This method's own result is additionally cached on the instance so
-        that calling it (or :meth:`validate_needs`) many times over doesn't
-        repeat the name-matching work above.
+        This method deliberately does *not* cache its own result: unlike the
+        event objects above, :attr:`analyses` - the smart-dependency list
+        used by :class:`SubjectAnalysis`/:class:`ProjectAnalysis` - is
+        mutated in place by ``resolve_analyses()``, which
+        ``Event.update_graph()`` can call again on the same instance once
+        more productions become available (for example, after the instance
+        was constructed before a sibling production it depends on existed
+        yet). Caching here would freeze whatever :attr:`analyses` looked
+        like at the first call, silently hiding dependencies that are
+        resolved later on the same instance.
 
         Returns
         -------
         list
             A list of :class:`Analysis` objects this analysis depends on.
         """
-        if getattr(self, "_dependency_analyses_cache", None) is not None:
-            return self._dependency_analyses_cache
-
         dep_names = set(self.dependencies)
         by_name = []
         if dep_names:
@@ -617,7 +621,6 @@ class Analysis:
             if analysis not in combined:
                 combined.append(analysis)
 
-        self._dependency_analyses_cache = combined
         return combined
 
     def validate_needs(self):
