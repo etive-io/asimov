@@ -5,10 +5,16 @@ import os
 import shutil
 import unittest
 import warnings
+from importlib import reload
+from unittest.mock import patch
 
+from click.testing import CliRunner
+
+import asimov
 from asimov.ledger import YAMLLedger
 from asimov.cli.project import make_project
 from asimov.cli.application import apply_page
+from asimov.cli import manage
 
 
 class ValidateNeedsTests(unittest.TestCase):
@@ -219,6 +225,177 @@ needs:
         finally:
             pe_prod.pipeline.required_inputs = original_required
             psd_prod.pipeline.available_outputs = original_available
+
+    def test_project_analysis_validate_needs_does_not_crash(self):
+        """
+        validate_needs() must not crash for ProjectAnalysis, which has no
+        singular `event` attribute (it operates across multiple subjects via
+        `events`/`subjects` instead). This exercises both the name-based
+        `needs` dependency graph and the class's own outputs.
+        """
+        from asimov.pipelines.testing.simple import SimpleTestPipeline
+        from asimov.pipelines.testing.project import ProjectTestPipeline
+
+        blueprint = """
+kind: analysis
+name: Prod0
+pipeline: simpletestpipeline
+status: uploaded
+"""
+        with open("test_project_prod0.yaml", "w") as f:
+            f.write(blueprint)
+        apply_page(file="test_project_prod0.yaml", event="GW150914_095045", ledger=self.ledger)
+
+        pa_blueprint = """
+kind: ProjectAnalysis
+name: pop-study
+pipeline: projecttestpipeline
+status: ready
+subjects:
+  - GW150914_095045
+needs:
+  - Prod0
+"""
+        with open("test_project_pa.yaml", "w") as f:
+            f.write(pa_blueprint)
+        apply_page(file="test_project_pa.yaml", ledger=self.ledger)
+
+        original_required = ProjectTestPipeline.required_inputs
+        original_available = SimpleTestPipeline.available_outputs
+        ProjectTestPipeline.required_inputs = ["psd"]
+        try:
+            # Unsatisfied: Prod0 (via SimpleTestPipeline) advertises no outputs.
+            SimpleTestPipeline.available_outputs = []
+            ledger = YAMLLedger(".asimov/ledger.yml")
+            pop_study = [a for a in ledger.project_analyses if a.name == "pop-study"][0]
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                pop_study.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(len(user_warnings), 1)
+            self.assertIn("psd", str(user_warnings[0].message))
+
+            # Satisfied: Prod0 now advertises the "psd" output.
+            SimpleTestPipeline.available_outputs = ["psd"]
+            ledger = YAMLLedger(".asimov/ledger.yml")
+            pop_study = [a for a in ledger.project_analyses if a.name == "pop-study"][0]
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                pop_study.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(len(user_warnings), 0)
+        finally:
+            ProjectTestPipeline.required_inputs = original_required
+            SimpleTestPipeline.available_outputs = original_available
+
+    def test_subject_analysis_validate_needs_uses_resolved_analyses(self):
+        """
+        SubjectAnalysis always has an empty `needs`/`dependencies` (it does not
+        participate in that graph), and instead resolves its dependencies via
+        the smart `analyses` spec into `self.analyses`. validate_needs() must
+        consult that list rather than reporting every requirement as
+        unsatisfied.
+        """
+        blueprint = """
+kind: analysis
+name: Prod0
+pipeline: simpletestpipeline
+status: uploaded
+"""
+        with open("test_subject_prod0.yaml", "w") as f:
+            f.write(blueprint)
+        apply_page(file="test_subject_prod0.yaml", event="GW150914_095045", ledger=self.ledger)
+
+        subject_blueprint = """
+kind: analysis
+name: Combined
+pipeline: subjecttestpipeline
+status: ready
+analyses:
+  - Prod0
+"""
+        with open("test_subject_combined.yaml", "w") as f:
+            f.write(subject_blueprint)
+        apply_page(file="test_subject_combined.yaml", event="GW150914_095045", ledger=self.ledger)
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+        prod0 = [p for p in event.productions if p.name == "Prod0"][0]
+        combined = [p for p in event.productions if p.name == "Combined"][0]
+        self.assertIn(prod0, combined.analyses)
+
+        original_required = combined.pipeline.required_inputs
+        original_available = prod0.pipeline.available_outputs
+        combined.pipeline.required_inputs = ["psd"]
+        try:
+            # Unsatisfied: Prod0 does not (yet) advertise "psd".
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                combined.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(len(user_warnings), 1)
+            self.assertIn("psd", str(user_warnings[0].message))
+
+            # Satisfied: Prod0 advertises "psd", which Combined resolves via
+            # its smart `analyses` spec rather than the `needs` graph.
+            prod0.pipeline.available_outputs = ["psd"]
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                combined.validate_needs()
+            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+            self.assertEqual(len(user_warnings), 0)
+        finally:
+            combined.pipeline.required_inputs = original_required
+            prod0.pipeline.available_outputs = original_available
+
+    def test_build_cli_surfaces_unsatisfied_dependency(self):
+        """
+        `asimov manage build` should run validate_needs() ahead of building
+        each production's configuration and surface any unsatisfied
+        requirement to the user, without aborting the build.
+        """
+        blueprint = """
+kind: analysis
+name: Prod0
+pipeline: simpletestpipeline
+status: uploaded
+---
+kind: analysis
+name: Prod1
+pipeline: simpletestpipeline
+needs:
+  - Prod0
+"""
+        with open("test_build_cli.yaml", "w") as f:
+            f.write(blueprint)
+        apply_page(file="test_build_cli.yaml", event="GW150914_095045", ledger=self.ledger)
+
+        # `build` loads its own fresh ledger/pipeline instances, so the
+        # requirement has to be declared on the pipeline class itself for the
+        # CLI invocation below to see it (Prod0 will also trivially warn,
+        # since it declares the same required input and has no dependency at
+        # all; that doesn't affect what's being checked here).
+        from asimov.pipelines.testing.simple import SimpleTestPipeline
+
+        original_class_required = SimpleTestPipeline.required_inputs
+        SimpleTestPipeline.required_inputs = ["psd"]
+        try:
+            with patch("asimov.current_ledger", new=YAMLLedger(".asimov/ledger.yml")):
+                reload(asimov)
+                reload(manage)
+                runner = CliRunner()
+                result = runner.invoke(manage.manage, ["build", "--event", "GW150914_095045"])
+            self.assertIn("requires 'psd' but no dependency provides it", result.output)
+            self.assertIn("Prod1", result.output)
+            # The build should still proceed rather than aborting.
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(
+                        "checkouts", "GW150914_095045", "analyses", "Prod1.ini"
+                    )
+                )
+            )
+        finally:
+            SimpleTestPipeline.required_inputs = original_class_required
 
     def test_no_warning_when_no_dependencies(self):
         """validate_needs() raises no warning when pipeline has no required inputs and no deps."""

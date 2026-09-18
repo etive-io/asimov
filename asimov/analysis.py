@@ -558,14 +558,65 @@ class Analysis:
     def status(self, value):
         self.status_str = value.lower()
 
+    def _dependency_analyses(self):
+        """
+        Resolve this analysis's dependencies into a list of analysis objects.
+
+        Dependencies can be declared through either of two mechanisms used
+        across the ``Analysis`` subclasses:
+
+        - The name-based ``needs`` graph (:attr:`dependencies`), matched
+          against the analyses belonging to the relevant event(s). This is
+          the mechanism used by single-event analyses such as
+          :class:`SimpleAnalysis`, and is also supported by
+          :class:`ProjectAnalysis` (matched across all of its subjects).
+        - The smart dependency spec that :class:`SubjectAnalysis` and
+          :class:`ProjectAnalysis` resolve directly into :attr:`analyses`.
+
+        Both mechanisms are combined so that dependency validation works
+        regardless of which one a given analysis actually uses; classes
+        which use neither (or have no dependencies) simply contribute an
+        empty list.
+
+        Note that :class:`ProjectAnalysis` resolves its ``needs`` names by
+        querying the ledger for each of its subjects as a side effect of
+        reading :attr:`dependencies`, caching the resulting event objects in
+        ``self._subject_obs``. That cache is reused here rather than
+        querying the ledger again, since ``self.events``/``self.subjects``
+        would otherwise re-fetch (and reconstruct) the same events a second
+        time in the same call.
+
+        Returns
+        -------
+        list
+            A list of :class:`Analysis` objects this analysis depends on.
+        """
+        dep_names = set(self.dependencies)
+        by_name = []
+        if dep_names:
+            if getattr(self, "event", None) is not None:
+                pool = self.event.analyses
+            elif hasattr(self, "_subject_obs"):
+                pool = [a for event in self._subject_obs for a in event.analyses]
+            else:
+                pool = []
+            by_name = [a for a in pool if a.name in dep_names]
+
+        combined = list(by_name)
+        for analysis in getattr(self, "analyses", None) or []:
+            if analysis not in combined:
+                combined.append(analysis)
+        return combined
+
     def validate_needs(self):
         """
         Validate that dependency productions will provide all required inputs.
 
         Checks each data product declared as required by this analysis's
-        pipeline against the outputs advertised by every dependency listed
-        in :attr:`needs`.  Issues a :class:`UserWarning` for each
-        requirement that is not satisfied by any dependency.
+        pipeline against the outputs advertised by every resolved
+        dependency (see :meth:`_dependency_analyses`).  Issues a
+        :class:`UserWarning` for each requirement that is not satisfied by
+        any dependency.
 
         This method is intended to be called at build or submission time
         so that configuration errors are caught before compute resources
@@ -577,8 +628,7 @@ class Analysis:
         UserWarning: Production requires 'psd' but no dependency provides it
         """
         required = self.pipeline.get_actual_inputs(self)
-        dep_names = set(self.dependencies)
-        dep_analyses = [a for a in self.event.analyses if a.name in dep_names]
+        dep_analyses = self._dependency_analyses()
         for requirement in required:
             satisfied = any(
                 requirement in dep.pipeline.get_actual_outputs(dep)

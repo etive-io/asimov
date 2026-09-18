@@ -452,6 +452,30 @@ is mostly a deployment-level concern rather than a pipeline one, but a pipeline 
 call ``asimov.telemetry.emit_event`` directly if it wants to record its own custom events
 alongside the built-in ones. See :doc:`hooks` for details on the hooks mechanism in general.
 
+Declaring pipeline inputs and outputs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds two class-level attributes to ``Pipeline`` - ``available_outputs`` and
+``required_inputs`` - which let a pipeline interface declare, as plain lists of strings, the
+data products it can produce and the ones it needs to run (for example ``["psd"]`` or
+``["frame_files", "psd"]``). Both default to an empty list, so existing pipeline interfaces
+need no changes to keep working exactly as before.
+
+Declaring these lets asimov call ``Analysis.validate_needs()`` ahead of building a production's
+configuration, which checks every required input against the outputs advertised by that
+analysis's resolved dependencies and issues a ``UserWarning`` (surfaced by ``asimov manage
+build``, but never fatal) for anything unsatisfied - catching a misconfigured ``needs:`` chain
+before compute time is wasted on it, rather than after the pipeline fails at runtime.
+
+If a production's actual inputs or outputs depend on its configuration rather than being fixed
+for the pipeline as a whole (for example, calibration is only required if a calibration model
+has been set), override ``get_actual_inputs(production)`` and/or ``get_actual_outputs(production)``
+instead of - or as well as - setting the class attributes; the defaults simply return
+``required_inputs``/``available_outputs`` unchanged.
+
+This is opt-in infrastructure: until a pipeline interface declares its inputs and outputs,
+``validate_needs()`` is a no-op for it.
+
 Ledger changes to be aware of
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
