@@ -288,6 +288,62 @@ needs:
             ProjectTestPipeline.required_inputs = original_required
             SimpleTestPipeline.available_outputs = original_available
 
+    def test_project_analysis_validate_needs_repeatable_on_same_instance(self):
+        """
+        Calling validate_needs() more than once on the same ProjectAnalysis
+        instance must not crash. ProjectAnalysis.dependencies re-queries the
+        ledger for its subjects on every access, and a second, independent
+        reconstruction of an event that already has productions can raise
+        AttributeError deep inside Event's own initialisation - so
+        _dependency_analyses() must cache its result per instance rather
+        than re-reading `dependencies` on every call.
+        """
+        from asimov.pipelines.testing.simple import SimpleTestPipeline
+        from asimov.pipelines.testing.project import ProjectTestPipeline
+
+        blueprint = """
+kind: analysis
+name: Prod0
+pipeline: simpletestpipeline
+status: uploaded
+"""
+        with open("test_repeat_prod0.yaml", "w") as f:
+            f.write(blueprint)
+        apply_page(file="test_repeat_prod0.yaml", event="GW150914_095045", ledger=self.ledger)
+
+        pa_blueprint = """
+kind: ProjectAnalysis
+name: pop-study-repeat
+pipeline: projecttestpipeline
+status: ready
+subjects:
+  - GW150914_095045
+needs:
+  - Prod0
+"""
+        with open("test_repeat_pa.yaml", "w") as f:
+            f.write(pa_blueprint)
+        apply_page(file="test_repeat_pa.yaml", ledger=self.ledger)
+
+        original_required = ProjectTestPipeline.required_inputs
+        original_available = SimpleTestPipeline.available_outputs
+        ProjectTestPipeline.required_inputs = ["psd"]
+        SimpleTestPipeline.available_outputs = []
+        try:
+            ledger = YAMLLedger(".asimov/ledger.yml")
+            pop_study = [a for a in ledger.project_analyses if a.name == "pop-study-repeat"][0]
+
+            for _ in range(3):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    pop_study.validate_needs()
+                user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+                self.assertEqual(len(user_warnings), 1)
+                self.assertIn("psd", str(user_warnings[0].message))
+        finally:
+            ProjectTestPipeline.required_inputs = original_required
+            SimpleTestPipeline.available_outputs = original_available
+
     def test_subject_analysis_validate_needs_uses_resolved_analyses(self):
         """
         SubjectAnalysis always has an empty `needs`/`dependencies` (it does not

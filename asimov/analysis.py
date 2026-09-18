@@ -581,16 +581,28 @@ class Analysis:
         Note that :class:`ProjectAnalysis` resolves its ``needs`` names by
         querying the ledger for each of its subjects as a side effect of
         reading :attr:`dependencies`, caching the resulting event objects in
-        ``self._subject_obs``. That cache is reused here rather than
-        querying the ledger again, since ``self.events``/``self.subjects``
-        would otherwise re-fetch (and reconstruct) the same events a second
-        time in the same call.
+        ``self._subject_obs``. Within a single call here, that cache is
+        reused rather than querying the ledger again, since
+        ``self.events``/``self.subjects`` would otherwise re-fetch (and
+        reconstruct) the same events a second time in the same call.
+
+        Reading :attr:`dependencies` on a :class:`ProjectAnalysis` is itself
+        not safe to do more than once per instance: each access re-queries
+        the ledger for its subjects, and a second, independent
+        reconstruction of an event that already has productions can raise
+        ``AttributeError: 'Event' object has no attribute 'name'`` deep in
+        the reconstruction. To keep this method idempotent regardless of how
+        many times it (or :meth:`validate_needs`) is called on the same
+        analysis instance, the result is computed once and cached.
 
         Returns
         -------
         list
             A list of :class:`Analysis` objects this analysis depends on.
         """
+        if getattr(self, "_dependency_analyses_cache", None) is not None:
+            return self._dependency_analyses_cache
+
         dep_names = set(self.dependencies)
         by_name = []
         if dep_names:
@@ -606,6 +618,8 @@ class Analysis:
         for analysis in getattr(self, "analyses", None) or []:
             if analysis not in combined:
                 combined.append(analysis)
+
+        self._dependency_analyses_cache = combined
         return combined
 
     def validate_needs(self):
