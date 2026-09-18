@@ -89,9 +89,7 @@ needs:
         prod1 = [p for p in event.productions if p.name == "Prod1"][0]
 
         # Temporarily patch the pipeline to declare a required input
-        original_required = prod1.pipeline.required_inputs
-        prod1.pipeline.required_inputs = ["psd"]
-        try:
+        with patch.object(prod1.pipeline, "required_inputs", ["psd"]):
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 prod1.validate_needs()
@@ -99,8 +97,6 @@ needs:
             self.assertEqual(len(user_warnings), 1)
             self.assertIn("psd", str(user_warnings[0].message))
             self.assertIn("no dependency provides it", str(user_warnings[0].message))
-        finally:
-            prod1.pipeline.required_inputs = original_required
 
     def test_no_warning_when_requirement_satisfied(self):
         """validate_needs() raises no warning when a dependency provides the required input."""
@@ -126,19 +122,13 @@ needs:
         prod1 = [p for p in event.productions if p.name == "Prod1"][0]
 
         # Prod1 requires "psd"; Prod0 declares it produces "psd"
-        original_required = prod1.pipeline.required_inputs
-        original_available = prod0.pipeline.available_outputs
-        prod1.pipeline.required_inputs = ["psd"]
-        prod0.pipeline.available_outputs = ["psd"]
-        try:
+        with patch.object(prod1.pipeline, "required_inputs", ["psd"]), \
+             patch.object(prod0.pipeline, "available_outputs", ["psd"]):
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 prod1.validate_needs()
             user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
             self.assertEqual(len(user_warnings), 0)
-        finally:
-            prod1.pipeline.required_inputs = original_required
-            prod0.pipeline.available_outputs = original_available
 
     def test_get_actual_inputs_returns_required_inputs(self):
         """Pipeline.get_actual_inputs() returns the required_inputs class attribute by default."""
@@ -155,13 +145,13 @@ status: ready
         event = self.ledger.get_event("GW150914_095045")[0]
         prod0 = [p for p in event.productions if p.name == "Prod0"][0]
 
-        original_required = prod0.pipeline.required_inputs
-        prod0.pipeline.required_inputs = ["frame_files", "psd"]
-        try:
+        # Both of these are dependency-graph-satisfiable products (unlike, say,
+        # externally-sourced frame files - see the "Declaring pipeline inputs
+        # and outputs" section of pipelines-dev.rst for why that distinction
+        # matters for what belongs in required_inputs).
+        with patch.object(prod0.pipeline, "required_inputs", ["psd", "calibration"]):
             result = prod0.pipeline.get_actual_inputs(prod0)
-            self.assertEqual(result, ["frame_files", "psd"])
-        finally:
-            prod0.pipeline.required_inputs = original_required
+            self.assertEqual(result, ["psd", "calibration"])
 
     def test_get_actual_outputs_returns_available_outputs(self):
         """Pipeline.get_actual_outputs() returns the available_outputs class attribute by default."""
@@ -178,13 +168,9 @@ status: uploaded
         event = self.ledger.get_event("GW150914_095045")[0]
         prod0 = [p for p in event.productions if p.name == "Prod0"][0]
 
-        original_available = prod0.pipeline.available_outputs
-        prod0.pipeline.available_outputs = ["psd", "calibration"]
-        try:
+        with patch.object(prod0.pipeline, "available_outputs", ["psd", "calibration"]):
             result = prod0.pipeline.get_actual_outputs(prod0)
             self.assertEqual(result, ["psd", "calibration"])
-        finally:
-            prod0.pipeline.available_outputs = original_available
 
     def test_multiple_requirements_partial_satisfaction(self):
         """validate_needs() warns only for unsatisfied requirements."""
@@ -210,11 +196,8 @@ needs:
         pe_prod = [p for p in event.productions if p.name == "PE"][0]
 
         # PE requires psd and calibration; PSD only provides psd
-        original_required = pe_prod.pipeline.required_inputs
-        original_available = psd_prod.pipeline.available_outputs
-        pe_prod.pipeline.required_inputs = ["psd", "calibration"]
-        psd_prod.pipeline.available_outputs = ["psd"]
-        try:
+        with patch.object(pe_prod.pipeline, "required_inputs", ["psd", "calibration"]), \
+             patch.object(psd_prod.pipeline, "available_outputs", ["psd"]):
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 pe_prod.validate_needs()
@@ -222,9 +205,6 @@ needs:
             # Only calibration is unsatisfied
             self.assertEqual(len(user_warnings), 1)
             self.assertIn("calibration", str(user_warnings[0].message))
-        finally:
-            pe_prod.pipeline.required_inputs = original_required
-            psd_prod.pipeline.available_outputs = original_available
 
     def test_project_analysis_validate_needs_does_not_crash(self):
         """
@@ -260,33 +240,34 @@ needs:
             f.write(pa_blueprint)
         apply_page(file="test_project_pa.yaml", ledger=self.ledger)
 
-        original_required = ProjectTestPipeline.required_inputs
-        original_available = SimpleTestPipeline.available_outputs
-        ProjectTestPipeline.required_inputs = ["psd"]
-        try:
+        # `pop_study.pipeline` (a ProjectTestPipeline instance) is only
+        # constructed after `ledger.project_analyses` is (re-)read below, and
+        # `validate_needs()` also queries dependency pipelines it resolves
+        # itself - so, unlike the single-event tests above, there is no
+        # single already-constructed instance to patch.object() on. The class
+        # attributes have to be patched instead, since every instance
+        # constructed while the patch is active shares them.
+        with patch.object(ProjectTestPipeline, "required_inputs", ["psd"]):
             # Unsatisfied: Prod0 (via SimpleTestPipeline) advertises no outputs.
-            SimpleTestPipeline.available_outputs = []
-            ledger = YAMLLedger(".asimov/ledger.yml")
-            pop_study = [a for a in ledger.project_analyses if a.name == "pop-study"][0]
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
-                pop_study.validate_needs()
-            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
-            self.assertEqual(len(user_warnings), 1)
-            self.assertIn("psd", str(user_warnings[0].message))
+            with patch.object(SimpleTestPipeline, "available_outputs", []):
+                ledger = YAMLLedger(".asimov/ledger.yml")
+                pop_study = [a for a in ledger.project_analyses if a.name == "pop-study"][0]
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    pop_study.validate_needs()
+                user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+                self.assertEqual(len(user_warnings), 1)
+                self.assertIn("psd", str(user_warnings[0].message))
 
             # Satisfied: Prod0 now advertises the "psd" output.
-            SimpleTestPipeline.available_outputs = ["psd"]
-            ledger = YAMLLedger(".asimov/ledger.yml")
-            pop_study = [a for a in ledger.project_analyses if a.name == "pop-study"][0]
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
-                pop_study.validate_needs()
-            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
-            self.assertEqual(len(user_warnings), 0)
-        finally:
-            ProjectTestPipeline.required_inputs = original_required
-            SimpleTestPipeline.available_outputs = original_available
+            with patch.object(SimpleTestPipeline, "available_outputs", ["psd"]):
+                ledger = YAMLLedger(".asimov/ledger.yml")
+                pop_study = [a for a in ledger.project_analyses if a.name == "pop-study"][0]
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    pop_study.validate_needs()
+                user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+                self.assertEqual(len(user_warnings), 0)
 
     def test_project_analysis_validate_needs_repeatable_on_same_instance(self):
         """
@@ -325,11 +306,8 @@ needs:
             f.write(pa_blueprint)
         apply_page(file="test_repeat_pa.yaml", ledger=self.ledger)
 
-        original_required = ProjectTestPipeline.required_inputs
-        original_available = SimpleTestPipeline.available_outputs
-        ProjectTestPipeline.required_inputs = ["psd"]
-        SimpleTestPipeline.available_outputs = []
-        try:
+        with patch.object(ProjectTestPipeline, "required_inputs", ["psd"]), \
+             patch.object(SimpleTestPipeline, "available_outputs", []):
             ledger = YAMLLedger(".asimov/ledger.yml")
             pop_study = [a for a in ledger.project_analyses if a.name == "pop-study-repeat"][0]
 
@@ -340,9 +318,6 @@ needs:
                 user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
                 self.assertEqual(len(user_warnings), 1)
                 self.assertIn("psd", str(user_warnings[0].message))
-        finally:
-            ProjectTestPipeline.required_inputs = original_required
-            SimpleTestPipeline.available_outputs = original_available
 
     def test_subject_analysis_validate_needs_uses_resolved_analyses(self):
         """
@@ -379,10 +354,7 @@ analyses:
         combined = [p for p in event.productions if p.name == "Combined"][0]
         self.assertIn(prod0, combined.analyses)
 
-        original_required = combined.pipeline.required_inputs
-        original_available = prod0.pipeline.available_outputs
-        combined.pipeline.required_inputs = ["psd"]
-        try:
+        with patch.object(combined.pipeline, "required_inputs", ["psd"]):
             # Unsatisfied: Prod0 does not (yet) advertise "psd".
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
@@ -393,15 +365,12 @@ analyses:
 
             # Satisfied: Prod0 advertises "psd", which Combined resolves via
             # its smart `analyses` spec rather than the `needs` graph.
-            prod0.pipeline.available_outputs = ["psd"]
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always")
-                combined.validate_needs()
-            user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
-            self.assertEqual(len(user_warnings), 0)
-        finally:
-            combined.pipeline.required_inputs = original_required
-            prod0.pipeline.available_outputs = original_available
+            with patch.object(prod0.pipeline, "available_outputs", ["psd"]):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    combined.validate_needs()
+                user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+                self.assertEqual(len(user_warnings), 0)
 
     def test_build_cli_surfaces_unsatisfied_dependency(self):
         """
@@ -432,9 +401,7 @@ needs:
         # all; that doesn't affect what's being checked here).
         from asimov.pipelines.testing.simple import SimpleTestPipeline
 
-        original_class_required = SimpleTestPipeline.required_inputs
-        SimpleTestPipeline.required_inputs = ["psd"]
-        try:
+        with patch.object(SimpleTestPipeline, "required_inputs", ["psd"]):
             with patch("asimov.current_ledger", new=YAMLLedger(".asimov/ledger.yml")):
                 reload(asimov)
                 reload(manage)
@@ -450,8 +417,6 @@ needs:
                     )
                 )
             )
-        finally:
-            SimpleTestPipeline.required_inputs = original_class_required
 
     def test_no_warning_when_no_dependencies(self):
         """validate_needs() raises no warning when pipeline has no required inputs and no deps."""

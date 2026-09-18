@@ -458,8 +458,20 @@ Declaring pipeline inputs and outputs
 Asimov 0.8 adds two class-level attributes to ``Pipeline`` - ``available_outputs`` and
 ``required_inputs`` - which let a pipeline interface declare, as plain lists of strings, the
 data products it can produce and the ones it needs to run (for example ``["psd"]`` or
-``["frame_files", "psd"]``). Both default to an empty list, so existing pipeline interfaces
+``["psd", "calibration"]``). Both default to an empty list, so existing pipeline interfaces
 need no changes to keep working exactly as before.
+
+.. important::
+
+    Only list products here that are meant to come from *another analysis in the ledger*,
+    reachable via ``needs:`` or the smart ``analyses:`` spec. ``validate_needs()`` (below) has
+    no way to tell "nothing in the ledger produces this" apart from "this comes from outside
+    the dependency graph entirely" (raw frame files from datafind, a PSD baked into the
+    pipeline's own defaults, a calibration envelope pulled from CVMFS, and so on) - it treats
+    every entry in ``required_inputs``/``get_actual_inputs()`` as something one of this
+    analysis's dependencies must advertise. List an externally-sourced input there and every
+    production using that pipeline will warn on every build, forever, because no dependency
+    will ever satisfy it.
 
 Nothing in asimov ever reads ``available_outputs``/``required_inputs`` directly. Every caller,
 including ``Analysis.validate_needs()`` (below), goes through two methods instead:
@@ -483,7 +495,7 @@ config, etc.) to decide what applies for that specific run, for example:
 .. code-block:: python
 
     class Bilby(Pipeline):
-        required_inputs = ["frame_files"]
+        required_inputs = ["psd"]
 
         def get_actual_inputs(self, production):
             inputs = list(self.required_inputs)
@@ -491,10 +503,15 @@ config, etc.) to decide what applies for that specific run, for example:
                 inputs.append("calibration")
             return inputs
 
+Note that ``frame_files`` deliberately does *not* appear here even though Bilby needs them to
+run: they come from datafind, not from another analysis in the ledger, so declaring them would
+only ever produce warnings ``validate_needs()`` can't do anything useful with (see the note
+above).
+
 The class attributes and the conditional override are not an either/or choice: set
 ``required_inputs``/``available_outputs`` to whatever's unconditionally true for the pipeline,
 and override the methods only to add or remove entries that depend on configuration - as in the
-example above, which keeps ``frame_files`` in ``required_inputs`` and only adds ``calibration``
+example above, which keeps ``psd`` in ``required_inputs`` and only adds ``calibration``
 conditionally.
 
 Declaring these lets asimov call ``Analysis.validate_needs()`` ahead of building a production's
