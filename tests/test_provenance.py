@@ -22,8 +22,8 @@ from asimov.cli.application import apply_page
 from asimov.cli.project import make_project
 from asimov.ledger import DatabaseLedger, YAMLLedger
 from asimov.pipelines.testing.simple import SimpleTestPipeline
-from asimov.provenance import ProvenanceError, build_provenance
-from asimov.rocrate import package_analysis
+from asimov.provenance import PROV_CONTEXT, ProvenanceError, _entity_id, build_provenance
+from asimov.rocrate import RO_CRATE_CONTEXT, package_analysis
 from asimov.storage import Store
 
 EVENT_BLUEPRINT = """
@@ -32,6 +32,9 @@ name: GW150914_095045
 interferometers:
 - H1
 - L1
+quality:
+  state vector:
+    H1: H1:DCS-CALIB_STATE_VECTOR_C01
 """
 
 ANALYSIS_BLUEPRINT = """
@@ -42,6 +45,25 @@ comment: A test analysis
 event: GW150914_095045
 status: ready
 """
+
+
+class EntityIdTests(unittest.TestCase):
+    """`_entity_id` must produce valid, collision-safe URIs from arbitrary
+    asimov names, which aren't restricted to URI-safe characters."""
+
+    def test_names_with_spaces_and_colons_are_percent_encoded(self):
+        entity_id = _entity_id("config", "GW 150914", "Prod:1")
+        self.assertNotIn(" ", entity_id)
+        self.assertEqual(
+            entity_id, "urn:asimov:config:GW%20150914:Prod%3A1"
+        )
+
+    def test_a_colon_inside_a_name_cannot_collide_with_the_separator(self):
+        # Without encoding, ("a:b", "c") and ("a", "b:c") would produce the
+        # same joined string; each component must stay distinguishable.
+        first = _entity_id("kind", "a:b", "c")
+        second = _entity_id("kind", "a", "b:c")
+        self.assertNotEqual(first, second)
 
 
 class ProvenanceTestBase(unittest.TestCase):
@@ -116,6 +138,23 @@ class BuildProvenanceTests(ProvenanceTestBase):
             config_entities[0]["asimov:value"]["pipeline"], "simpletestpipeline"
         )
 
+    def test_config_entity_includes_inherited_event_level_defaults(self):
+        # TestAnalysis doesn't set `quality` itself - it inherits it
+        # unchanged from the event (see EVENT_BLUEPRINT). `Analysis.to_dict()`
+        # would diff this back out as "just a default"; a standalone
+        # provenance/crate export has nowhere else to record it, so it must
+        # be included here for the export to be self-contained.
+        document = build_provenance(
+            self.ledger, "GW150914_095045", "TestAnalysis", store=self.store
+        )
+        config_entities = [
+            node for node in document["@graph"] if node.get("asimov:kind") == "configuration"
+        ]
+        self.assertEqual(
+            config_entities[0]["asimov:value"]["quality"]["state vector"]["H1"],
+            "H1:DCS-CALIB_STATE_VECTOR_C01",
+        )
+
     def test_environment_entity_present(self):
         document = build_provenance(
             self.ledger, "GW150914_095045", "TestAnalysis", store=self.store
@@ -158,6 +197,29 @@ class BuildProvenanceTests(ProvenanceTestBase):
         agent_names = {agent["asimov:name"] for agent in agents}
         self.assertIn("asimov", agent_names)
         self.assertIn("SimpleTestPipeline", agent_names)
+
+    def test_dependencies_use_wasinformedby_not_used(self):
+        # A dependency is another *activity* (an upstream analysis), so it
+        # must relate via `prov:wasInformedBy` (activity-to-activity), never
+        # via `prov:used` (whose range is `prov:Entity`).
+        self.analysis.resolved_dependencies = ["UpstreamAnalysis"]
+        # build_provenance() re-fetches the analysis from the ledger rather
+        # than reusing this in-memory object, so the change must be
+        # persisted first - the setter itself only mutates `.meta`.
+        self.ledger.update_event(self.analysis.event)
+        document = build_provenance(
+            self.ledger, "GW150914_095045", "TestAnalysis", store=self.store
+        )
+        activities = [node for node in document["@graph"] if node["@type"] == "prov:Activity"]
+        self.assertEqual(len(activities), 1)
+        activity = activities[0]
+
+        upstream_activity_id = "urn:asimov:activity:GW150914_095045:UpstreamAnalysis"
+        self.assertIn(
+            {"@id": upstream_activity_id}, activity["prov:wasInformedBy"]
+        )
+        used_ids = {entity["@id"] for entity in activity["prov:used"]}
+        self.assertNotIn(upstream_activity_id, used_ids)
 
     def test_document_is_json_serialisable(self):
         document = build_provenance(
@@ -215,6 +277,20 @@ class PackageAnalysisTests(ProvenanceTestBase):
         ]
         self.assertEqual(len(referenced), 1)
         self.assertTrue(referenced[0]["asimov:externallyStored"])
+
+    def test_crate_context_resolves_both_ro_crate_and_prov_terms(self):
+        # The embedded provenance nodes use `prov:`/`asimov:` terms that the
+        # RO-Crate context alone doesn't define; `@context` must extend
+        # (not replace) it with those, or a JSON-LD processor can't expand
+        # them against the intended vocabularies.
+        destination = self._crate_path()
+        package_analysis(
+            self.ledger, "GW150914_095045", "TestAnalysis", destination, store=self.store
+        )
+        with open(os.path.join(destination, "ro-crate-metadata.json")) as metadata_file:
+            metadata = json.load(metadata_file)
+
+        self.assertEqual(metadata["@context"], [RO_CRATE_CONTEXT, PROV_CONTEXT])
 
     def test_refuses_to_overwrite_existing_directory(self):
         destination = self._crate_path()

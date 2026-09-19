@@ -30,7 +30,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from asimov import config
-from asimov.provenance import _ENVIRONMENT_ASSET_FILES, _resolve_analysis, build_provenance
+from asimov.provenance import (
+    PROV_CONTEXT,
+    _ENVIRONMENT_ASSET_FILES,
+    _effective_configuration,
+    _resolve_analysis,
+    build_provenance,
+)
 from asimov.storage import Store
 
 RO_CRATE_CONTEXT = "https://w3id.org/ro/crate/1.1/context"
@@ -84,7 +90,7 @@ def package_analysis(
 
     config_path = os.path.join(destination, "config.json")
     with open(config_path, "w") as config_file:
-        json.dump(analysis.to_dict(event=False), config_file, indent=2, default=str)
+        json.dump(_effective_configuration(analysis), config_file, indent=2, default=str)
 
     has_part = [{"@id": "provenance.json"}, {"@id": "config.json"}]
     file_entities = [
@@ -166,7 +172,11 @@ def package_analysis(
     }
 
     ro_crate_metadata = {
-        "@context": RO_CRATE_CONTEXT,
+        # The RO-Crate context alone doesn't define the `prov:`/`asimov:`
+        # terms used by the embedded provenance nodes below; JSON-LD's
+        # array form of `@context` lets a second context extend the first
+        # rather than replace it, so both vocabularies resolve here.
+        "@context": [RO_CRATE_CONTEXT, PROV_CONTEXT],
         "@graph": (
             [metadata_descriptor, root_dataset]
             + file_entities

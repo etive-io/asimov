@@ -20,6 +20,8 @@ this works unchanged against the YAML ledger, the current database ledger
 
 import json
 import os
+import urllib.parse
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -79,8 +81,46 @@ def _resolve_analysis(ledger, subject_name: str, analysis_name: str):
 
 
 def _entity_id(kind: str, subject_name: str, analysis_name: str, suffix: str = "") -> str:
-    tail = f":{suffix}" if suffix else ""
-    return f"urn:asimov:{kind}:{subject_name}:{analysis_name}{tail}"
+    # Names in asimov aren't restricted to URI-safe characters (blueprints
+    # can use names with spaces, colons, etc.), so each component is
+    # percent-encoded before being joined - this also stops a literal ":"
+    # in a name from being mistaken for one of the separators below.
+    components = [subject_name, analysis_name]
+    if suffix:
+        components.append(suffix)
+    encoded = ":".join(
+        urllib.parse.quote(str(component), safe="") for component in components
+    )
+    return f"urn:asimov:{kind}:{encoded}"
+
+
+def _effective_configuration(analysis) -> dict:
+    """
+    The analysis's full effective configuration.
+
+    Unlike ``Analysis.to_dict()``, this does not strip out values that
+    happen to match a project/pipeline default. That diffing exists so the
+    ledger doesn't duplicate defaults it already records elsewhere when an
+    analysis is saved back into it - a standalone provenance/crate export
+    has nowhere else to record those defaults, so it needs the values
+    actually used, not just what this analysis explicitly overrode.
+    ``analysis.meta`` already has defaults merged in (see
+    ``Analysis.__init__``, which merges pipeline and event/subject defaults
+    into it), so this builds from that directly rather than going through
+    ``to_dict()``.
+    """
+    effective = deepcopy(analysis.meta)
+    for internal_key in ("ledger", "pipelines", "productions"):
+        effective.pop(internal_key, None)
+    effective["name"] = analysis.name
+    effective["event"] = analysis.event.name
+    pipeline = analysis.pipeline
+    effective["pipeline"] = pipeline if isinstance(pipeline, str) else pipeline.name.lower()
+    effective["comment"] = analysis.comment
+    effective["status"] = analysis.status
+    if analysis.review:
+        effective["review"] = analysis.review.to_dicts()
+    return effective
 
 
 def _pipeline_version_from_pip_freeze(pip_freeze: str, pipeline_name: str) -> Optional[str]:
@@ -176,7 +216,9 @@ def build_provenance(
     config_id = _entity_id("config", subject_name, analysis_name)
     activity_id = _entity_id("activity", subject_name, analysis_name)
     asimov_agent_id = "urn:asimov:agent:asimov"
-    pipeline_agent_id = f"urn:asimov:agent:pipeline:{pipeline_name.lower()}"
+    pipeline_agent_id = (
+        f"urn:asimov:agent:pipeline:{urllib.parse.quote(pipeline_name.lower(), safe='')}"
+    )
 
     graph: list[dict] = []
 
@@ -184,11 +226,7 @@ def build_provenance(
         "@id": config_id,
         "@type": "prov:Entity",
         "asimov:kind": "configuration",
-        # `event=False` gives the flat, self-identifying form of the config
-        # (explicit `name`/`event` keys, not nested under `{name: {...}}`
-        # for inclusion inside a parent event document) - the right shape
-        # for a standalone provenance record.
-        "asimov:value": json.loads(json.dumps(analysis.to_dict(event=False), default=str)),
+        "asimov:value": json.loads(json.dumps(_effective_configuration(analysis), default=str)),
     }
     graph.append(config_entity)
 
@@ -216,10 +254,13 @@ def build_provenance(
                 environment["pip_freeze"], pipeline_name
             )
 
-    dependency_names = list(getattr(analysis, "resolved_dependencies", None) or [])
-    for dependency_name in dependency_names:
-        dependency_activity_id = _entity_id("activity", subject_name, dependency_name)
-        used_ids.append(dependency_activity_id)
+    # Dependencies are other *activities* (upstream analyses), not entities,
+    # so they belong on `prov:wasInformedBy` (activity-to-activity) rather
+    # than `prov:used` (whose range is `prov:Entity`) - see `used_ids` below.
+    dependency_activity_ids = [
+        _entity_id("activity", subject_name, dependency_name)
+        for dependency_name in (getattr(analysis, "resolved_dependencies", None) or [])
+    ]
 
     output_entities = []
     try:
@@ -252,6 +293,10 @@ def build_provenance(
         "prov:used": [{"@id": entity_id} for entity_id in used_ids],
         "prov:wasAssociatedWith": [{"@id": asimov_agent_id}, {"@id": pipeline_agent_id}],
     }
+    if dependency_activity_ids:
+        activity["prov:wasInformedBy"] = [
+            {"@id": dependency_id} for dependency_id in dependency_activity_ids
+        ]
     graph.append(activity)
 
     graph.append(
