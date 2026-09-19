@@ -159,6 +159,7 @@ Advanced topics
 
    analyses
    environment-reproducibility
+   provenance
    build-process
    scheduler-integration
    dag-translation-examples
