@@ -4,6 +4,7 @@ Olivaw management commands
 
 import os
 import pathlib
+import warnings
 
 import click
 
@@ -14,6 +15,35 @@ from asimov import LOGGER_LEVEL
 from asimov.event import DescriptionException
 from asimov.pipeline import PipelineException
 from asimov.git import EventRepo
+
+def check_dependencies_satisfied(analysis, logger):
+    """
+    Run validate_needs() for an analysis ahead of building its configuration.
+
+    validate_needs() issues a UserWarning for each required data product
+    that no dependency advertises producing; this is surfaced to the CLI
+    user as well as the log, but never blocks the build, since pipelines
+    which don't declare available_outputs/required_inputs (the majority,
+    at least until every pipeline has adopted the new metadata) will
+    always pass trivially, and a bug in a third-party pipeline's metadata
+    should not prevent an otherwise-ready job from being built.
+
+    Args:
+    analysis: the analysis (production or project analysis) to check
+    logger: the logger to record any problems to
+    """
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            analysis.validate_needs()
+        for warning in caught:
+            click.echo(
+                click.style("●", fg="yellow") + f" {warning.message}"
+            )
+            logger.warning(str(warning.message))
+    except Exception as e:
+        logger.warning(f"Could not validate dependencies for {analysis.name}: {e}")
+
 
 def check_priority_method(production):
     """         
@@ -88,6 +118,8 @@ def build(event, dryrun):
 
             analysis.pipeline.before_config()
 
+            check_dependencies_satisfied(analysis, logger)
+
             analysis.make_config(
                 filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
                 dryrun=dryrun,
@@ -132,6 +164,8 @@ def build(event, dryrun):
                     #     path = pathlib.Path(production.rundir)
                     # else:
                     #     path = pathlib.Path(config.get("general", "rundir_default"))
+
+                    check_dependencies_satisfied(production, logger)
 
                     if dryrun:
                         print(f"Will create {production.name}.ini")

@@ -452,6 +452,107 @@ is mostly a deployment-level concern rather than a pipeline one, but a pipeline 
 call ``asimov.telemetry.emit_event`` directly if it wants to record its own custom events
 alongside the built-in ones. See :doc:`hooks` for details on the hooks mechanism in general.
 
+Declaring pipeline inputs and outputs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds two class-level attributes to ``Pipeline`` - ``available_outputs`` and
+``required_inputs`` - which let a pipeline interface declare, as plain lists of strings, the
+data products it can produce and the ones it needs to run (for example ``["psd"]`` or
+``["psd", "calibration"]``). Both default to an empty list, so existing pipeline interfaces
+need no changes to keep working exactly as before.
+
+.. important::
+
+    Only list products here that are meant to come from *another analysis in the ledger*,
+    reachable via ``needs:`` or the smart ``analyses:`` spec. ``validate_needs()`` (below) has
+    no way to tell "nothing in the ledger produces this" apart from "this comes from outside
+    the dependency graph entirely" (raw frame files from datafind, a PSD baked into the
+    pipeline's own defaults, a calibration envelope pulled from CVMFS, and so on) - it treats
+    every entry in ``required_inputs``/``get_actual_inputs()`` as something one of this
+    analysis's dependencies must advertise. List an externally-sourced input there and every
+    production using that pipeline will warn on every build, forever, because no dependency
+    will ever satisfy it.
+
+Nothing in asimov ever reads ``available_outputs``/``required_inputs`` directly. Every caller,
+including ``Analysis.validate_needs()`` (below), goes through two methods instead:
+
+``Pipeline.get_actual_outputs(production)``
+    Returns the list of data products this specific production will generate. Defaults to
+    ``list(self.available_outputs)``.
+
+``Pipeline.get_actual_inputs(production)``
+    Returns the list of data products this specific production requires. Defaults to
+    ``list(self.required_inputs)``.
+
+**A pipeline's real inputs and outputs are frequently not fixed - they depend on how that
+particular production is configured** (a calibration model being set, ROQ being enabled,
+marginalisation settings, and so on). ``available_outputs``/``required_inputs`` only cover the
+common case where a pipeline's inputs and outputs are the same for every production that uses
+it. As soon as they can vary, override ``get_actual_outputs``/``get_actual_inputs`` in your
+``Pipeline`` subclass and inspect the ``production`` argument (its ``meta``, its pipeline
+config, etc.) to decide what applies for that specific run, for example:
+
+.. code-block:: python
+
+    class Bilby(Pipeline):
+        required_inputs = ["psd"]
+
+        def get_actual_inputs(self, production):
+            inputs = list(self.required_inputs)
+            if production.meta.get("calibration", {}).get("model"):
+                inputs.append("calibration")
+            return inputs
+
+Note that ``frame_files`` deliberately does *not* appear here even though Bilby needs them to
+run: they come from datafind, not from another analysis in the ledger, so declaring them would
+only ever produce warnings ``validate_needs()`` can't do anything useful with (see the note
+above).
+
+The class attributes and the conditional override are not an either/or choice: set
+``required_inputs``/``available_outputs`` to whatever's unconditionally true for the pipeline,
+and override the methods only to add or remove entries that depend on configuration - as in the
+example above, which keeps ``psd`` in ``required_inputs`` and only adds ``calibration``
+conditionally.
+
+Declaring these lets asimov call ``Analysis.validate_needs()`` ahead of building a production's
+configuration, which checks every required input (from ``get_actual_inputs``) against the
+outputs advertised (via ``get_actual_outputs``) by that analysis's resolved dependencies, and
+issues a ``UserWarning`` for anything unsatisfied - catching a misconfigured ``needs:`` chain
+before compute time is wasted on it, rather than after the pipeline fails at runtime.
+
+This is opt-in infrastructure: until a pipeline interface declares its inputs and outputs (via
+either mechanism above), ``validate_needs()`` is a no-op for it.
+
+Resolving a "requires X but no dependency provides it" warning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``asimov manage build`` runs ``validate_needs()`` for every production and project analysis it
+builds a configuration for, and prints (and logs) a line like this for each unsatisfied
+requirement it finds::
+
+    ● Analysis 'Prod1' requires 'psd' but no dependency provides it
+
+This is a warning, not an error: it never stops the build, since it's meant to catch likely
+misconfigurations early rather than gate submission on a feature that isn't universally adopted
+by pipelines yet. To resolve one, check, in order:
+
+1. **Is the dependency missing from ``needs:``?** The production doesn't list (or list
+   correctly - names are case-sensitive) an analysis that's supposed to provide ``psd``. Add or
+   fix the entry in the production's ``needs:``.
+2. **Does the analysis it depends on actually declare that output?** Look at the dependency's
+   pipeline interface - has it set ``available_outputs`` (or overridden ``get_actual_outputs``)
+   to include ``psd``? If the pipeline genuinely produces it but hasn't declared it yet, that's
+   a gap in the pipeline interface to fix, not in your ledger.
+3. **If the output is conditional, is it actually being produced for *this* dependency's
+   configuration?** For example, if ``get_actual_outputs`` only returns ``psd`` when a
+   particular option is set on the upstream production, and that option isn't set, the warning
+   is correct: the dependency you pointed to won't produce ``psd`` under its current
+   configuration. Either change that production's configuration so it does, or point ``needs:``
+   at a different analysis that does.
+4. **Is the requirement itself wrong?** If the downstream pipeline doesn't actually need
+   ``psd`` for this production's configuration, that's a gap in *its* ``get_actual_inputs``
+   override, which should stop listing it as required in that case.
+
 Ledger changes to be aware of
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -27,6 +27,7 @@ import os
 import html
 import urllib.parse
 import configparser
+import warnings
 from copy import deepcopy
 import pathlib
 
@@ -556,6 +557,102 @@ class Analysis:
     @status.setter
     def status(self, value):
         self.status_str = value.lower()
+
+    def _dependency_analyses(self):
+        """
+        Resolve this analysis's dependencies into a list of analysis objects.
+
+        Dependencies can be declared through either of two mechanisms used
+        across the ``Analysis`` subclasses:
+
+        - The name-based ``needs`` graph (:attr:`dependencies`), matched
+          against the analyses belonging to the relevant event(s). This is
+          the mechanism used by single-event analyses such as
+          :class:`SimpleAnalysis`, and is also supported by
+          :class:`ProjectAnalysis` (matched across all of its subjects).
+        - The smart dependency spec that :class:`SubjectAnalysis` and
+          :class:`ProjectAnalysis` resolve directly into :attr:`analyses`.
+
+        Both mechanisms are combined so that dependency validation works
+        regardless of which one a given analysis actually uses; classes
+        which use neither (or have no dependencies) simply contribute an
+        empty list.
+
+        Note that :class:`ProjectAnalysis` resolves its ``needs`` names by
+        querying the ledger for each of its subjects as a side effect of
+        reading :attr:`dependencies`, caching the resulting event objects in
+        ``self._subject_obs``. That property caches and reuses those events
+        itself (querying the ledger for the same subjects more than once is
+        not safe - a second, independent reconstruction of an event that
+        already has productions can raise
+        ``AttributeError: 'Event' object has no attribute 'name'`` deep in
+        the reconstruction), so this method doesn't need to re-derive that
+        protection; it just reads ``_subject_obs`` directly.
+
+        This method deliberately does *not* cache its own result: unlike the
+        event objects above, :attr:`analyses` - the smart-dependency list
+        used by :class:`SubjectAnalysis`/:class:`ProjectAnalysis` - is
+        mutated in place by ``resolve_analyses()``, which
+        ``Event.update_graph()`` can call again on the same instance once
+        more productions become available (for example, after the instance
+        was constructed before a sibling production it depends on existed
+        yet). Caching here would freeze whatever :attr:`analyses` looked
+        like at the first call, silently hiding dependencies that are
+        resolved later on the same instance.
+
+        Returns
+        -------
+        list
+            A list of :class:`Analysis` objects this analysis depends on.
+        """
+        dep_names = set(self.dependencies)
+        by_name = []
+        if dep_names:
+            if getattr(self, "event", None) is not None:
+                pool = self.event.analyses
+            elif hasattr(self, "_subject_obs"):
+                pool = [a for event in self._subject_obs for a in event.analyses]
+            else:
+                pool = []
+            by_name = [a for a in pool if a.name in dep_names]
+
+        combined = list(by_name)
+        for analysis in getattr(self, "analyses", None) or []:
+            if analysis not in combined:
+                combined.append(analysis)
+
+        return combined
+
+    def validate_needs(self):
+        """
+        Validate that dependency productions will provide all required inputs.
+
+        Checks each data product declared as required by this analysis's
+        pipeline against the outputs advertised by every resolved
+        dependency (see :meth:`_dependency_analyses`).  Issues a
+        :class:`UserWarning` for each requirement that is not satisfied by
+        any dependency.
+
+        This method is intended to be called at build or submission time
+        so that configuration errors are caught before compute resources
+        are consumed.
+
+        Examples
+        --------
+        >>> analysis.validate_needs()
+        UserWarning: Analysis 'my-analysis' requires 'psd' but no dependency provides it
+        """
+        required = self.pipeline.get_actual_inputs(self)
+        dep_analyses = self._dependency_analyses()
+        for requirement in required:
+            satisfied = any(
+                requirement in dep.pipeline.get_actual_outputs(dep)
+                for dep in dep_analyses
+            )
+            if not satisfied:
+                warnings.warn(
+                    f"Analysis '{self.name}' requires '{requirement}' but no dependency provides it"
+                )
 
     def matches_filter(self, attribute, match, negate=False):
         """
@@ -1612,7 +1709,15 @@ class ProjectAnalysis(Analysis):
         - Top-level items in needs are OR'd together
         - Nested lists represent AND conditions (all must match)
         - Individual filters can be negated with !
-        
+
+        Resolving the subjects queries the ledger for each of them, which
+        reconstructs a fresh :class:`~asimov.event.Event` every time. Doing
+        that twice for an event that already has productions can raise
+        ``AttributeError`` deep inside the second reconstruction, so once all
+        subjects have been fetched here they're cached in
+        :attr:`_subject_obs` and reused on subsequent accesses of this
+        property, rather than querying the ledger again.
+
         Returns
         -------
         list
@@ -1625,12 +1730,14 @@ class ProjectAnalysis(Analysis):
             matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
             analyses = []
-            for subject in self._subjects:
-                sub = self.ledger.get_event(subject)[0]
-                self._subject_obs.append(sub)
+            if len(self._subject_obs) != len(self._subjects):
+                self._subject_obs = [
+                    self.ledger.get_event(subject)[0] for subject in self._subjects
+                ]
+            for sub in self._subject_obs:
                 for analysis in sub.analyses:
                     analyses.append(analysis)
-            
+
             for requirement in requirements:
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
