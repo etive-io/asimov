@@ -27,6 +27,7 @@ from asimov.cli import (  # NoQA
     monitor,
     production,
     project,
+    provenance,
     report,
     review,
     blueprint,
@@ -99,6 +100,9 @@ olivaw.add_command(production.production)
 # Review commands
 olivaw.add_command(review.review)
 olivaw.add_command(application.apply)
+# Provenance / reproducibility commands
+olivaw.add_command(provenance.provenance)
+olivaw.add_command(provenance.package)
 
 
 @click.command()
