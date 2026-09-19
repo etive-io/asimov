@@ -29,7 +29,7 @@ from asimov.storage import Store
 
 PROV_CONTEXT = {
     "prov": "http://www.w3.org/ns/prov#",
-    "asimov": "https://asimov.docs.ligo.org/asimov/ns#",
+    "asimov": "https://etive-io.github.io/asimov/ns#",
     "xsd": "http://www.w3.org/2001/XMLSchema#",
 }
 
