@@ -13,7 +13,7 @@ import asimov
 import asimov.database
 from asimov import config
 from asimov.analysis import ProjectAnalysis
-from asimov.event import Event, Production
+from asimov.event import Event, Production, Subject
 from asimov.utils import update, diff_dict, set_directory
 from filelock import FileLock
 
@@ -260,6 +260,8 @@ class YAMLLedger(Ledger):
             defaults["likelihood"] = self.data["likelihood"]
         if "scheduler" in self.data:
             defaults["scheduler"] = self.data["scheduler"]
+        if "waveform" in self.data:
+            defaults["waveform"] = self.data["waveform"]
         return defaults
 
     @property
@@ -279,13 +281,16 @@ class YAMLLedger(Ledger):
             ]
         return self._events_cache
 
-    def get_event(self, event=None):
-        if event:
-            kwargs = self.events[event]
+    def get_subject(self, subject=None):
+        if subject:
+            kwargs = self.events[subject]
             kwargs.pop("ledger", None)
-            return [Event(**kwargs, ledger=self)]
+            return [Subject(**kwargs, ledger=self)]
         else:
             return self._all_events
+
+    def get_event(self, event=None):
+        return self.get_subject(subject=event)
 
     def get_productions(self, event=None, filters=None):
         """Get a list of productions either for a single event or for all events.
@@ -651,6 +656,32 @@ class DatabaseLedger(Ledger):
         # This keeps the database focused on analysis data
         return {}
 
+    def get_subject(self, subject=None):
+        """
+        Find a specific subject in the ledger and return it.
+
+        If no subject name is given, all subjects are returned instead.
+
+        Parameters
+        ----------
+        subject : str, optional
+            Subject name. If None, returns all subjects.
+
+        Returns
+        -------
+        list of Event
+            The requested subject(s), as a one-element list when ``subject``
+            is given (matching the list-returning convention used
+            throughout the codebase, e.g. ``ledger.get_event(name)[0]``).
+        """
+        if subject:
+            event_dicts = self.db.query("event", "name", subject)
+            if not event_dicts:
+                raise ValueError(f"Event '{subject}' not found in ledger")
+            return [self._event_from_dict(event_dicts[0])]
+        else:
+            return self.events
+
     def get_event(self, event=None):
         """
         Find a specific event in the ledger and return it.
@@ -665,14 +696,7 @@ class DatabaseLedger(Ledger):
         Event or list of Event
             The requested event(s).
         """
-        if event:
-            event_dicts = self.db.query("event", "name", event)
-            if not event_dicts:
-                raise ValueError(f"Event '{event}' not found in ledger")
-            event_dict = event_dicts[0]
-            return [self._event_from_dict(event_dict)]
-        else:
-            return self.events
+        return self.get_subject(subject=event)
 
     def get_productions(self, event=None, filters=None):
         """

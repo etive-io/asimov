@@ -37,15 +37,26 @@ logger.setLevel(LOGGER_LEVEL)
 def get_ledger():
     """
     Get the current ledger instance.
-    
+
     Reloads the ledger to ensure we have the latest state,
     preventing issues where the ledger is cached at import time.
-    
+
+    If called from inside a ``with project:`` block, returns
+    ``project.ledger`` instead of constructing a fresh ``Ledger``, since
+    only ``project.ledger`` is saved when that block exits -- mutations
+    made via an independently constructed ledger would otherwise be
+    silently discarded.
+
     Returns
     -------
     Ledger
         The current ledger instance.
     """
+    from asimov.project import get_active_project
+    active_project = get_active_project()
+    if active_project is not None:
+        return active_project.ledger
+
     from asimov import config
     if config.get("ledger", "engine") == "yamlfile":
         from asimov.ledger import YAMLLedger
@@ -116,7 +127,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
     )  # Load as a dictionary so we can identify the object type it contains
 
     for document in quick_parse:
-        if document["kind"] == "event":
+        if document["kind"] in ("event", "subject"):
             logger.info("Found an event")
             document.pop("kind")
             event_obj = asimov.event.Event.from_yaml(yaml.dump(document))
