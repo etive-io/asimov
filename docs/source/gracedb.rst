@@ -19,6 +19,7 @@ Once the plugin is installed you can directly download information about a trigg
 
 If you want to pull information from non-public events you'll first need to ensure that you have a LIGO proxy set up.
 The easiest way to do this as a normal user is just to run `ligo_proxy_init`:
+
 ::
    $ ligo_proxy_init isaac.asimov
 

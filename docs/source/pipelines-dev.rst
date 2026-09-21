@@ -1,12 +1,10 @@
-<<<<<<< HEAD
 .. _pipeline-dev:
 
-=======
->>>>>>> v0.4-release
 Developing new pipelines
 ========================
 
-Asimov only supports a small number of pipelines "out of the box", but allows for new pipelines to be added as plugins.
+Asimov ships no analysis pipelines "out of the box" (only its own internal testing pipelines); all
+analysis pipelines are added as plugins.
 
 There are two broad approaches to writing a plugin for asimov.
 Either you can incorporate it directly into your codebase, which is especially suitable if your pipeline is written in python, or you can write an interface plugin which allows interaction between asimov and the pipeline.
@@ -67,7 +65,8 @@ These methods are required for the interface to function properly.
 
 The most important of these is the ``build_dag`` method, which is used by the asimov framework to construct the DAG file to be submitted to the condor scheduler.
 
-An example of a complete pipeline interface can be seen in the code for :class:``asimov.pipelines.bilby.BilbyPipeline``.
+An example of a complete pipeline interface can be seen in the code for ``asimov.pipelines.testing.simple.SimpleTestPipeline``,
+which asimov's own test suite uses in place of a real analysis pipeline.
 
 
 Pipeline hooks
@@ -77,6 +76,12 @@ It is possible to customise the run process of the asimov pipeline runner using 
 By overloading the hook methods (listed below) inherited from the ``asimov.pipeline.Pipeline`` class additional operations can
 be conducted during the processing workflow.
 Hooks should take no arguments.
+
+``Pipeline.before_config``
+    This method is called by ``asimov manage build`` before the pipeline's configuration file is generated, and can be used to perform any pre-processing which is required before configuration.
+
+``Pipeline.before_build``
+    This method is called by ``asimov manage build`` after the configuration file is generated but before the DAG is built, and can be used to perform any pre-processing which is required before the DAG is constructed.
 
 ``Pipeline.build_dag``
     This method should call the pipeline script which will take the configuration file for the analysis, and use them to generate submission files for the scheduler.
@@ -98,18 +103,13 @@ Hooks should take no arguments.
 Optional methods
 ----------------
 
-``Pipeline.run_pesummary``
-    This method will run PE summary on the samples created by an analysis pipeline.
-    You may overload this method if you need to run PESummary in a non-standard way.
-    You may also need to overload the ``Pipeline.detect_completion_processing`` method if you change this method.
-
 ``Pipeline.store_results``
     This method will store the results of the analysis in the asimov results store for the project.
-    The default method will collect the results files from PESummary, but it can be overloaded in order to store a different set of files or perform additional tasks prior to storage.
+    It can be overloaded in order to store a different set of files or perform additional tasks prior to storage.
 
 ``Pipeline.detect_completion_processing``
-    This method provides the logic for determining if PESummary, or whichever post-processing commands are run, have completed successfully, and produced outputs.
-    You should only need to overload this method if you have altered ``Pipeline.run_pesummary``.
+    This method provides the logic for determining if any post-processing started by ``Pipeline.after_completion`` has completed successfully and produced outputs.
+    You should only need to overload this method if you have changed how your pipeline performs post-processing.
 
 ``Pipeline.eject_job``
     This method is run by asimov to remove the analysis job from the scheduler.

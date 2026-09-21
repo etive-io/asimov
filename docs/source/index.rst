@@ -61,7 +61,7 @@ Uniform pipeline interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Asimov provides an API layer which allows a single configuration to be deployed to numerous different analysis pipelines.
-Current gravitational wave pipelines which are supported are ``lalinference``, ``bayeswave``, ``RIFT``, and ``bilby``.
+Gravitational wave pipelines are supported via optional plugin packages; see :doc:`pipelines` for the current list.
 
 .. raw:: html
 
@@ -131,7 +131,7 @@ Users' guide
    user-guide/monitoring
    user-guide/reporting
    storage
-   olivaw/review
+   user-guide/review
    citing
 	     
 .. toctree::
@@ -145,10 +145,12 @@ Users' guide
    :maxdepth: 1
    :caption: Pipeline Guides
 
+   pipelines
    pipelines/lalinference
    pipelines/bilby
    pipelines/rift
    pipelines/bayeswave
+   pipelines/pesummary
 
 Advanced topics
 ---------------
@@ -158,6 +160,8 @@ Advanced topics
    :caption: Advanced topics
 
    analyses
+   blueprints
+   priors
    build-process
    scheduler-integration
    dag-translation-examples
@@ -166,6 +170,8 @@ Advanced topics
    configuration
    test-interface
    clusters
+   gracedb
+   advanced/projects
 
 Developers' Guide
 -----------------
@@ -177,23 +183,10 @@ Developers' Guide
    contributing.rst
    code-of-conduct.rst
 
-   
    asimov-repository
-	     
-   ledger   
-   pipelines-dev
-   hooks
-
-   building-docs
-   
-   asimov-repository
-
    code-overview
-
-   ledger
    pipelines-dev
    hooks
-
    building-docs
 
 Tutorials
@@ -222,7 +215,6 @@ Python API
    api/condor
    api/event
    api/git
-   api/gitlab
    api/ini
    api/ledger
    api/locutus
@@ -242,6 +234,7 @@ LIGO Analysis Cookbook
 
    ligo-cookbook/bayeswave
    ligo-cookbook/bilby
+   ligo-cookbook/defaults
    ligo-cookbook/working-with-gwosc
 
 Indices and tables

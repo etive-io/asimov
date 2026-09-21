@@ -6,15 +6,20 @@ RIFT pipelines
 The RIFT interface allows the creation and control of RIFT analyses.
 A number of metadata are required to configure RIFT which are not required for other pipelines.
 
-Review Status
--------------
+Current status
+--------------
 
-.. warning::
-   
-   **v0.4.0**
-     The current integration with RIFT is experimental, and is not reviewed.
-     It *must not* be used for collaboration parameter estimation analyses.
-     A reviewed version is expected to be available in the v0.5 series of releases.
+.. note::
+
+   The RIFT pipeline implementation was removed from asimov core in the 0.7 release
+   (``asimov/pipelines/rift.py`` was deleted). Support is now provided by the ``RIFT`` package
+   itself:
+
+   ::
+
+      $ pip install RIFT
+
+   Once it's installed, ``pipeline: rift`` in a blueprint will resolve to it as before.
 
 
 Examples

@@ -11,6 +11,12 @@ The asimov monitor can be run programmatically from Python scripts or Jupyter no
 * Integration with other Python tools
 * Building custom dashboards or monitoring systems
 
+.. warning::
+   Unlike the ``asimov monitor`` CLI command, which works with either scheduler via ``[scheduler]
+   type``, this module is currently HTCondor-only: ``run_monitor()`` hardcodes an HTCondor job list
+   and raises ``RuntimeError`` if HTCondor isn't available. It is not yet a drop-in equivalent of
+   the CLI for Slurm-configured projects.
+
 Quick Start
 -----------
 
@@ -265,7 +271,8 @@ The monitor API raises exceptions for errors:
         results = run_monitor()
     except RuntimeError as e:
         print(f"Monitor error: {e}")
-        # Handle error (e.g., condor not available)
+        # Raised, among other things, if HTCondor isn't available -- this module
+        # does not currently support Slurm-configured projects, see the warning above.
     except Exception as e:
         print(f"Unexpected error: {e}")
         # Handle other errors
@@ -273,7 +280,8 @@ The monitor API raises exceptions for errors:
 Comparison with CLI
 -------------------
 
-The programmatic API provides the same functionality as the CLI but with Python interfaces:
+The programmatic API mirrors the CLI's arguments, but (per the warning above) only for HTCondor-configured
+projects; for Slurm-configured projects use the ``asimov monitor`` CLI command instead.
 
 +----------------------------------+------------------------------------------+
 | CLI Command                      | Programmatic Equivalent                  |
