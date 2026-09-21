@@ -12,12 +12,18 @@ asimov.provenance is generic across ledger backends (see the design note in
 asimov/provenance.py) rather than tied to one.
 """
 
+import importlib
 import json
 import os
 import shutil
 import unittest
+from unittest.mock import patch
 
+from click.testing import CliRunner
+
+import asimov
 from asimov import config
+from asimov.cli import provenance as provenance_cli
 from asimov.cli.application import apply_page
 from asimov.cli.project import make_project
 from asimov.ledger import DatabaseLedger, YAMLLedger
@@ -123,6 +129,25 @@ class ProvenanceTestBase(unittest.TestCase):
         del self.ledger
         os.chdir(self.cwd)
         shutil.rmtree(f"{self.cwd}/tests/tmp/{self.PROJECT_DIR}")
+
+    def _invoke_cli(self, command_name, args):
+        """
+        Invoke a command from asimov.cli.provenance against this fixture's
+        ledger.
+
+        The CLI module binds `ledger = asimov.current_ledger` at import
+        time, so the module has to be reloaded with `asimov.current_ledger`
+        patched to the ledger this test fixture already built, rather than
+        letting asimov's own startup probe try to rediscover it from disk.
+        """
+        with patch.object(asimov, "current_ledger", self.ledger):
+            importlib.reload(provenance_cli)
+            try:
+                command = getattr(provenance_cli, command_name)
+                runner = CliRunner()
+                return runner.invoke(command, args)
+            finally:
+                importlib.reload(provenance_cli)
 
 
 class BuildProvenanceTests(ProvenanceTestBase):
@@ -299,3 +324,101 @@ class PackageAnalysisTests(ProvenanceTestBase):
             package_analysis(
                 self.ledger, "GW150914_095045", "TestAnalysis", destination, store=self.store
             )
+
+
+class ProvenanceCommandTests(ProvenanceTestBase):
+    """
+    CLI-level tests for `asimov provenance` (asimov/cli/provenance.py),
+    which previously had no test coverage at all - only the underlying
+    `build_provenance()` function was tested, not the command's argument
+    handling, error formatting, or stdout/file output paths.
+    """
+
+    def test_prints_document_to_stdout_by_default(self):
+        result = self._invoke_cli(
+            "provenance", ["GW150914_095045", "TestAnalysis"]
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        document = json.loads(result.output)
+        self.assertIn("@graph", document)
+
+    def test_writes_document_to_file_when_output_given(self):
+        destination = os.path.join(
+            self.cwd, f"tests/tmp/{self.PROJECT_DIR}", "prov.json"
+        )
+        result = self._invoke_cli(
+            "provenance",
+            ["GW150914_095045", "TestAnalysis", "--output", destination],
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn(f"Provenance written to {destination}", result.output)
+        with open(destination) as handle:
+            document = json.load(handle)
+        self.assertIn("@graph", document)
+
+    def test_unknown_subject_reports_a_click_exception_not_a_traceback(self):
+        result = self._invoke_cli(
+            "provenance", ["NoSuchEvent", "TestAnalysis"]
+        )
+        # click.ClickException exits with code 1 and prints "Error: ...";
+        # an *unhandled* ProvenanceError would instead propagate as a
+        # traceback and a different exit code.
+        self.assertEqual(result.exit_code, 1)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("NoSuchEvent", result.output)
+
+    def test_unknown_analysis_reports_a_click_exception_not_a_traceback(self):
+        result = self._invoke_cli(
+            "provenance", ["GW150914_095045", "NoSuchAnalysis"]
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("NoSuchAnalysis", result.output)
+
+
+class PackageCommandTests(ProvenanceTestBase):
+    """CLI-level tests for `asimov package` (asimov/cli/provenance.py)."""
+
+    def _crate_path(self):
+        return os.path.join(self.cwd, f"tests/tmp/{self.PROJECT_DIR}", "out.crate")
+
+    def test_creates_a_crate_at_the_requested_destination(self):
+        destination = self._crate_path()
+        result = self._invoke_cli(
+            "package",
+            ["GW150914_095045", "TestAnalysis", "--output", destination],
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn(f"RO-Crate written to {destination}", result.output)
+        self.assertTrue(
+            os.path.isfile(os.path.join(destination, "ro-crate-metadata.json"))
+        )
+
+    def test_default_destination_is_derived_from_subject_and_analysis(self):
+        result = self._invoke_cli("package", ["GW150914_095045", "TestAnalysis"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        default_destination = "GW150914_095045-TestAnalysis.crate"
+        self.assertTrue(os.path.isdir(default_destination))
+
+    def test_refuses_to_overwrite_an_existing_destination(self):
+        destination = self._crate_path()
+        os.makedirs(destination)
+        result = self._invoke_cli(
+            "package",
+            ["GW150914_095045", "TestAnalysis", "--output", destination],
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("already exists", result.output)
+        # And it must not have touched the pre-existing directory's contents.
+        self.assertEqual(os.listdir(destination), [])
+
+    def test_unknown_analysis_reports_a_click_exception_not_a_traceback(self):
+        destination = self._crate_path()
+        result = self._invoke_cli(
+            "package",
+            ["GW150914_095045", "NoSuchAnalysis", "--output", destination],
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("NoSuchAnalysis", result.output)
+        self.assertFalse(os.path.exists(destination))
