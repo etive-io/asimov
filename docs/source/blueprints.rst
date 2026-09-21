@@ -36,7 +36,7 @@ The blueprint's kind must be specified using the ``kind`` keyword.
    * - ``projectanalysis``
      - These blueprint files define a project analysis, which has access to multiple subjects (see :doc:`analyses`).
    * - ``analysisbundle``
-     - These blueprint files define a named collection of analysis references, so a set of analyses can be referred to as a group.
+     - These blueprint files apply a named, reusable list of analyses to a single event in one go (given with ``-e``). Each entry in the list can be a string naming another blueprint file to look up and apply, or an inline analysis definition.
 
 .. note::
    ``asimov apply`` (``asimov/cli/application.py``) accepts a broader set of fields for ``analysis``

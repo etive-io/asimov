@@ -16,12 +16,15 @@ the internal testing pipelines used by asimov's own test suite. Pipeline support
 plugin packages, registered via the ``asimov.pipelines`` entry-point group. The following pipelines are
 available as optional plugin packages (see each page for the ``pip install`` command):
 
++ :ref:`Bilby<bilby-pipelines>` (via ``bilby_pipe``)
++ :ref:`RIFT<rift-pipelines>` (via ``RIFT``)
 + :ref:`LALInference<lalinference-pipelines>`
 + :ref:`BayesWave<bayeswave-pipelines>`
 + :ref:`PESummary<pesummary-pipelines>`
 
-Bilby and RIFT support were removed from asimov core in the 0.7 release, and no public plugin package
-currently replaces them (see :ref:`Bilby<bilby-pipelines>` and :ref:`RIFT<rift-pipelines>` for details).
+Bilby and RIFT support were removed from asimov core in the 0.7 release; support for each is now
+provided directly by the upstream ``bilby_pipe``/``RIFT`` packages rather than a bundled interface
+(see :ref:`Bilby<bilby-pipelines>` and :ref:`RIFT<rift-pipelines>` for details).
 
 Adding new pipelines
 --------------------

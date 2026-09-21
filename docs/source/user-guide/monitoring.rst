@@ -11,7 +11,6 @@ completions/failures, and triggers post-completion processing. It works with eit
    $ asimov monitor GW150914     # check a single event
    $ asimov monitor --dry-run    # report what would happen, without changing the ledger
    $ asimov monitor --update     # pull each event's git repository before checking
-   $ asimov monitor --chain      # also run any commands chained after monitoring completes
 
 See :doc:`/monitor-state-machine` for how each analysis status is handled internally, and
 :doc:`/monitor-api` for a Python API you can call ``run_monitor()`` from directly (HTCondor-only

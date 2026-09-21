@@ -9,14 +9,17 @@ A number of metadata are required to configure RIFT which are not required for o
 Current status
 --------------
 
-.. warning::
+.. note::
 
    The RIFT pipeline implementation was removed from asimov core in the 0.7 release
-   (``asimov/pipelines/rift.py`` was deleted), and no plugin package currently replaces it.
-   ``pipeline: rift`` will not resolve to a working pipeline in current versions of asimov.
+   (``asimov/pipelines/rift.py`` was deleted). Support is now provided by the ``RIFT`` package
+   itself:
 
-   The rest of this page is kept as a reference for the ledger options RIFT analyses used, in case
-   support is reinstated as a plugin; it does not describe a currently-working integration.
+   ::
+
+      $ pip install RIFT
+
+   Once it's installed, ``pipeline: rift`` in a blueprint will resolve to it as before.
 
 
 Examples
