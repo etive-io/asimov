@@ -98,6 +98,11 @@ Reporting overview
 
 Asimov can provide both machine-readible and human-friendly reports of all jobs it is monitoring, while collating relevant log files and outputs.
 
+.. figure:: screenshots/report-dashboard.png
+   :alt: The asimov report's summary dashboard, showing live counts of analyses by status
+
+   A live-updating project dashboard is one click away — see the :doc:`reporting guide <user-guide/reporting>` for the full interactive report, including per-event workflow graphs.
+
 .. raw:: html
 
 	 </div>
