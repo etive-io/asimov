@@ -287,6 +287,8 @@ Stale analyses are indicated in the HTML report. You can mark an analysis as **r
 
 The resolved dependencies (those that were actually used when the analysis ran) are stored in the ledger and displayed in the HTML report alongside the current matching dependencies.
 
+.. _strategies:
+
 Strategies
 ==========
 
