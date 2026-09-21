@@ -23,7 +23,7 @@
 	 <a class="btn btn-lg btn-primary d-flex align-items-center justify-content-center fw-semibold"
 	    href="getting-started.html"
 	 >
-	 <i class="bi bi-book"></i><span>  </span><span style="padding-left: 1rem;">Documentation</span>
+	 <i class="bi bi-book"></i><span>  </span><span style="padding-left: 1rem;">Quickstart Guide</span>
 	 </a>
 	 </div>
 
