@@ -139,15 +139,22 @@ class ProvenanceTestBase(unittest.TestCase):
         time, so the module has to be reloaded with `asimov.current_ledger`
         patched to the ledger this test fixture already built, rather than
         letting asimov's own startup probe try to rediscover it from disk.
+
+        The restoring reload has to happen *after* the patch context has
+        exited (and so is outside the `with`, in the outer `finally`) -
+        reloading while `asimov.current_ledger` is still patched would just
+        rebind `provenance_cli.ledger` back to this fixture's ledger,
+        leaving the module holding a stale reference to it once the test
+        (and its `del self.ledger` in tearDown) is done.
         """
-        with patch.object(asimov, "current_ledger", self.ledger):
-            importlib.reload(provenance_cli)
-            try:
+        try:
+            with patch.object(asimov, "current_ledger", self.ledger):
+                importlib.reload(provenance_cli)
                 command = getattr(provenance_cli, command_name)
                 runner = CliRunner()
                 return runner.invoke(command, args)
-            finally:
-                importlib.reload(provenance_cli)
+        finally:
+            importlib.reload(provenance_cli)
 
 
 class BuildProvenanceTests(ProvenanceTestBase):
