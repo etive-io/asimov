@@ -61,8 +61,8 @@ html_theme_options = {
 
 # Multiversion
 smv_tag_whitelist = r'^v\d+\.\d+\.?\d*$'
-smv_branch_whitelist = r'^(master|review|v\d+\.\d+\.?\d?-preview)$'
+smv_branch_whitelist = r'^(main|review|v\d+\.\d+\.?\d?-preview)$'
 smv_remote_whitelist = r'^(origin)$'
 smv_released_pattern = r'^refs/tags/v\d+\.\d+\.?\d*$'
-smv_latest_version = r'(master|'+asimov.__version__
+smv_latest_version = 'main'
 smv_outputdir_format = '{ref.name}'
