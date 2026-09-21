@@ -8,7 +8,12 @@ The ledger is the central source of information within a project, and stores inf
 Data in the ledger is hierarchical, so settings can be specified on a per-project, per-event, and per-analysis level, allowing project-wide defaults to be set, but overwritten when required.
 In addition defaults can be set for each pipeline.
 
-In this documentation we'll represent the ledger in ``yaml`` format, however a number of other storage methods for the ledger are also supported by asimov.
+In this documentation we'll represent the ledger in ``yaml`` format, which is the default and most complete storage backend
+(a single ``.asimov/ledger.yml`` file, backed by ``YAMLLedger``).
+The backend is selected with the ``[ledger] engine`` config setting, and can also be set to ``tinydb`` or ``mongodb``
+to store the ledger in a document database instead (``DatabaseLedger``, backed by TinyDB); at present both database
+options use the same TinyDB store, and some read paths available on the YAML backend (such as ``get_defaults()``) are
+not yet implemented for it, so the YAML backend should be preferred unless you specifically need database storage.
 
 The ledger hierarchy
 --------------------
@@ -266,6 +271,19 @@ Examples
 
 Postprocessing settings
 -----------------------
+
+``postprocessing`` is a project-wide default settings block. Anything placed under it is copied
+verbatim into the metadata of every simple analysis, under that analysis's own ``postprocessing``
+key; it's then up to the analysis pipeline to read whichever of those settings it understands (for
+example, a pipeline which automatically triggers a PESummary run once its own job completes might
+look for ``postprocessing.pesummary.*`` settings here).
+
+.. note::
+   This is a plain settings passthrough, not a workflow mechanism in its own right: it doesn't run
+   anything by itself, and it's unrelated to the old ``kind: postprocessing`` blueprint type, which
+   no longer exists. To define PESummary (or any other tool) as its own tracked, dependency-aware
+   postprocessing job, add it as a :ref:`subject analysis <subject-analysis>` with ``refreshable:
+   true`` instead — see :doc:`analyses`.
 
 Examples
 ~~~~~~~~

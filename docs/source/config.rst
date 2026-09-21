@@ -9,9 +9,11 @@ The production ledger
 ---------------------
 
 Each gravitational wave event which ``asimov`` handles has an assosciated production ledger.
-These are currently stored in the text of issues on ``gitlab``, however, in future versions of ``asimov`` we will introduce alternative options to increase flexibility.
+By default this is a YAML file, ``.asimov/ledger.yml``, within the project directory; older versions of asimov
+stored this in the text of GitLab issues, but that interface has since been removed. See
+:doc:`ledger` for the other storage backends asimov supports.
 
-Details of the metadata stored in the production ledger can be found on the :ref:`The production ledger<documentation for the ledger format>`, but an example is included below:
+Details of the metadata stored in the production ledger can be found in :doc:`ledger`, but an example is included below:
 
 .. code-block:: yaml
 
@@ -124,7 +126,10 @@ There are also a number of additional variables are available for convenience:
 + ``production.psds`` provides the dictionary of PSDs for this event's specified sample rate.
 + ``production.event`` provides access to the data from the event (e.g. for the repository directory path, located at ``production.event.repository.directory``)
 
-A full example ``bilby`` template is available below:
+A full example ``bilby`` template is available below. Note that bilby support isn't bundled with
+asimov core at present (see :doc:`pipelines/bilby`); this template illustrates the templating
+mechanism and remains useful as a reference for the shape of a pipeline template, even though the
+``bilby`` pipeline interface itself isn't currently available.
 
 .. code-block:: ini
 

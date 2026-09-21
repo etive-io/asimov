@@ -33,6 +33,18 @@ The blueprint's kind must be specified using the ``kind`` keyword.
      - These blueprint files define settings which can be applied globally across the project, including pipeline defaults.
    * - ``subject``
      - These blueprint files define an analysis subject (for example a gravitational wave event).
+   * - ``projectanalysis``
+     - These blueprint files define a project analysis, which has access to multiple subjects (see :doc:`analyses`).
+   * - ``analysisbundle``
+     - These blueprint files define a named collection of analysis references, so a set of analyses can be referred to as a group.
+
+.. note::
+   ``asimov apply`` (``asimov/cli/application.py``) accepts a broader set of fields for ``analysis``
+   and ``subject``/``event`` blueprints than the separate ``asimov blueprint validate`` command
+   checks against. ``validate`` uses a stricter, still-evolving schema (``asimov/blueprints.py``)
+   that currently only recognises a handful of fields on each kind; a blueprint that ``apply`` accepts
+   without complaint may still be reported invalid by ``validate``. If you hit that, trust ``apply``
+   for now and treat a ``validate`` failure as informational rather than a hard error.
 
 For example, to make a (very minimal) event blueprint: ::
 
@@ -434,9 +446,6 @@ General waveform settings
      -
      - The name of the waveform approximant to be used.
    * - ``waveform:pn spin order``
-     -
-     -
-   * - ``waveform:pn tidal order``
      -
      -
    * - ``waveform:pn phase order``

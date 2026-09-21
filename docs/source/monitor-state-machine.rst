@@ -36,7 +36,7 @@ Each analysis state is handled by a dedicated state class that implements the ``
 Built-in State Handlers
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-The following state handlers are provided:
+The following state handlers are provided in ``asimov.monitor_states``:
 
 * **ReadyState**: Handles analyses in 'ready' state (not yet started)
 * **StopState**: Handles analyses that need to be stopped
@@ -45,6 +45,26 @@ The following state handlers are provided:
 * **ProcessingState**: Handles analyses in post-processing phase
 * **StuckState**: Handles analyses that are stuck and need intervention
 * **StoppedState**: Handles analyses that have been stopped
+
+asimov also ships eight further built-in handlers, defined in ``asimov.custom_states`` and
+auto-registered on import:
+
+* **ReviewState** ('review'): analyses awaiting manual review before being finalised.
+* **ReviewedState** ('reviewed'): analyses that have been reviewed and approved.
+* **UploadingState** ('uploading'): analyses currently being uploaded to storage.
+* **UploadedState** ('uploaded'): a terminal state for analyses that have finished uploading.
+* **RestartState** ('restart'): resets an analysis back to 'ready' and ejects its old job.
+* **WaitState** ('wait'): analyses waiting on dependencies or other conditions.
+* **CancelledState** ('cancelled'): a terminal state for analyses that were cancelled.
+* **ManualState** ('manual'): analyses that require manual intervention and should not be
+  automatically managed by the monitor.
+
+.. note::
+   These eight states are registered and can be handled if reached, but the normal ``asimov monitor``
+   loop only dispatches analyses whose status is one of ``ready``, ``running``, ``stuck``,
+   ``finished``, ``processing``, or ``stop`` (``asimov.cli.ACTIVE_STATES``). If you write a custom
+   state handler of your own, check this list first: registering a handler that reuses one of these
+   eight names will silently override the built-in one.
 
 State Transitions
 ^^^^^^^^^^^^^^^^

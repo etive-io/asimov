@@ -37,6 +37,7 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx.ext.todo',
     'sphinx.ext.viewcode',
+    'sphinx.ext.graphviz',
     'numpydoc',
     'sphinx_click',
     'sphinxcontrib.httpdomain',

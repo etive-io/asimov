@@ -1,3 +1,5 @@
+.. _reporting-guide:
+
 ================
 Progress reports
 ================
@@ -43,9 +45,9 @@ from inside the project directory, or by passing the project root explicitly:
 
 .. code-block:: console
 
-   $ asimov report html --event GW150914_095045
+   $ asimov report html GW150914_095045
 
-to restrict the report to a single event.
+to restrict the report to a single event (``event`` is a positional argument, not a ``--event`` flag).
 
 The report is a single self-contained HTML file together with a JavaScript bundle (``mermaid-elk.bundle.js``) placed alongside it.
 Both files must remain in the same directory to be served correctly.

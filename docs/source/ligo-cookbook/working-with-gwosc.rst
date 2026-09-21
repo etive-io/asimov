@@ -19,7 +19,7 @@ Getting the analysis environment
 LIGO analyses require a complicated software stack.
 Fortunately it's fairly easy to install this using the ``conda`` tool.
 
-Full instructions on using IGWN environments with conda are `available here<https://computing.docs.ligo.org/conda/usage/>`_, but normally the following steps will work.
+Full instructions on using IGWN environments with conda are `available here <https://computing.docs.ligo.org/conda/usage/>`_, but normally the following steps will work.
 
 First you'll need to install conda if you haven't already got it.
 

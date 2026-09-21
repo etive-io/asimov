@@ -70,15 +70,15 @@ You can also set the locations of these directories when creating the project us
 
     .. code-block:: console
 
-		    $ asimov init --results /home/albert.einstein/results
+		    $ asimov init my-project --results /home/albert.einstein/results
 
-    if your results directory should be located in ``/home/albert.einstein/results``, for example.
-    It can also be changed in the configuration file, ``.asimov/asimov.conf`` in the root directory of the project by editing the value of ``[storage]/results_store``
+    if your results directory should be located in ``/home/albert.einstein/results``, for example (``my-project`` here is the required project name argument).
+    It can also be changed in the configuration file, ``.asimov/asimov.conf`` in the root directory of the project by editing the value of ``[storage]/directory``
 
     .. code-block:: ini
 
 		    [storage]
-		    results_store = /home/albert.einstein/results
+		    directory = /home/albert.einstein/results
 
     .. warning:: Results stores
 

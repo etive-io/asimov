@@ -12,15 +12,16 @@ Simple analyses
   as these only require access to the data for a single event.
   Before version 0.6 these were called `Productions`.
 
-Event analyses
-  These analyses can access the results of all of the simple analyses which have been 
-  performed on a single event, or a subset of them.
-  An example of an event analysis is the production of mixed posterior samples from multiple
-  PE analyses.
-  
+Subject analyses
+  These analyses can access the results of all of the simple analyses which have been
+  performed on a single subject (event), or a subset of them.
+  An example of a subject analysis is the production of mixed posterior samples from multiple
+  PE analyses, implemented as the ``SubjectAnalysis`` class.
+  These were previously referred to as "event analyses".
+
 Project analyses
   These are the most general type of analysis, and have access to the results of all analyses
-  on all events, including event and simple analyses.
+  on all subjects, including subject and simple analyses.
   This type of analysis is useful for defining a population analysis, for example.
 
 
@@ -152,6 +153,8 @@ To mark a dependency as optional, use the dict format with an ``optional: true``
 In this example, the analysis will only run if at least one ``bilby`` analysis is present.
 However, if a ``rift`` analysis is also available, it will be included as a dependency.
 
+.. _subject-analysis:
+
 A Blueprint for a subject analysis
 -----------------------------------
 
@@ -243,44 +246,46 @@ The example below uses two subjects, and to make the sample template easier to r
 Postprocessing Workflows
 ========================
 
-It's common to have workflows where one process produces a result which then needs to have some additional processing required which may not fit neatly into the notion of an analysis.
-For example, in gravitational wave transient analyses it is common to perform parameter estimation in an ``Analysis``, but then want to run a script which will plot the outputs after the analysis is complete.
-Indeed, there are tools which are designed to do this for a wide range of pipelines, in order to produce results in a common format.
+It's common to have workflows where one process produces a result which then needs some additional processing which may not fit neatly into the notion of a single analysis.
+For example, in gravitational wave transient analyses it is common to perform parameter estimation in an ``Analysis``, but then want to run a tool which combines and summarises the outputs once the analysis is complete.
 
-In asimov these jobs are called "Postprocessing pipelines", and they share much of the same functionality as a full analysis.
-Where an analysis is applied to a single event, and provides the settings which are required for a single analysis, in general postprocessing analyses are designed to be applied identically to any Analysis when it completes, if it satisfies the Pipeline's criteria.
+.. note::
+   Earlier versions of asimov had a dedicated ``kind: postprocessing`` blueprint type with its own ``stages`` syntax for this.
+   That mechanism has been removed; a document with ``kind: postprocessing`` is no longer processed and will not run anything.
+   Postprocessing is now expressed as an ordinary :ref:`subject analysis <subject-analysis>` (see above), using the ``analyses``/``needs`` dependency spec and, where the workflow should keep itself up to date, ``refreshable: true``.
 
-As a concrete example, let's look at the blueprint for a postprocessing analysis.
+As a concrete example, PESummary can be run as postprocessing for a set of ``bilby`` analyses:
 
 .. code-block:: yaml
 
-		kind: postprocessing
+		kind: analysis
 		name: combined summary pages for bilby
+		pipeline: pesummary
 		analyses:
-		- pipeline:bilby
-		stages:
-		- name: combined pages
-		  pipeline: pesummary
+		  - pipeline: bilby
+		refreshable: true
 
-This blueprint describes postprocessing using a pipeline called ``pesummary`` which applies to all events (aka subjects) in the project, and all analyses which have "bilby" as their pipeline.
+This blueprint runs ``pesummary`` once all matching ``bilby`` analyses on the subject are available, and re-runs automatically as further matching analyses complete because of ``refreshable: true``.
 
-In contrast to a normal Analysis, it is possible to define multiple stages to a Postprocessing workflow; for example, this blueprint creates a workflow with two stages:
+Multi-stage postprocessing (a summary step which itself depends on another postprocessing step) is expressed by chaining analyses with ``needs``, exactly as for any other analysis dependency:
 
 .. code-block:: yaml
 
-		kind: postprocessing
-		name: standard pe postprocessing
+		kind: analysis
+		name: simple PE summary
+		pipeline: pesummary
 		analyses:
-		- pipeline:bilby
-		- pipeline:rift
-		stages:
-		- name: simple PE summary
-		  pipeline: pesummary
-		- name: less simple PE summary
-		  pipeline: pesummary
-		  needs:
+		  - pipeline: bilby
+		  - pipeline: rift
+		refreshable: true
+		---
+		kind: analysis
+		name: less simple PE summary
+		pipeline: pesummary
+		needs:
 		  - simple PE summary
+		refreshable: true
 
-This workflow has two stages, with ``less simple PE summary`` requiring ``simple PE summary`` to complete before it is started.
+Here ``less simple PE summary`` requires ``simple PE summary`` to complete before it is started.
 
 

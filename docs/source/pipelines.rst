@@ -11,17 +11,17 @@ The ``asimov.pipeline`` module defines the factory classes for these interfaces,
 Supported Pipelines
 -------------------
 
-The following pipelines currently have support bundled with asimov:
-
-+ :ref:`Bilby<bilby-pipelines>`
-+ :ref:`RIFT<rift-pipelines>`
-
-The following pipelines are supported via optional plugin packages (see each page for the
-``pip install`` command):
+As of asimov 0.7, no analysis pipelines are bundled with asimov core; ``asimov/pipelines/`` only ships
+the internal testing pipelines used by asimov's own test suite. Pipeline support is instead provided by
+plugin packages, registered via the ``asimov.pipelines`` entry-point group. The following pipelines are
+available as optional plugin packages (see each page for the ``pip install`` command):
 
 + :ref:`LALInference<lalinference-pipelines>`
 + :ref:`BayesWave<bayeswave-pipelines>`
 + :ref:`PESummary<pesummary-pipelines>`
+
+Bilby and RIFT support were removed from asimov core in the 0.7 release, and no public plugin package
+currently replaces them (see :ref:`Bilby<bilby-pipelines>` and :ref:`RIFT<rift-pipelines>` for details).
 
 Adding new pipelines
 --------------------

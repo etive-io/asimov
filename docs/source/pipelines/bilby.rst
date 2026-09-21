@@ -5,11 +5,17 @@ Bilby pipelines
 
 The Bilby interface allows for some bilby-specific metadata.
 
-Review Status
--------------
+Current status
+--------------
 
-.. note::
-   The current integration with bilby is fully reviewed and is suitable for use with all collaboration analyses.
+.. warning::
+
+   The bilby pipeline implementation was removed from asimov core in the 0.7 release
+   (``asimov/pipelines/bilby.py`` was deleted), and no public plugin package currently replaces it.
+   ``pipeline: bilby`` will not resolve to a working pipeline in current versions of asimov.
+
+   The rest of this page is kept as a reference for the ledger options bilby analyses used, in case
+   support is reinstated as a plugin; it does not describe a currently-working integration.
 
 Examples
 --------
