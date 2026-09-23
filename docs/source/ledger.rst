@@ -8,6 +8,8 @@ The ledger is the central source of information within a project, and stores inf
 Data in the ledger is hierarchical, so settings can be specified on a per-project, per-event, and per-analysis level, allowing project-wide defaults to be set, but overwritten when required.
 In addition defaults can be set for each pipeline.
 
+The standard keys, their meanings and units are defined in the :doc:`ledger vocabulary <vocabulary>`, which can be queried with ``asimov vocabulary``.
+
 In this documentation we'll represent the ledger in ``yaml`` format, however a number of other storage methods for the ledger are also supported by asimov.
 
 Ledger Storage Backends

@@ -1,0 +1,876 @@
+# The asimov ledger vocabulary.
+#
+# This file is the canonical, machine-readable description of the keys
+# which may appear in an asimov ledger or blueprint, what they mean, and
+# which parts of asimov (or which pipelines) read them.  It is loaded by
+# ``asimov.vocabulary`` and exposed through ``asimov vocabulary``.
+#
+# The rule for adding a term here is that it must have the *same meaning
+# for every pipeline* which reads it.  A quantity which only makes sense to
+# one pipeline should be registered by that pipeline's plugin through the
+# ``asimov.vocabulary`` entry point instead (see docs/source/vocabulary.rst),
+# or marked with an ``owner`` below if it predates the plugin system.
+#
+# Each term supports the following fields:
+#
+#   description  (required) What the value means.
+#   type         One of: section, string, float, integer, boolean, list,
+#                mapping, any.  Defaults to ``section`` when ``children``
+#                is given, otherwise ``any``.
+#   per ifo      true if the value is a mapping from detector abbreviation
+#                (H1, L1, ...) to a value of ``type``.
+#   units        Physical units of the value, where applicable.
+#   open         true if the section accepts arbitrary child keys (for
+#                example free-form keyword arguments).
+#   aliases      Alternative spellings which are accepted, but which new
+#                code and blueprints should not use.
+#   synonyms     Names people commonly reach for when they mean this term.
+#                These are *not* accepted; they are used to suggest the
+#                correct term when an unknown key is found.
+#   deprecated   {replaced by: <path>, since: <version>} if the term should
+#                no longer be used.
+#   owner        The pipeline this term belongs to, if it is not generic.
+#   used by      The asimov functions (or pipelines) which read the term.
+#   children     Nested terms.
+
+version: 1
+
+terms:
+
+  # ------------------------------------------------------------------
+  # Structure: keys which define the ledger / blueprint document itself.
+  # ------------------------------------------------------------------
+
+  kind:
+    type: string
+    description: >-
+      The kind of blueprint document: ``analysis``, ``event`` (or
+      ``subject``), ``configuration``, ``postprocessing`` or
+      ``projectanalysis``.
+    used by: [asimov.blueprints.select_blueprint_kind, asimov.cli.application.apply]
+  name:
+    type: string
+    description: The name of the event, subject or analysis.
+  pipeline:
+    type: string
+    description: >-
+      The name of the pipeline which runs an analysis. Must match an
+      entry point in the ``asimov.pipelines`` group.
+  comment:
+    type: string
+    description: A free-text human-readable comment on the analysis.
+  status:
+    type: string
+    description: >-
+      The current state of an analysis (ready, running, finished,
+      uploaded, ...). Managed by asimov; plugins should change it only
+      through the monitor state handlers.
+  event:
+    type: string
+    description: The event (subject) an analysis blueprint should be attached to.
+  subject:
+    type: string
+    description: The subject an analysis blueprint should be attached to.
+  subjects:
+    type: list
+    description: The subjects a project-level analysis runs over.
+  analyses:
+    type: list
+    description: The analyses attached to a subject, or used by a project analysis.
+  productions:
+    type: list
+    description: Legacy name for the analyses attached to an event.
+  events:
+    type: list
+    description: The events (subjects) in a project ledger.
+  needs:
+    type: list
+    description: >-
+      The analyses (or dependency queries) this analysis depends on.
+      Assets from these analyses are made available through
+      ``Analysis._previous_assets()`` and are used, for example, to supply
+      PSDs via ``Analysis._collect_psds()``.
+    used by: [asimov.analysis.Analysis.dependencies, asimov.analysis.Analysis._previous_assets]
+  needs settings:
+    description: Settings controlling how ``needs`` are resolved.
+    children:
+      minimum:
+        type: integer
+        description: The minimum number of matching dependencies required.
+      logic:
+        type: string
+        description: How multiple dependency conditions combine (``and`` / ``or``).
+      condition:
+        type: string
+        description: A condition the dependencies must satisfy.
+      extra priority:
+        type: any
+        description: Additional ordering priority for dependency selection.
+  strategy:
+    type: mapping
+    open: true
+    description: >-
+      Expand one blueprint into several analyses. Keys are dotted ledger
+      paths (e.g. ``waveform.approximant``) and values are lists of settings.
+    used by: [asimov.strategies]
+  stages:
+    type: list
+    description: The stages of a multi-stage analysis.
+  review:
+    type: list
+    description: Review messages and sign-off status for an analysis.
+    used by: [asimov.review]
+  labels:
+    type: mapping
+    open: true
+    description: Labels attached to an analysis by labellers.
+    used by: [asimov.labellers]
+  labellers:
+    type: mapping
+    open: true
+    description: Configuration of the labellers applied to analyses.
+    used by: [asimov.labellers]
+  hooks:
+    type: mapping
+    open: true
+    description: >-
+      Configuration for hooks (``applicator``, ``postmonitor``, ...)
+      provided by other packages through asimov's hook entry points.
+  interest status:
+    type: boolean
+    description: Whether the analysis has been marked as being of interest.
+  refreshable:
+    type: boolean
+    description: Whether the analysis should be rebuilt when its dependencies change.
+  resolved_dependencies:
+    type: list
+    description: The dependencies resolved when the analysis was last run. Managed by asimov.
+  template:
+    type: string
+    description: >-
+      A path to a configuration template to use instead of the pipeline's
+      bundled template.
+    used by: [asimov.analysis.Analysis.make_config]
+  executable:
+    type: string
+    description: >-
+      Override the path to the pipeline's main executable for this analysis.
+  rundir:
+    type: string
+    description: >-
+      The run directory for the analysis. If unset, ``Analysis.rundir``
+      derives it from the subject's ``working directory``; pipelines should
+      read ``production.rundir`` rather than computing their own default.
+    used by: [asimov.analysis.Analysis.rundir]
+  webdir:
+    type: string
+    description: The directory where web-visible output is written.
+  working directory:
+    type: string
+    description: The working directory for an event.
+  repository:
+    type: string
+    description: The location of the event's configuration repository.
+  profiling:
+    type: mapping
+    open: true
+    description: Resource usage recorded for a completed job. Managed by asimov.
+  environment:
+    type: mapping
+    open: true
+    description: The software environment captured when the analysis ran. Managed by asimov.
+
+  # ------------------------------------------------------------------
+  # Event information.
+  # ------------------------------------------------------------------
+
+  event time:
+    type: float
+    units: s (GPS)
+    description: The GPS time of the event (for CBC signals, the merger time).
+    synonyms: [trigger time, gps time, gps, tc, t0, geocent time]
+  gid:
+    type: string
+    description: The GraceDB ID of the preferred event.
+  old superevent:
+    type: string
+    description: A previous superevent ID for this event.
+  ligo:
+    description: LVK-specific event metadata.
+    open: true
+    children:
+      preferred event:
+        type: string
+        description: The GraceDB preferred event ID.
+      sname:
+        type: string
+        description: The GraceDB superevent name.
+  interferometers:
+    type: list
+    description: >-
+      The detectors to be used in the analysis, as a list of detector
+      abbreviations (e.g. ``[H1, L1, V1]``).
+    synonyms: [ifos, detectors, ifo list, detector list]
+
+  # ------------------------------------------------------------------
+  # Data.
+  # ------------------------------------------------------------------
+
+  data:
+    description: Settings which describe the input data.
+    children:
+      channels:
+        type: string
+        per ifo: true
+        description: The strain channel to read for each detector.
+        synonyms: [strain channels, channel dict, channel]
+      frame types:
+        type: string
+        per ifo: true
+        description: The frame type to look up for each detector.
+        aliases: [frame-types]
+        synonyms: [frametypes, frame type]
+      segments:
+        type: string
+        per ifo: true
+        description: The segment definer flag to use for each detector.
+      segment length:
+        type: float
+        units: s
+        description: The length of the analysed data segment.
+        synonyms: [duration, seglen, data length]
+      segment start:
+        type: float
+        units: s (GPS)
+        description: The GPS start time of the analysed segment.
+        deprecated: {replaced by: likelihood.segment start, since: "0.4"}
+      calibration:
+        type: string
+        per ifo: true
+        description: >-
+          The calibration uncertainty envelope file for each detector,
+          relative to the event repository or absolute.
+        synonyms: [calibration envelopes, calibration files, spline calibration envelope dict]
+      data files:
+        type: string
+        per ifo: true
+        description: >-
+          Frame (or other strain) files containing the analysis data for each
+          detector. Typically supplied by an upstream data-fetching analysis
+          through ``needs``.
+        synonyms: [strain files, frame files, data dict, frames]
+      cache files:
+        type: string
+        per ifo: true
+        description: Frame cache files for each detector.
+        synonyms: [caches, cache]
+      format:
+        type: string
+        description: The format of the data files.
+      datafind url:
+        type: string
+        description: The datafind server to query for frames.
+      datafind url type:
+        type: string
+        description: The URL type to request from the datafind server.
+
+  download:
+    type: list
+    owner: gwdata
+    description: The data products (e.g. ``frames``) a data-fetching analysis should download.
+
+  # ------------------------------------------------------------------
+  # Noise / PSDs.
+  # ------------------------------------------------------------------
+
+  psds:
+    type: string
+    per ifo: true
+    description: >-
+      Power spectral density files (ASCII) for each detector, keyed by
+      detector. If absent, ``Analysis._collect_psds()`` looks for a
+      ``psds`` asset on the analyses listed in ``needs``, so a plugin
+      should read ``production.psds`` rather than a key of its own.
+    used by: [asimov.analysis.Analysis._collect_psds]
+    synonyms: [psd files, psd dict, psd, asds, asd files, noise curves, psd_files]
+  xml psds:
+    type: string
+    per ifo: true
+    description: >-
+      Power spectral density files in LIGO-LW XML format, keyed by
+      detector. Collected in the same way as ``psds``.
+    used by: [asimov.analysis.Analysis._collect_psds]
+    synonyms: [psd xml, xml psd]
+
+  # ------------------------------------------------------------------
+  # Data quality.
+  # ------------------------------------------------------------------
+
+  quality:
+    description: Data-quality information for the event.
+    children:
+      state vector:
+        type: string
+        per ifo: true
+        description: The state vector channel for each detector.
+      minimum frequency:
+        type: float
+        per ifo: true
+        units: Hz
+        description: Deprecated location for the minimum analysis frequency.
+        deprecated: {replaced by: likelihood.minimum frequency, since: "0.7"}
+      maximum frequency:
+        type: float
+        per ifo: true
+        units: Hz
+        description: Deprecated location for the maximum analysis frequency.
+        deprecated: {replaced by: likelihood.maximum frequency, since: "0.7"}
+      high frequency:
+        type: float
+        units: Hz
+        description: Deprecated location for the maximum analysis frequency.
+        deprecated: {replaced by: likelihood.maximum frequency, since: "0.7"}
+      lowest minimum frequency:
+        type: float
+        units: Hz
+        description: Deprecated; compute from ``likelihood.minimum frequency`` instead.
+        deprecated: {replaced by: likelihood.minimum frequency, since: "0.7"}
+      sample rate:
+        type: integer
+        units: Hz
+        description: Deprecated location for the sample rate.
+        deprecated: {replaced by: likelihood.sample rate, since: "0.7"}
+      segment start:
+        type: float
+        units: s (GPS)
+        description: Deprecated location for the segment start time.
+        deprecated: {replaced by: likelihood.segment start, since: "0.7"}
+  supress:
+    type: mapping
+    open: true
+    owner: bayeswave
+    description: >-
+      Frequency ranges to suppress for each detector (``{ifo: {lower,
+      upper}}``). The spelling is historical.
+
+  # ------------------------------------------------------------------
+  # Likelihood.
+  # ------------------------------------------------------------------
+
+  likelihood:
+    description: Settings for the likelihood and the data it is evaluated on.
+    children:
+      minimum frequency:
+        type: float
+        per ifo: true
+        units: Hz
+        description: >-
+          The minimum frequency of the likelihood integral for each detector.
+          Pipelines which need a single value should use the lowest.
+        synonyms: [f_min, fmin, flow, f_low, low frequency cutoff, minimum_frequency]
+      maximum frequency:
+        type: float
+        per ifo: true
+        units: Hz
+        description: >-
+          The maximum frequency of the likelihood integral for each detector.
+          If absent it is set to 0.875 × Nyquist for the sample rate.
+        synonyms: [f_max, fmax, fhigh, f_high, high frequency cutoff, maximum_frequency]
+      sample rate:
+        type: integer
+        units: Hz
+        description: The sampling rate of the analysed data.
+        synonyms: [sampling frequency, sampling rate, srate, fs]
+      segment length:
+        type: float
+        units: s
+        description: >-
+          Pipeline-facing alias of ``data.segment length``; prefer
+          ``data.segment length``.
+      segment start:
+        type: float
+        units: s (GPS)
+        description: The GPS start time of the analysed segment.
+        synonyms: [start time, gps start time]
+      psd length:
+        type: float
+        units: s
+        description: The length of data used to estimate the PSD.
+        synonyms: [psd duration]
+      window length:
+        type: float
+        units: s
+        description: The length of the window applied to the data.
+        aliases: [window-length]
+      roll off time:
+        type: float
+        units: s
+        description: The roll-off time of the Tukey window applied to the data.
+        aliases: [roll off]
+        synonyms: [tukey roll off, roll_off]
+      start frequency:
+        type: float
+        units: Hz
+        description: The frequency at which waveform generation starts.
+      post trigger time:
+        type: float
+        units: s
+        description: The amount of data after the event time to analyse.
+        synonyms: [post trigger duration]
+      time reference:
+        type: string
+        description: The detector (or ``geocent``) whose arrival time is sampled.
+      reference frame:
+        type: string
+        description: The reference frame for sky-location parameters.
+      type:
+        type: string
+        description: The likelihood class to use.
+      kwargs:
+        type: mapping
+        open: true
+        description: Additional keyword arguments for the likelihood.
+      frequency domain source model:
+        type: string
+        description: The frequency-domain source model function.
+      time domain source model:
+        type: string
+        description: The time-domain source model function.
+      coherence test:
+        type: boolean
+        description: Whether to perform a coherence test.
+      calibration:
+        description: How the likelihood treats calibration uncertainty.
+        children:
+          sample:
+            type: boolean
+            description: Whether to sample over the calibration uncertainty.
+      marginalization:
+        description: Which parameters the likelihood marginalises over.
+        aliases: [marginalisation]
+        children:
+          distance:
+            type: boolean
+            description: Marginalise over luminosity distance.
+          phase:
+            type: boolean
+            description: Marginalise over coalescence phase.
+          time:
+            type: boolean
+            description: Marginalise over coalescence time.
+          calibration:
+            type: boolean
+            description: Marginalise over calibration uncertainty.
+            aliases: [Calibration]
+          distance lookup:
+            type: string
+            description: The distance-marginalisation lookup table file.
+          maximum distance:
+            type: float
+            units: Mpc
+            description: The upper limit for distance marginalisation.
+      roq:
+        description: Reduced-order quadrature settings.
+        children:
+          folder:
+            type: string
+            description: The folder containing the ROQ basis.
+          weights:
+            type: string
+            description: The ROQ weights file.
+          weight format:
+            type: string
+            description: The format of the ROQ weights file.
+          scale:
+            type: float
+            description: The ROQ scale factor.
+          linear matrix:
+            type: string
+            description: The ROQ linear basis matrix.
+          quadratic matrix:
+            type: string
+            description: The ROQ quadratic basis matrix.
+      relative binning:
+        description: Relative-binning (heterodyning) settings.
+        children:
+          fiducial parameters:
+            type: mapping
+            open: true
+            description: The fiducial parameters for relative binning.
+          update fiducial parameters:
+            type: boolean
+            description: Whether to update the fiducial parameters during sampling.
+          epsilon:
+            type: float
+            description: The relative-binning epsilon parameter.
+      reference frequency:
+        type: float
+        units: Hz
+        description: Deprecated location for the waveform reference frequency.
+        deprecated: {replaced by: waveform.reference frequency, since: "0.4"}
+      # BayesWave-specific settings which predate the plugin vocabulary.
+      iterations:
+        type: integer
+        owner: bayeswave
+        description: The number of BayesWave MCMC iterations.
+      chains:
+        type: integer
+        owner: bayeswave
+        description: The number of BayesWave parallel-tempering chains.
+      threads:
+        type: integer
+        owner: bayeswave
+        description: The number of BayesWave threads.
+      reweight_nested_samples:
+        type: boolean
+        owner: bilby
+        description: Whether to reweight nested samples.
+      reweighting_configuration:
+        type: any
+        owner: bilby
+        description: Configuration for posterior reweighting.
+
+  # ------------------------------------------------------------------
+  # Waveform.
+  # ------------------------------------------------------------------
+
+  approximant:
+    type: string
+    description: Deprecated location for the waveform approximant.
+    deprecated: {replaced by: waveform.approximant, since: "0.4"}
+  waveform:
+    description: Settings for the signal model.
+    children:
+      approximant:
+        type: string
+        description: The waveform approximant (e.g. ``IMRPhenomXPHM``).
+        synonyms: [waveform approximant, waveform model, model, waveform_approximant]
+      reference frequency:
+        type: float
+        units: Hz
+        description: The frequency at which spin and phase parameters are defined.
+        synonyms: [f_ref, fref, reference_frequency]
+      minimum frequency:
+        type: float
+        per ifo: true
+        units: Hz
+        description: The frequency from which the waveform is generated.
+      start frequency:
+        type: float
+        units: Hz
+        description: The frequency at which waveform generation starts.
+      maximum mode:
+        type: integer
+        description: The highest-order mode (ℓ) to include.
+        synonyms: [lmax, l max]
+      mode array:
+        type: list
+        description: The (ℓ, m) modes to include.
+      pn spin order:
+        type: integer
+        description: The post-Newtonian spin order.
+      pn phase order:
+        type: integer
+        description: The post-Newtonian phase order.
+      pn amplitude order:
+        type: integer
+        description: The post-Newtonian amplitude order.
+      pn tidal order:
+        type: integer
+        description: The post-Newtonian tidal order.
+      enforce signal duration:
+        type: boolean
+        description: Whether the signal must fit within the analysed segment.
+      generator:
+        type: string
+        description: The waveform generator class.
+      generation function:
+        type: string
+        description: The waveform generation function.
+      conversion function:
+        type: string
+        description: The parameter conversion function.
+      file:
+        type: string
+        description: A file containing a numerical-relativity or tabulated waveform.
+      arguments:
+        type: mapping
+        open: true
+        description: Additional keyword arguments passed to the waveform model.
+        synonyms: [waveform arguments, waveform kwargs]
+      non-spin:
+        type: any
+        owner: rift
+        description: RIFT setting for non-spinning waveform models.
+
+  # ------------------------------------------------------------------
+  # Priors.  Parameter names are open: pipelines translate them through
+  # a PriorInterface (asimov.priors) rather than reading this section raw.
+  # ------------------------------------------------------------------
+
+  priors:
+    type: section
+    open: true
+    description: >-
+      Prior specifications, keyed by parameter name. Each value follows
+      ``asimov.priors.PriorSpecification`` (``type``, ``minimum``,
+      ``maximum``, ``boundary``, ...). Pipelines convert these with a
+      ``PriorInterface`` subclass returned from
+      ``Pipeline.get_prior_interface()``; they should not define their own
+      prior section.
+    used by: [asimov.priors.PriorDict, asimov.pipeline.Pipeline.get_prior_interface]
+    synonyms: [prior, prior dict, prior file]
+
+  cosmology:
+    type: string
+    description: The cosmology used for distance priors and redshifting.
+
+  # ------------------------------------------------------------------
+  # Sampler.
+  # ------------------------------------------------------------------
+
+  sampler:
+    description: Settings for the stochastic sampler.
+    children:
+      sampler:
+        type: string
+        description: The name of the sampling algorithm (e.g. ``dynesty``, ``flowmc``).
+        synonyms: [type, algorithm, method, name]
+      sampler kwargs:
+        type: mapping
+        open: true
+        description: Keyword arguments passed to the sampling algorithm.
+        synonyms: [sampler settings, kwargs, sampler_kwargs, settings]
+      seed:
+        type: integer
+        description: The random seed.
+        synonyms: [random seed, rng seed]
+      parallel jobs:
+        type: integer
+        description: The number of independent parallel sampling runs.
+        synonyms: [n parallel, nparallel, parallel runs]
+      # RIFT-specific settings which predate the plugin vocabulary.
+      cip:
+        type: mapping
+        open: true
+        owner: rift
+        description: RIFT CIP settings.
+      ile:
+        type: mapping
+        open: true
+        owner: rift
+        description: RIFT ILE settings.
+      cip jobs:
+        type: integer
+        owner: rift
+        description: The number of RIFT CIP jobs.
+      cip explode jobs:
+        type: integer
+        owner: rift
+        description: RIFT CIP explode jobs.
+      cip explode jobs auto:
+        type: boolean
+        owner: rift
+        description: Automatically set RIFT CIP explode jobs.
+      cip fit method:
+        type: string
+        owner: rift
+        description: RIFT CIP fitting method.
+      cip sampler method:
+        type: string
+        owner: rift
+        description: RIFT CIP sampling method.
+      ile jobs per worker:
+        type: integer
+        owner: rift
+        description: RIFT ILE jobs per worker.
+      ile sampling method:
+        type: string
+        owner: rift
+        description: RIFT ILE sampling method.
+      use aligned phase coordinates:
+        type: boolean
+        owner: rift
+        description: Whether RIFT uses aligned phase coordinates.
+      correlate default:
+        type: boolean
+        owner: rift
+        description: RIFT correlate-default setting.
+      force iterations:
+        type: integer
+        owner: rift
+        description: The number of RIFT iterations to force.
+      manual grid:
+        type: string
+        owner: rift
+        description: A manual RIFT grid.
+      lmax:
+        type: integer
+        owner: rift
+        description: The maximum ℓ for RIFT.
+  cip jobs:
+    type: integer
+    owner: rift
+    description: Deprecated location for ``sampler.cip jobs``.
+    deprecated: {replaced by: sampler.cip jobs, since: "0.4"}
+  lmax:
+    type: integer
+    owner: rift
+    description: Deprecated location for ``sampler.lmax``.
+    deprecated: {replaced by: sampler.lmax, since: "0.4"}
+  nparallel:
+    type: integer
+    description: Deprecated location for the number of parallel runs.
+    deprecated: {replaced by: sampler.parallel jobs, since: "0.4"}
+
+  # ------------------------------------------------------------------
+  # Scheduler / compute resources.  Pipelines turn these into a
+  # JobDescription (asimov.scheduler) and submit through
+  # ``Pipeline.scheduler``; they must not talk to HTCondor or Slurm
+  # directly.
+  # ------------------------------------------------------------------
+
+  scheduler:
+    description: >-
+      Compute-resource and scheduler settings. Read these into an
+      ``asimov.scheduler.JobDescription`` and submit via
+      ``self.scheduler`` (``Pipeline.scheduler``).
+    used by: [asimov.pipeline.Pipeline.scheduler, asimov.scheduler.JobDescription]
+    children:
+      accounting group:
+        type: string
+        description: The accounting group tag for the jobs.
+        synonyms: [accounting_group, accounting tag, account, group]
+      accounting user:
+        type: string
+        description: The accounting user for the jobs.
+      request cpus:
+        type: integer
+        description: The number of CPUs to request.
+        synonyms: [cpus, n cpus, ncpus, cores, request_cpus, threads]
+      request memory:
+        type: string
+        description: The memory to request (e.g. ``8192 MB``).
+        synonyms: [memory, mem, request_memory]
+      request disk:
+        type: string
+        description: The disk space to request.
+        synonyms: [disk, request_disk]
+      request gpus:
+        type: integer
+        description: The number of GPUs to request.
+        synonyms: [gpus, n gpus, ngpus, request_gpus, gpu]
+      request post memory:
+        type: string
+        description: The memory to request for post-processing jobs.
+      request post disk:
+        type: string
+        description: The disk space to request for post-processing jobs.
+      request generation memory:
+        type: string
+        description: The memory to request for data-generation jobs.
+      queue:
+        type: string
+        description: The queue (or Slurm partition) to submit to.
+        synonyms: [partition]
+      osg:
+        type: boolean
+        description: Whether to run on the Open Science Grid.
+      desired sites:
+        type: string
+        description: The OSG sites to run on.
+      container:
+        type: string
+        description: The container image to run the jobs in.
+        synonyms: [singularity image, apptainer image, image]
+      conda env:
+        type: string
+        description: The conda environment to run the jobs in.
+      environment:
+        type: string
+        description: The software environment to run the jobs in.
+      environment variables:
+        type: mapping
+        open: true
+        description: Environment variables to set for the jobs.
+        synonyms: [env, environment vars, getenv]
+      transfer files:
+        type: boolean
+        description: Whether to use the scheduler's file transfer.
+      additional files:
+        type: list
+        description: Extra files to transfer with the jobs.
+      copy frames:
+        type: boolean
+        description: Whether to copy frame files to the execute node.
+      scitoken issuer:
+        type: string
+        description: The SciToken issuer for data access.
+      generation pool:
+        type: string
+        description: The pool to run data-generation jobs in.
+      periodic restart time:
+        type: integer
+        units: s
+        description: How often to restart long-running jobs.
+      analysis executable:
+        type: string
+        description: Override for the main analysis executable.
+      type:
+        type: string
+        description: The scheduler type for this analysis (``htcondor``, ``slurm``, ``local``).
+      job id:
+        type: any
+        description: The scheduler job ID of the running analysis. Managed by asimov.
+
+  # ------------------------------------------------------------------
+  # Overlays.  The children of these sections are keyed by pipeline name,
+  # and each pipeline's block may contain any term from this vocabulary.
+  # ------------------------------------------------------------------
+
+  pipelines:
+    type: section
+    overlay: true
+    description: >-
+      Per-pipeline defaults, keyed by pipeline name. Each block may contain
+      any term from the vocabulary and applies only to analyses run with
+      that pipeline.
+  postprocessing:
+    type: any
+    overlay: true
+    open: true
+    description: >-
+      In a configuration blueprint, settings for post-processing pipelines
+      (e.g. ``pesummary``) keyed by pipeline name; in an analysis, the list
+      of post-processing workflows to apply to it.
+
+# ----------------------------------------------------------------------
+# Assets: the standard names for entries in the dictionary returned by
+# ``Pipeline.collect_assets()``.  Downstream analyses find their inputs by
+# these names, so a pipeline which produces one of these must use the name
+# given here.
+# ----------------------------------------------------------------------
+
+assets:
+  psds:
+    description: >-
+      ASCII PSD files, as a mapping from detector to file. Consumed by
+      ``Analysis._collect_psds()`` for analyses which list this one in
+      ``needs``.
+    synonyms: [psd, psd files, psd_files, asds]
+  xml psds:
+    description: LIGO-LW XML PSD files, as a mapping from detector to file.
+    synonyms: [psd xml, xml psd]
+  samples:
+    description: The posterior samples file produced by the analysis.
+    synonyms: [posterior, posterior samples, results, samples file, result]
+  config:
+    description: The configuration file used to run the analysis.
+    synonyms: [ini, config file, configuration]
+  data files:
+    description: Strain data files, as a mapping from detector to file.
+    synonyms: [frames, frame files, strain files]
+  cache files:
+    description: Frame cache files, as a mapping from detector to file.
+  calibration:
+    description: Calibration uncertainty envelopes, as a mapping from detector to file.

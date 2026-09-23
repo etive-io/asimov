@@ -31,6 +31,7 @@ from asimov.cli import (  # NoQA
     report,
     review,
     blueprint,
+    vocabulary,
 )  # NoQA
 
 
@@ -54,7 +55,7 @@ class ProjectAwareGroup(click.Group):
             return super().invoke(ctx)
 
         # Commands that can run outside of a project
-        commands_allowed_outside_project = {"init", "clone"}
+        commands_allowed_outside_project = {"init", "clone", "vocabulary"}
 
         # Add all registered plugin commands (they handle their own project checks if needed)
         commands_allowed_outside_project.update(self._plugin_commands)
@@ -99,6 +100,7 @@ olivaw.add_command(event.event)
 olivaw.add_command(production.production)
 # Review commands
 olivaw.add_command(review.review)
+olivaw.add_command(vocabulary.vocabulary)
 olivaw.add_command(application.apply)
 # Provenance / reproducibility commands
 olivaw.add_command(provenance.provenance)
