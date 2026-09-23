@@ -558,7 +558,7 @@ class Vocabulary:
             if child is None:
                 if term.open:
                     continue
-                if pipeline and term is self.root and key == pipeline:
+                if pipeline and term is self.root and key.lower() == pipeline.lower():
                     # A pipeline's own namespace which the plugin has not
                     # registered: its contents are the plugin's business,
                     # except where they duplicate a standard term.
@@ -602,7 +602,7 @@ class Vocabulary:
                         child.replaced_by,
                     )
                 )
-            if pipeline and child.owner and child.owner != pipeline:
+            if pipeline and child.owner and child.owner.lower() != pipeline.lower():
                 findings.append(
                     Finding(
                         key_path,

@@ -143,6 +143,12 @@ class CheckTests(unittest.TestCase):
         self.assertNotIn("jim.sampling", found)
         self.assertNotIn("jim.data.psd_is_asd", found)
 
+    def test_pipeline_namespace_is_case_insensitive(self):
+        found = self.kinds({"pipeline": "Jim", "jim": {"f_ref": 20}})
+        self.assertEqual(
+            found["jim.f_ref"], ("duplicate", "waveform.reference frequency")
+        )
+
     def test_duplicates_prefer_current_terms(self):
         found = self.kinds({"pipeline": "x", "x": {"sample_rate": 4096}})
         self.assertEqual(
