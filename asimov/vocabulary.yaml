@@ -31,6 +31,9 @@
 #                no longer be used.
 #   owner        The pipeline this term belongs to, if it is not generic.
 #   used by      The asimov functions (or pipelines) which read the term.
+#   items        ``document`` if the term is a list whose mapping entries
+#                are themselves ledger documents (events, analyses, ...),
+#                which are then checked against the whole vocabulary.
 #   children     Nested terms.
 
 version: 1
@@ -76,13 +79,51 @@ terms:
     description: The subjects a project-level analysis runs over.
   analyses:
     type: list
-    description: The analyses attached to a subject, or used by a project analysis.
+    items: document
+    description: >-
+      The analyses attached to a subject, or used by a project analysis.
+      Entries which are mappings are checked as analysis documents.
   productions:
     type: list
+    items: document
     description: Legacy name for the analyses attached to an event.
   events:
     type: list
-    description: The events (subjects) in a project ledger.
+    items: document
+    description: The events (subjects) in a project ledger. Each entry is checked as an event document.
+  project analyses:
+    type: list
+    items: document
+    description: The project-level analyses in a project ledger.
+    used by: [asimov.ledger.YAMLLedger]
+  project:
+    description: Project-level information in a project ledger.
+    open: true
+    used by: [asimov.ledger.YAMLLedger.create]
+    children:
+      name:
+        type: string
+        description: The name of the project.
+  asimov:
+    description: Information about the asimov installation which created the ledger.
+    open: true
+    used by: [asimov.ledger.YAMLLedger.create]
+    children:
+      version:
+        type: string
+        description: The asimov version which created the ledger.
+  postprocessing stages:
+    type: mapping
+    open: true
+    description: >-
+      Post-processing workflow definitions applied to this level of the
+      ledger, keyed by workflow name. Managed by ``asimov apply``.
+    used by: [asimov.cli.application.apply_page]
+  report:
+    type: mapping
+    open: true
+    description: Settings for the HTML report of an event (e.g. ``modal_plots``).
+    used by: [asimov.event]
   needs:
     type: list
     description: >-
@@ -115,7 +156,8 @@ terms:
     used by: [asimov.strategies]
   stages:
     type: list
-    description: The stages of a multi-stage analysis.
+    items: document
+    description: The stages of a multi-stage analysis or post-processing workflow.
   review:
     type: list
     description: Review messages and sign-off status for an analysis.
@@ -318,6 +360,7 @@ terms:
         per ifo: true
         units: Hz
         description: Deprecated location for the minimum analysis frequency.
+        aliases: [lower-frequency]
         deprecated: {replaced by: likelihood.minimum frequency, since: "0.7"}
       maximum frequency:
         type: float
@@ -329,6 +372,7 @@ terms:
         type: float
         units: Hz
         description: Deprecated location for the maximum analysis frequency.
+        aliases: [high-frequency, upper-frequency]
         deprecated: {replaced by: likelihood.maximum frequency, since: "0.7"}
       lowest minimum frequency:
         type: float
@@ -339,12 +383,44 @@ terms:
         type: integer
         units: Hz
         description: Deprecated location for the sample rate.
+        aliases: [sample-rate]
+        used by: [asimov.analysis.GravitationalWaveTransient._checks, asimov.cli.data]
         deprecated: {replaced by: likelihood.sample rate, since: "0.7"}
       segment start:
         type: float
         units: s (GPS)
         description: Deprecated location for the segment start time.
         deprecated: {replaced by: likelihood.segment start, since: "0.7"}
+      start frequency:
+        type: float
+        units: Hz
+        description: Legacy location for the waveform start frequency (written by ``asimov.cli.data``).
+        aliases: [start-frequency]
+        deprecated: {replaced by: likelihood.start frequency, since: "0.7"}
+      segment length:
+        type: float
+        units: s
+        description: Legacy location for the segment length (written by ``asimov.cli.data``).
+        aliases: [segment-length]
+        deprecated: {replaced by: data.segment length, since: "0.7"}
+      window length:
+        type: float
+        units: s
+        description: Legacy location for the window length (written by ``asimov.cli.data``).
+        aliases: [window-length]
+        deprecated: {replaced by: likelihood.window length, since: "0.7"}
+      psd length:
+        type: float
+        units: s
+        description: Legacy location for the PSD length (written by ``asimov.cli.data``).
+        aliases: [psd-length]
+        deprecated: {replaced by: likelihood.psd length, since: "0.7"}
+      reference frequency:
+        type: float
+        units: Hz
+        description: Legacy location for the reference frequency (written by ``asimov.cli.data``).
+        aliases: [reference-frequency]
+        deprecated: {replaced by: waveform.reference frequency, since: "0.7"}
   supress:
     type: mapping
     open: true
@@ -637,9 +713,11 @@ terms:
         description: The name of the sampling algorithm (e.g. ``dynesty``, ``flowmc``).
         synonyms: [type, algorithm, method, name]
       sampler kwargs:
-        type: mapping
+        type: any
         open: true
-        description: Keyword arguments passed to the sampling algorithm.
+        description: >-
+          Keyword arguments passed to the sampling algorithm, as a mapping
+          or as the literal string the pipeline's config expects.
         synonyms: [sampler settings, kwargs, sampler_kwargs, settings]
       seed:
         type: integer
@@ -741,19 +819,23 @@ terms:
         type: string
         description: The accounting group tag for the jobs.
         synonyms: [accounting_group, accounting tag, account, group]
-      accounting user:
+      accounting group user:
         type: string
         description: The accounting user for the jobs.
+        aliases: [accounting user]
+        used by: [asimov.pipelines.testing._util.accounting_submit_lines]
       request cpus:
         type: integer
         description: The number of CPUs to request.
         synonyms: [cpus, n cpus, ncpus, cores, request_cpus, threads]
       request memory:
-        type: string
-        description: The memory to request (e.g. ``8192 MB``).
+        type: any
+        description: >-
+          The memory to request, as a number of MB or a string with units
+          (e.g. ``8192 MB``).
         synonyms: [memory, mem, request_memory]
       request disk:
-        type: string
+        type: any
         description: The disk space to request.
         synonyms: [disk, request_disk]
       request gpus:
@@ -761,13 +843,13 @@ terms:
         description: The number of GPUs to request.
         synonyms: [gpus, n gpus, ngpus, request_gpus, gpu]
       request post memory:
-        type: string
+        type: any
         description: The memory to request for post-processing jobs.
       request post disk:
-        type: string
+        type: any
         description: The disk space to request for post-processing jobs.
       request generation memory:
-        type: string
+        type: any
         description: The memory to request for data-generation jobs.
       queue:
         type: string

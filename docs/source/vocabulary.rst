@@ -64,7 +64,13 @@ can be used while developing a plugin.
 ``foreign``
   A term owned by a different pipeline from the one the file is for.
 ``type``
-  A section (such as ``likelihood``) which was given a scalar value.
+  A value of the wrong type: a section (such as ``likelihood``) given a
+  scalar, a per-detector value given a scalar, or a leaf of the wrong type
+  (e.g. ``scheduler: request cpus: four``).
+
+``check`` accepts blueprints and whole project ledgers (``.asimov/ledger.yml``
+for projects using the ``yamlfile`` ledger engine); events and analyses
+nested in a ledger are checked too.
 
 It exits with status 1 on ``unknown``, ``duplicate`` or ``type`` findings,
 or on any finding with ``--strict``, so it can be used in a plugin's CI.
@@ -158,6 +164,11 @@ Each entry in ``vocabulary.yaml`` may have the following fields:
   The pipeline which owns a pipeline-specific term.
 ``used by``
   The asimov functions which read the term.
+``items``
+  ``document`` if the term is a list whose entries are themselves ledger
+  documents (``events``, ``analyses``, ``productions``, ...). Mapping
+  entries, including the stored ``{name: {...}}`` form, are checked against
+  the whole vocabulary.
 ``children``
   Nested terms.
 

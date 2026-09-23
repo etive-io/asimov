@@ -130,6 +130,9 @@ class Term:
         The pipeline which owns the term, if it is not generic.
     used_by : list of str
         The functions or pipelines which read the term.
+    items : str, optional
+        ``"document"`` if the term is a list whose mapping entries are
+        themselves ledger documents (events, analyses, ...).
     children : dict
         Child terms, keyed by canonical name.
     """
@@ -147,6 +150,7 @@ class Term:
     deprecated: Optional[Dict[str, str]] = None
     owner: Optional[str] = None
     used_by: List[str] = field(default_factory=list)
+    items: Optional[str] = None
     children: Dict[str, "Term"] = field(default_factory=dict)
 
     @property
@@ -196,6 +200,7 @@ class Term:
             ("deprecated", "deprecated"),
             ("owner", "owner"),
             ("used_by", "used by"),
+            ("items", "items"),
         ):
             value = getattr(self, attribute)
             if value:
@@ -237,6 +242,7 @@ class Term:
             deprecated=data.get("deprecated"),
             owner=owner,
             used_by=list(data.get("used by") or []),
+            items=data.get("items"),
         )
         for child_name, child_data in children.items():
             term.children[child_name] = cls.from_dict(
@@ -374,6 +380,11 @@ class Vocabulary:
         # without redefining the section itself.
         new_children = entry.get("children") or {}
         redefined = set(entry) - {"children"}
+        if new_children and not existing.is_section:
+            # Only sections can be extended; a scalar term cannot grow
+            # children.
+            redefined.add("children")
+            new_children = {}
         if redefined and owner is not None:
             self.conflicts.append((join_path(existing.path), owner))
         for child_name, child_entry in new_children.items():
@@ -621,6 +632,29 @@ class Vocabulary:
                     )
                 )
                 continue
+            if not child.is_section:
+                problem = _type_problem(child, value)
+                if problem:
+                    findings.append(Finding(key_path, "type", problem))
+                    continue
+            if child.items == "document" and isinstance(value, list):
+                for index, item in enumerate(value):
+                    item_path = key_path + (str(index),)
+                    if isinstance(item, dict) and len(item) == 1:
+                        # Stored ledgers use ``{name: {..metadata..}}`` as
+                        # well as flat documents (see Event.__init__).
+                        name, body = next(iter(item.items()))
+                        if body is None or isinstance(body, dict):
+                            item, item_path = body or {}, item_path + (str(name),)
+                    if isinstance(item, dict):
+                        self._check_section(
+                            item,
+                            self.root,
+                            item_path,
+                            item.get("pipeline"),
+                            findings,
+                        )
+                continue
             if child.children or child.overlay:
                 self._check_section(value, child, key_path, pipeline, findings)
 
@@ -708,6 +742,51 @@ class Vocabulary:
                 {"path": path, "plugin": plugin} for path, plugin in self.conflicts
             ],
         }
+
+
+def _is_type(value, term_type: str) -> bool:
+    """Whether a (YAML-parsed) value is acceptable for a term type."""
+    if term_type in ("any", "section"):
+        return True
+    if term_type == "string":
+        return isinstance(value, str)
+    if term_type == "boolean":
+        return isinstance(value, bool)
+    if isinstance(value, bool):
+        return False
+    if term_type == "integer":
+        return isinstance(value, int) or (
+            isinstance(value, float) and value.is_integer()
+        )
+    if term_type == "float":
+        return isinstance(value, (int, float))
+    if term_type == "list":
+        return isinstance(value, (list, tuple))
+    if term_type == "mapping":
+        return isinstance(value, dict)
+    return True
+
+
+def _type_problem(term: Term, value) -> Optional[str]:
+    """Describe why ``value`` does not match ``term``, or return None."""
+    if value is None:
+        return None
+    if term.per_ifo:
+        if not isinstance(value, dict):
+            return (
+                f"'{term.dotted}' should map each detector to a {term.type}, "
+                f"but was given a {type(value).__name__}."
+            )
+        for ifo, item in value.items():
+            if item is not None and not _is_type(item, term.type):
+                return (
+                    f"'{term.dotted}' should map each detector to a {term.type}, "
+                    f"but {ifo} was given {item!r}."
+                )
+        return None
+    if not _is_type(value, term.type):
+        return f"'{term.dotted}' should be a {term.type}, but was given {value!r}."
+    return None
 
 
 def _resolve_plugin_vocabulary(obj) -> Dict[str, Any]:

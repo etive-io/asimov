@@ -183,6 +183,82 @@ class CheckTests(unittest.TestCase):
         found = self.kinds({"likelihood": 4})
         self.assertEqual(found["likelihood"][0], "type")
 
+    def test_leaf_types_are_checked(self):
+        found = self.kinds(
+            {
+                "scheduler": {"request cpus": "four"},
+                "waveform": {"approximant": 1},
+                "likelihood": {"minimum frequency": 20},
+                "interferometers": "H1,L1",
+            }
+        )
+        self.assertEqual(found["scheduler.request cpus"][0], "type")
+        self.assertEqual(found["waveform.approximant"][0], "type")
+        self.assertEqual(found["likelihood.minimum frequency"][0], "type")
+        self.assertEqual(found["interferometers"][0], "type")
+
+    def test_valid_leaf_types_pass(self):
+        document = {
+            "scheduler": {"request cpus": 4, "request memory": 1024},
+            "likelihood": {"minimum frequency": {"H1": 20, "L1": 20.5}},
+            "data": {"segment length": 4.0},
+            "sampler": {"sampler kwargs": "{nlive: 100}"},
+        }
+        self.assertEqual(self.vocabulary.check(document), [])
+
+    def test_ledger_documents_are_checked(self):
+        ledger = {
+            "asimov": {"version": "0.8"},
+            "project": {"name": "test"},
+            "project analyses": [],
+            "events": [
+                {
+                    "name": "GW150914",
+                    "interferometers": ["H1", "L1"],
+                    "productions": [
+                        {"Prod0": None},
+                        {
+                            "name": "Prod1",
+                            "pipeline": "bilby",
+                            "scheduler": {"cpus": 4},
+                        },
+                    ],
+                }
+            ],
+        }
+        ledger["events"][0]["productions"].append(
+            {"Prod2": {"pipeline": "bilby", "waveform": {"f_ref": 20}}}
+        )
+        found = self.kinds(ledger)
+        self.assertEqual(
+            found["events.0.productions.2.Prod2.waveform.f_ref"],
+            ("unknown", "waveform.reference frequency"),
+        )
+        del found["events.0.productions.2.Prod2.waveform.f_ref"]
+        self.assertEqual(
+            found["events.0.productions.1.scheduler.cpus"],
+            ("unknown", "scheduler.request cpus"),
+        )
+        self.assertEqual(len(found), 1)
+
+    def test_legacy_hyphenated_quality_keys(self):
+        findings = self.vocabulary.check(
+            {"quality": {"sample-rate": 2048, "high-frequency": 896}}
+        )
+        found = {(f.dotted, f.kind, f.suggestion) for f in findings}
+        self.assertIn(("quality.sample-rate", "alias", "quality.sample rate"), found)
+        self.assertIn(
+            ("quality.sample-rate", "deprecated", "likelihood.sample rate"), found
+        )
+        self.assertIn(
+            ("quality.high-frequency", "deprecated", "likelihood.maximum frequency"),
+            found,
+        )
+        self.assertFalse([f for f in findings if f.kind == "unknown"])
+
+    def test_accounting_group_user(self):
+        self.assertEqual(self.kinds({"scheduler": {"accounting group user": "x"}}), {})
+
     def test_pipelines_overlay_is_checked(self):
         found = self.kinds(
             {"pipelines": {"bilby": {"scheduler": {"cpus": 4}}}}
@@ -252,6 +328,15 @@ class PluginVocabularyTests(unittest.TestCase):
         )
         self.assertIn(("psds", "greedy"), vocabulary.conflicts)
         self.assertIsNone(vocabulary.lookup("psds").owner)
+
+    def test_children_cannot_extend_scalar_terms(self):
+        vocabulary = Vocabulary.core()
+        vocabulary.merge(
+            {"terms": {"psds": {"children": {"foo": {"description": "x"}}}}},
+            owner="greedy",
+        )
+        self.assertIn(("psds", "greedy"), vocabulary.conflicts)
+        self.assertEqual(vocabulary.lookup("psds").children, {})
 
     def test_plugin_term_duplicating_core(self):
         vocabulary = Vocabulary.core()

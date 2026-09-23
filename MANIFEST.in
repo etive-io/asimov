@@ -1,4 +1,6 @@
 include asimov/asimov.conf
 include asimov/gitlabissue.md
 include asimov/configs/*.ini
-include asimov/priors/*.templateinclude asimov/vocabulary.yaml
+include asimov/priors/*.template
+include asimov/vocabulary.yaml
+
