@@ -143,6 +143,12 @@ class CheckTests(unittest.TestCase):
         self.assertNotIn("jim.sampling", found)
         self.assertNotIn("jim.data.psd_is_asd", found)
 
+    def test_duplicates_prefer_current_terms(self):
+        found = self.kinds({"pipeline": "x", "x": {"sample_rate": 4096}})
+        self.assertEqual(
+            found["x.sample_rate"], ("duplicate", "likelihood.sample rate")
+        )
+
     def test_other_pipelines_namespace_is_unknown(self):
         found = self.kinds({"pipeline": "bilby", "jim": {}})
         self.assertEqual(found["jim"][0], "unknown")

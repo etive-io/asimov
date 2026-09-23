@@ -478,18 +478,21 @@ class Vocabulary:
         Synonyms in :data:`GENERIC_SYNONYMS` are ignored, since they only
         identify a term within its own section.  Terms owned by plugins are
         not matched, so that a plugin's own vocabulary cannot shadow core.
+        Non-deprecated terms are preferred over deprecated ones.
         """
         normalised = _normalise(key)
         if normalised in GENERIC_SYNONYMS:
             return None
-        for term in self.terms():
-            if term.owner in self.plugins:
-                continue
-            if normalised in {
-                _normalise(name) for name in [term.name] + term.aliases + term.synonyms
-            }:
-                return term
-        return None
+        matches = [
+            term
+            for term in self.terms()
+            if term.owner not in self.plugins
+            and normalised
+            in {_normalise(name) for name in [term.name] + term.aliases + term.synonyms}
+        ]
+        # Prefer a current term over a deprecated location for the same thing.
+        matches.sort(key=lambda term: term.deprecated is not None)
+        return matches[0] if matches else None
 
     def suggest_asset(self, name: str) -> Optional[Asset]:
         """Suggest the standard asset name for a non-standard one."""
