@@ -106,6 +106,7 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
+"asimov" = ["vocabulary.yaml"]
 "asimov.cli" = ["report-theme/*", "static/*.js"]
 
 [project.entry-points."asimov.pipelines"]

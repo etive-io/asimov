@@ -67,6 +67,19 @@ The most important of these is the ``build_dag`` method, which is used by the as
 An example of a complete pipeline interface can be seen in the code for :class:``asimov.pipelines.bilby.BilbyPipeline``.
 
 
+Reading settings from the ledger
+--------------------------------
+
+Your interface should read its settings from the standard ledger keys
+defined in the :doc:`ledger vocabulary <vocabulary>` wherever one exists,
+rather than inventing a pipeline-specific name for the same quantity. For
+example, read PSDs from ``production.psds`` (which is filled in from the
+ledger or from upstream analyses listed in ``needs``), and compute resources
+from ``scheduler: request cpus``. Only settings which have no meaning to any
+other pipeline should live under your pipeline's own key, and these should be
+registered through the ``asimov.vocabulary`` entry point. Check your
+blueprints and templates with ``asimov vocabulary check``.
+
 Pipeline hooks
 --------------
 
