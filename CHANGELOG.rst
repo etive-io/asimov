@@ -1,3 +1,21 @@
+0.5.16
+======
+
+This is the final release of the 0.5 series, which is now end of life. It is a maintenance release, and does not introduce any new backwards-incompatible features.
+
+Most of the functionality specific to the 0.5 series was retired or replaced in 0.7, and 0.5 will receive no further updates. Please upgrade to asimov 0.7 or later.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (`#114 <https://github.com/etive-io/asimov/pull/114>`_).
++ Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
+
 0.5.15
 ======
 

@@ -84,7 +84,6 @@ The following calibration envelopes have been found.
 ---
 ```
 """)
->>>>>>> cb204b61f687395eb980468da3b8ced48c5c7e40
 
 @click.option("--event", "event", default=None, help="The event which the ledger should be returned for, optional.")
 @olivaw.command()
