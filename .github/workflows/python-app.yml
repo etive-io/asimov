@@ -2,14 +2,14 @@ name: Python multi-OS
 
 on:
   push:
-    branches: [ master, v*-release, v*-preview ]
+    branches: [ main, v*-release, v*-preview ]
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
   pull_request:
-    branches: [ master, v*-release, v*-preview ]
+    branches: [ main, v*-release, v*-preview ]
 
 jobs:
   build-ubuntu-python:
@@ -97,11 +97,11 @@ jobs:
         branches=$(git branch -r --contains ${{ github.ref }})
         echo "Branches containing this tag: $branches"
 
-        if echo "$branches" | grep -E "origin/master|origin/.*-preview"; then
-          echo "Tag is on master or *-preview branch"
+        if echo "$branches" | grep -E "origin/main|origin/v[0-9]+\.[0-9]+-release|origin/.*-preview"; then
+          echo "Tag is on main, a release branch, or a preview branch"
           echo "publish=true" >> $GITHUB_OUTPUT
         else
-          echo "Tag is not on master or *-preview branch"
+          echo "Tag is not on main, a release branch, or a preview branch"
           echo "publish=false" >> $GITHUB_OUTPUT
         fi
 
@@ -142,13 +142,14 @@ jobs:
         # Remove 'v' prefix from tag to match changelog version
         VERSION="${{ github.ref_name }}"
         VERSION="${VERSION#v}"
+        export VERSION
 
         # Extract the changelog section for this version
         python3 << 'EOF' > release_notes.md
+        import os
         import re
-        import sys
 
-        version = "$VERSION"
+        version = os.environ["VERSION"]
 
         try:
             with open('CHANGELOG.rst', 'r') as f:
