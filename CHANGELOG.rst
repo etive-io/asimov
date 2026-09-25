@@ -55,6 +55,7 @@ Merges
 
 + `ligo!140 <https://git.ligo.org/asimov/asimov/-/merge_requests/140>`_: Change CLI outputs to list events in alphanumeric order.
 + `ligo!145 <https://git.ligo.org/asimov/asimov/-/merge_requests/145>`_: Adds an error message if an unavailable pipeline is requested by an analysis.
++ `ligo!148 <https://git.ligo.org/asimov/asimov/-/merge_requests/148>`_: Fixes degraded performance when repeatedly querying the asimov ledger by caching the list of events rather than reconstructing it on every access.
 + `ligo!149 <https://git.ligo.org/asimov/asimov/-/merge_requests/149>`_: Fixes errors with various parts of the analysis review CLI, and improves error and information messages.
 + `ligo!151 <https://git.ligo.org/asimov/asimov/-/merge_requests/151>`_: Adds a confirmation message when a plugin is used to apply a new event to a project.
 + `ligo!152 <https://git.ligo.org/asimov/asimov/-/merge_requests/152>`_: Allows keyword arguments to be specified for summarypages jobs via a blueprint.
@@ -108,6 +109,7 @@ Merges
 
 + `ligo!115 <https://git.ligo.org/asimov/asimov/-/merge_requests/121>`_: Fixes a bug with bilby_pipe configurations when frame files are passed
 + `ligo!116 <https://git.ligo.org/asimov/asimov/-/merge_requests/116>`_: Allows configuration of a handful of bilby parameters and updates defaults to align with current bilby_pipe releases.
++ `ligo!118 <https://git.ligo.org/asimov/asimov/-/merge_requests/118>`_: Fixes the lower frequency cut-off (``flow``) not being passed to BayesWave correctly for PSD generation, so that the lowest interferometer minimum frequency is used.
 + `ligo!121 <https://git.ligo.org/asimov/asimov/-/merge_requests/121>`_: Fixes a bug with bilby_pipe when frame files as specified in a frame_dict.
 + `ligo!122 <https://git.ligo.org/asimov/asimov/-/merge_requests/122>`_: Adds a bayeswave_post disk request to the bayeswave config template.
 + `ligo!123 <https://git.ligo.org/asimov/asimov/-/merge_requests/123>`_: Fixes a bug related to filepaths and frame type specifications when bilby is using OSDF data retrieval.
@@ -149,6 +151,7 @@ Merges
 
 + `ligo!105 <https://git.ligo.org/asimov/asimov/-/merge_requests/105>`_: Fixes an issue with accounting tags for the ``asimov start`` command.
 + `ligo!104 <https://git.ligo.org/asimov/asimov/-/merge_requests/104>`_: Restores ability to calculate the precessing SNR in a PESummary post-processing pipeline.
++ `ligo!106 <https://git.ligo.org/asimov/asimov/-/merge_requests/106>`_: Fixes a bug where the accounting group for PESummary jobs was submitted as a tuple rather than a string, which could prevent jobs from being accepted by some clusters.
 
 0.5.2
 =====
