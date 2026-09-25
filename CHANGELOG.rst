@@ -1,3 +1,41 @@
+0.8.0
+=====
+
+This release is intended for use in the IR1 run of the gravitational-wave detectors.
+
+With this release the 0.5 and 0.6 series reach end of life: each receives one final maintenance release (0.5.16 and 0.6.2) and no further updates. Most of the functionality specific to those series was retired or replaced in 0.7.
+
+Bug Fixes
+---------
+
+**Multiple PSDs per event**
+  Analyses of the same event can now reliably use different PSDs, for example to compare
+  parameter estimation results across PSD estimation methods within one project (#153).
+  PSDs are now resolved with a fixed precedence: PSDs set on the analysis itself, then PSDs
+  from a ``needs:`` dependency, then event-level PSDs. An analysis-level ``psds:`` block
+  replaces the event-level one rather than being merged with it per detector, and legacy
+  event-level PSDs keyed by sample rate (``psds: {1024: {H1: ...}}``) are resolved using
+  ``likelihood: sample rate``. ``xml psds`` follow the same rules.
+
+**Deterministic Dependency Order**
+  ``Analysis.dependencies`` is now returned sorted by name. Its order previously depended
+  on Python's string hash randomisation, so it could differ between runs.
+
+Breaking Changes
+----------------
+
+**PSD Resolution**
+  An event-level ``psds:`` block no longer overrides the PSDs provided by an analysis's
+  ``needs:`` dependency. ``asimov manage build`` now refuses to build an analysis when more
+  than one ``needs:`` dependency provides PSDs, or when a PSD dependency has not yet
+  produced its PSDs; previously such analyses were built silently with the wrong PSDs, or
+  none.
+
+GitHub Pull Requests
+--------------------
+
++ `github#188 <https://github.com/etive-io/asimov/pull/188>`_: Fix PSD resolution for multiple PSDs per event
+
 0.7.0
 =====
 

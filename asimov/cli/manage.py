@@ -45,6 +45,48 @@ def check_dependencies_satisfied(analysis, logger):
         logger.warning(f"Could not validate dependencies for {analysis.name}: {e}")
 
 
+def check_psds_available(analysis, logger):
+    """
+    Raise a build-blocking error when this analysis's PSDs can't be
+    trusted, ahead of building its configuration.
+
+    Unlike ``check_dependencies_satisfied``, this *does* raise, because a
+    silently-wrong PSD would produce a run configuration that's quietly
+    using the wrong noise curve, or none at all. The problems themselves
+    are found by
+    :meth:`asimov.analysis.GravitationalWaveTransient._collect_psds` when
+    the analysis is loaded, and recorded on ``analysis._psd_errors``:
+
+    - more than one ``needs:`` dependency provides PSDs of the same format,
+      so which one to use is ambiguous (asimov#153); or
+    - a ``needs:`` dependency which is expected to provide PSDs hasn't
+      produced any yet, for example because it's still running.
+
+    Analyses which have nothing to do with PSDs never record any problems,
+    so they pass this check untouched.
+
+    Args:
+    analysis: the analysis (production) to check
+    logger: the logger to record any problems to
+
+    Raises:
+    DescriptionException: if the analysis's PSDs can't be trusted.
+    """
+    # The same problem can be recorded for both formats (e.g. a pending
+    # dependency provides neither), so report each distinct one once.
+    problems = list(
+        dict.fromkeys((getattr(analysis, "_psd_errors", None) or {}).values())
+    )
+
+    if problems:
+        message = (
+            f"PSDs for analysis '{analysis.name}' could not be resolved: "
+            + "; ".join(problems)
+        )
+        logger.error(message)
+        raise DescriptionException(message, production=analysis.name)
+
+
 def check_priority_method(production):
     """         
     Check the priority method to be used for the production
@@ -119,6 +161,14 @@ def build(event, dryrun):
             analysis.pipeline.before_config()
 
             check_dependencies_satisfied(analysis, logger)
+            try:
+                check_psds_available(analysis, logger)
+            except DescriptionException as e:
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" Not building {analysis.name}: {e.message}"
+                )
+                continue
 
             analysis.make_config(
                 filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
@@ -166,6 +216,7 @@ def build(event, dryrun):
                     #     path = pathlib.Path(config.get("general", "rundir_default"))
 
                     check_dependencies_satisfied(production, logger)
+                    check_psds_available(production, logger)
 
                     if dryrun:
                         print(f"Will create {production.name}.ini")
