@@ -1,5 +1,8 @@
 # Asimov
 
+> [!WARNING]
+> **asimov 0.6 is end of life.** 0.6.2 is the final release of the 0.6 series, and it will receive no further updates. Please upgrade to asimov 0.7 or later: https://github.com/etive-io/asimov
+
 Asimov is a workflow management and automation platform for scientific analyses.
 
 [Documentation](https://asimov.docs.ligo.org/asimov) · [Releases](https://git.ligo.org/asimov/asimov/-/releases) · [Issue Tracker](https://git.ligo.org/asimov/asimov/-/issues)

@@ -1,3 +1,30 @@
+0.6.2
+=====
+
+This is the final release of the 0.6 series, which is now end of life. It is a bug-fix release, and does not introduce any new backwards-incompatible features.
+
+Most of the functionality specific to the 0.6 series was retired or replaced in 0.7, and 0.6 will receive no further updates. Please upgrade to asimov 0.7 or later.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `#104 <https://github.com/etive-io/asimov/pull/104>`_: Removes the LensingFlow-specific submission-priority logic from ``asimov manage build`` and ``asimov manage submit``, which LensingFlow now handles itself, and restores the 0.6.1 submission behaviour for project analyses (using ``analysis._subjects``). Thanks to Disha Hegde.
++ Fixes a ``SyntaxError`` in ``asimov/cli/review.py`` introduced when merging the 0.5 backports, which prevented the review commands from loading.
++ `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (forward-ported from the 0.5 series).
++ Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
++ Includes backports from the 0.5 series: coinc.xml retrieval, updating events from blueprints, the review CLI, bilby configuration and PESummary fixes, and updated GWOSC configuration.
+
+New contributors
+----------------
+
++ **Disha Hegde** (`@disharh <https://github.com/disharh>`_) made their first contribution in `#104 <https://github.com/etive-io/asimov/pull/104>`_, removing the LensingFlow-specific submission logic and fixing the review CLI. The change is included in this release via `#189 <https://github.com/etive-io/asimov/pull/189>`_.
++ **Justin Janquart** made their first contribution to a release: the correction to ``ProjectAnalysis.dependencies`` from their LensingFlow work (``318ea72``) is included in this release.
+
 0.6.1
 =====
 
