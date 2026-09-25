@@ -51,25 +51,19 @@ def check_psds_available(analysis, logger):
     trusted, ahead of building its configuration.
 
     Unlike ``check_dependencies_satisfied``, this *does* raise, because a
-    silently-wrong PSD (rather than a missing, merely-advisory data
-    product) would produce a run configuration that's quietly using the
-    wrong noise curve, or none at all. It fires when:
+    silently-wrong PSD would produce a run configuration that's quietly
+    using the wrong noise curve, or none at all. The problems themselves
+    are found by
+    :meth:`asimov.analysis.GravitationalWaveTransient._collect_psds` when
+    the analysis is loaded, and recorded on ``analysis._psd_errors``:
 
-    - :meth:`asimov.analysis.GravitationalWaveTransient._collect_psds`
-      recorded a problem on the analysis (currently: more than one
-      ``needs:`` dependency provides PSDs of the same format, so which one
-      to use is ambiguous -- see asimov#153); or
-    - the analysis has at least one ``needs:`` dependency whose pipeline is
-      expected to provide PSDs (it declares ``psd``/``psds`` in
-      ``available_outputs``, or its ``collect_assets()`` advertises a
-      ``psds``/``xml psds`` key at all), but that dependency's *collected*
-      PSDs of that format are empty -- for example, because it hasn't
-      finished running yet.
+    - more than one ``needs:`` dependency provides PSDs of the same format,
+      so which one to use is ambiguous (asimov#153); or
+    - a ``needs:`` dependency which is expected to provide PSDs hasn't
+      produced any yet, for example because it's still running.
 
-    This is deliberately narrow: analyses with no recorded PSD errors and
-    no PSD-providing dependency (i.e. most analyses, which have nothing to
-    do with PSDs) are left untouched, whether or not they carry PSDs of
-    their own.
+    Analyses which have nothing to do with PSDs never record any problems,
+    so they pass this check untouched.
 
     Args:
     analysis: the analysis (production) to check
@@ -78,37 +72,7 @@ def check_psds_available(analysis, logger):
     Raises:
     DescriptionException: if the analysis's PSDs can't be trusted.
     """
-    problems = list(getattr(analysis, "_psd_errors", None) or [])
-
-    event = getattr(analysis, "event", None)
-    if event is not None:
-        for keyword, collected in (
-            ("psds", getattr(analysis, "psds", None)),
-            ("xml psds", getattr(analysis, "xml_psds", None)),
-        ):
-            if collected:
-                # Already has PSDs of this format; nothing to check.
-                continue
-            dependencies = {p.name: p for p in getattr(event, "productions", [])}
-            for dep_name in getattr(analysis, "dependencies", None) or []:
-                dependency = dependencies.get(dep_name)
-                pipeline = getattr(dependency, "pipeline", None)
-                if pipeline is None:
-                    continue
-                declared_outputs = (
-                    getattr(pipeline.__class__, "available_outputs", None) or []
-                )
-                provides_psds = "psd" in declared_outputs or "psds" in declared_outputs
-                if not provides_psds:
-                    try:
-                        provides_psds = keyword in pipeline.collect_assets()
-                    except Exception:
-                        provides_psds = False
-                if provides_psds:
-                    problems.append(
-                        f"dependency '{dep_name}' should provide '{keyword}' "
-                        "but its collected PSDs are empty (has it finished running?)"
-                    )
+    problems = list((getattr(analysis, "_psd_errors", None) or {}).values())
 
     if problems:
         message = (

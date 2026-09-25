@@ -1,3 +1,39 @@
+0.8.0 (unreleased)
+==================
+
+Supported versions
+------------------
+
+**0.5 and 0.6 are end of life**
+  The 0.5 and 0.6 release series receive one final maintenance release each
+  (0.5.16 and 0.6.2) and are then no longer supported. Most of the
+  functionality specific to those series was retired or replaced in 0.7;
+  please upgrade to 0.7 or later.
+
+Bug Fixes
+---------
+
+**Multiple PSDs per event** (#153)
+  Analyses of the same event can now reliably use different PSDs, for
+  example to compare parameter estimation across PSD estimation methods.
+
+  - PSDs are resolved with a fixed precedence: PSDs set on the analysis
+    itself, then PSDs from a ``needs:`` dependency, then event-level PSDs.
+    Previously an event-level ``psds:`` block silently overrode the PSDs of
+    every analysis's dependency.
+  - An analysis-level ``psds:`` block now replaces the event-level one
+    rather than being merged with it per detector.
+  - Legacy event-level PSDs keyed by sample rate
+    (``psds: {1024: {H1: ...}}``) are resolved using
+    ``likelihood: sample rate``.
+  - The order of ``Analysis.dependencies`` is now deterministic (sorted by
+    name); it previously varied between runs.
+  - ``asimov manage build`` refuses to build an analysis when more than one
+    ``needs:`` dependency provides PSDs, or when a PSD dependency hasn't
+    produced its PSDs yet, rather than building it with the wrong PSDs or
+    none.
+  - ``xml psds`` follow the same rules as ``psds``.
+
 0.7.0
 =====
 

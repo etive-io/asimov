@@ -78,6 +78,36 @@ class _FakeUnfinishedPSDPipeline(SimpleTestPipeline):
     available_outputs = ["psds"]
 
 
+class _FakeXMLPSDPipeline(SimpleTestPipeline):
+    """A PSD-estimation pipeline which only provides ``xml psds``, used to
+    check the ``xml psds`` code path independently of the ascii one."""
+
+    name = "FakeXMLPSDPipeline"
+
+    def collect_assets(self):
+        assets = super().collect_assets()
+        if not self.production.rundir:
+            return assets
+        assets["xml psds"] = {
+            ifo: os.path.join(self.production.rundir, f"{ifo}-psd.xml.gz")
+            for ifo in IFOS
+        }
+        return assets
+
+
+class _FakeBayesWaveLikePipeline(_FakePSDPipeline):
+    """Mimics asimov-bayeswave when ``convert_psd_ascii2xml`` isn't
+    installed: ``collect_assets()`` always has an ``xml psds`` key, but it
+    stays empty even once the job has finished and its ascii PSDs exist."""
+
+    name = "FakeBayesWaveLikePipeline"
+
+    def collect_assets(self):
+        assets = super().collect_assets()
+        assets["xml psds"] = {}
+        return assets
+
+
 EVENT_BLUEPRINT = """
 kind: event
 name: GW150914_095045
@@ -127,11 +157,11 @@ def _event_blueprint(psds=None, xml_psds=None, sample_rate=None, rate_keyed_psds
     return doc
 
 
-def _psd_blueprint(name):
+def _psd_blueprint(name, pipeline="fakepsdpipeline"):
     return f"""
 kind: analysis
 name: {name}
-pipeline: fakepsdpipeline
+pipeline: {pipeline}
 comment: PSD estimation job
 event: GW150914_095045
 status: ready
@@ -185,6 +215,8 @@ class MultiplePSDsPerEventTests(unittest.TestCase):
                 "fakepsdpipeline": _FakePSDPipeline,
                 "fakepepipeline": _FakePEPipeline,
                 "fakeunfinishedpsdpipeline": _FakeUnfinishedPSDPipeline,
+                "fakexmlpsdpipeline": _FakeXMLPSDPipeline,
+                "fakebayeswavelikepipeline": _FakeBayesWaveLikePipeline,
             },
         )
         known_pipelines_patch.start()
@@ -500,11 +532,11 @@ class MultiplePSDsPerEventTests(unittest.TestCase):
     def test_xml_psds_ambiguous_dependency_fails_build_time_check(self):
         """The ambiguous-dependency check applies to `xml psds` too."""
         self._apply(EVENT_BLUEPRINT, "event")
-        self._apply(_psd_blueprint("XMLPSD_A"), "xmlpsd_a")
-        self._apply(_psd_blueprint("XMLPSD_B"), "xmlpsd_b")
+        self._apply(_psd_blueprint("XMLPSD_A", "fakexmlpsdpipeline"), "xmlpsd_a")
+        self._apply(_psd_blueprint("XMLPSD_B", "fakexmlpsdpipeline"), "xmlpsd_b")
         self._apply(
             _pe_blueprint(
-                "Bilby_AmbiguousXML", needs=["pipeline: fakepsdpipeline"]
+                "Bilby_AmbiguousXML", needs=["pipeline: fakexmlpsdpipeline"]
             ),
             "pe_ambiguous_xml",
         )
@@ -513,12 +545,52 @@ class MultiplePSDsPerEventTests(unittest.TestCase):
         productions = {p.name: p for p in event.productions}
         analysis = productions["Bilby_AmbiguousXML"]
 
-        # `_FakePSDPipeline` only ever provides `psds`, not `xml psds`, so
-        # this exercises the same ambiguity purely through the ascii format
-        # -- kept here to document that the xml/ascii checks are
-        # independent (an ambiguous `psds` alone is already enough to fail
-        # the build-time check).
-        self.assertEqual(analysis.psds, {})
         self.assertEqual(analysis.xml_psds, {})
+        self.assertIn("xml psds", analysis._psd_errors)
+        # Neither dependency provides ascii PSDs, but both have produced
+        # PSDs, so there's nothing to complain about for that format.
+        self.assertNotIn("psds", analysis._psd_errors)
         with self.assertRaises(DescriptionException):
             check_psds_available(analysis, logging.getLogger("test"))
+
+    def test_unfinished_dependency_does_not_fall_back_to_event_psds(self):
+        """If the PSD dependency hasn't produced its PSDs yet, the analysis
+        must not quietly use the event-level PSDs in the meantime: that
+        would build the run with a different noise curve from the one its
+        `needs:` asked for."""
+        event_psds = {"H1": "/tmp/event-H1.dat", "L1": "/tmp/event-L1.dat"}
+        self._apply(_event_blueprint(psds=event_psds), "event")
+        self._apply(_unfinished_psd_blueprint("StillRunningPSD"), "psd_running")
+        self._apply(
+            _pe_blueprint("Bilby_Waiting", needs=["StillRunningPSD"]), "pe_waiting"
+        )
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+        analysis = {p.name: p for p in event.productions}["Bilby_Waiting"]
+
+        self.assertEqual(analysis.psds, {})
+        with self.assertRaises(DescriptionException):
+            check_psds_available(analysis, logging.getLogger("test"))
+
+    def test_dependency_without_xml_psds_passes_build_time_check(self):
+        """A finished PSD dependency which provides ascii PSDs but an empty
+        `xml psds` (asimov-bayeswave without `convert_psd_ascii2xml`) is a
+        normal situation, and must not block the build. The event-level
+        `xml psds` are not mixed in: the dependency is the analysis's PSD
+        source."""
+        event_xml_psds = {"H1": "/tmp/event-H1.xml", "L1": "/tmp/event-L1.xml"}
+        self._apply(_event_blueprint(xml_psds=event_xml_psds), "event")
+        self._apply(
+            _psd_blueprint("BayesWavePSD", "fakebayeswavelikepipeline"), "psd_bw"
+        )
+        self._apply(_pe_blueprint("Bilby_BW", needs=["BayesWavePSD"]), "pe_bw")
+
+        event = self.ledger.get_event("GW150914_095045")[0]
+        productions = {p.name: p for p in event.productions}
+        analysis = productions["Bilby_BW"]
+
+        dep_psds = productions["BayesWavePSD"].pipeline.collect_assets()["psds"]
+        self.assertEqual(analysis.psds, dep_psds)
+        self.assertEqual(analysis.xml_psds, {})
+        # Should not raise.
+        check_psds_available(analysis, logging.getLogger("test"))

@@ -2067,7 +2067,7 @@ class GravitationalWaveTransient(SimpleAnalysis):
         # exception here would break commands that have nothing to do with
         # this analysis. `manage.py`'s build-time check turns these into a
         # hard failure before a run configuration is generated.
-        self._psd_errors = []
+        self._psd_errors = {}
 
         super().__init__(subject, name, pipeline, **kwargs)
         self._checks()
@@ -2339,13 +2339,20 @@ class GravitationalWaveTransient(SimpleAnalysis):
         2. PSDs from a ``needs:`` dependency's ``pipeline.collect_assets()``.
         3. ``psds``/``xml psds`` set at the event level.
 
+        If a ``needs:`` dependency is expected to provide PSDs (its pipeline
+        declares ``psd``/``psds`` in ``available_outputs``, or its assets
+        include a ``psds``/``xml psds`` key), the event-level block is never
+        used: if the dependency hasn't produced any PSDs yet, that is
+        recorded as a problem instead.
+
         If more than one dependency provides PSDs of the requested format,
         this is ambiguous -- silently picking one (as used to happen,
         because ``self.dependencies`` iterated a set in a non-deterministic
         order) could give different results between runs. Rather than
         raising here -- the whole ledger is rebuilt on every load, so an
         exception in ``__init__`` would break unrelated commands -- the
-        problem is recorded on ``self._psd_errors`` and ``{}`` is returned;
+        problem is recorded on ``self._psd_errors`` (keyed by format) and
+        ``{}`` is returned;
         ``asimov.cli.manage.check_psds_available`` turns this into a hard
         error at build time.
         """
@@ -2360,6 +2367,10 @@ class GravitationalWaveTransient(SimpleAnalysis):
         else:
             raise ValueError(f"This PSD format ({format}) is not recognised.")
 
+        # Start from a clean slate for this format: `_collect_psds` is
+        # called more than once during construction.
+        self._psd_errors.pop(keyword, None)
+
         if set_on_analysis:
             # The analysis's own value wins outright, and replaces any
             # event-level block entirely rather than being merged with it
@@ -2367,7 +2378,9 @@ class GravitationalWaveTransient(SimpleAnalysis):
             psds = self._normalise_psds(analysis_value, keyword)
         else:
             psds = {}
-            providers = []
+            # Dependencies which are expected to supply PSDs, as
+            # (name, assets) pairs, in the (sorted) order of `dependencies`.
+            psd_sources = []
             if self.dependencies:
                 productions = {}
                 for production in self.event.productions:
@@ -2378,21 +2391,44 @@ class GravitationalWaveTransient(SimpleAnalysis):
                     if dependency is None:
                         continue
                     try:
-                        assets = dependency.pipeline.collect_assets()
+                        assets = dependency.pipeline.collect_assets() or {}
                     except Exception as e:
                         self.logger.warning(
                             f"Could not collect assets from dependency "
                             f"'{previous_job}' while looking for {keyword}: {e}",
                             exc_info=True,
                         )
-                        continue
-                    if keyword in assets and assets[keyword]:
-                        if self._check_compatible(dependency):
-                            providers.append((previous_job, assets[keyword]))
-                        else:
-                            self.logger.info(
-                                f"The PSDs from {previous_job} are not compatible with this job."
-                            )
+                        assets = {}
+                    declared = (
+                        getattr(dependency.pipeline.__class__, "available_outputs", None)
+                        or []
+                    )
+                    if (
+                        "psd" in declared
+                        or "psds" in declared
+                        or "psds" in assets
+                        or "xml psds" in assets
+                    ):
+                        psd_sources.append((previous_job, assets))
+
+            providers = []
+            for name, assets in psd_sources:
+                if assets.get(keyword):
+                    dependency = productions[name]
+                    if self._check_compatible(dependency):
+                        providers.append((name, assets[keyword]))
+                    else:
+                        self.logger.info(
+                            f"The PSDs from {name} are not compatible with this job."
+                        )
+
+            # Dependencies expected to provide PSDs which haven't produced
+            # any yet, in either format (e.g. they're still running).
+            pending = [
+                name
+                for name, assets in psd_sources
+                if not (assets.get("psds") or assets.get("xml psds"))
+            ]
 
             if len(providers) > 1:
                 candidate_names = ", ".join(name for name, _ in providers)
@@ -2403,15 +2439,31 @@ class GravitationalWaveTransient(SimpleAnalysis):
                     "'needs:' list, or set the PSDs explicitly on this "
                     "analysis."
                 )
-                self._psd_errors.append(
-                    f"Ambiguous {keyword}: dependencies {candidate_names} "
-                    "all provide PSDs."
+                self._psd_errors[keyword] = (
+                    f"ambiguous {keyword}: dependencies {candidate_names} "
+                    "all provide them"
                 )
             elif len(providers) == 1:
                 psds = providers[0][1]
+            elif pending:
+                # A dependency which should supply this analysis's PSDs
+                # hasn't done so yet. Don't fall back to the event-level
+                # PSDs: that would quietly build the run with a different
+                # noise curve from the one the `needs:` asked for.
+                self._psd_errors[keyword] = (
+                    f"dependency {', '.join(pending)} has not produced "
+                    "any PSDs yet (has it finished running?)"
+                )
+            elif psd_sources:
+                # The PSD dependency has finished but only provides the
+                # other format (e.g. BayesWave without an XML converter
+                # installed). The dependency remains the source of this
+                # analysis's PSDs, so leave this format empty rather than
+                # mixing in the event-level block.
+                pass
             elif keyword in self.subject.meta:
-                # No (unambiguous) dependency provided PSDs; fall back to
-                # the event-level block.
+                # No dependency supplies PSDs; fall back to the event-level
+                # block.
                 psds = self._normalise_psds(self.subject.meta[keyword], keyword)
 
         for ifo, psd in psds.items():
