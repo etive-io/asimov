@@ -513,6 +513,18 @@ General likelihood settings
    * - ``likelihood:maximum frequency``
      - ``dict``, keyed by interferometer
      - The highest frequency at which the inner product / likelihood integral is evaluated for each interferometer. Calculated automatically from the sample rate if not given. As with minimum frequency, specifying this under ``quality`` is deprecated but still supported, with a warning.
+   * - ``likelihood:components:signal``
+     - ``none``, ``wavelets``, ``chirplets``, ``cbc``
+     - The model used for an astrophysical signal which is coherent across detectors, for pipelines (such as BayesWave) which can fit different signal models. ``cbc`` uses the ``waveform`` section (e.g. ``waveform:approximant``) for the template. A pipeline which cannot fit the requested model should raise an error at build time.
+   * - ``likelihood:components:glitch``
+     - ``none``, ``wavelets``, ``chirplets``
+     - The model used for incoherent, detector-local transient noise (glitches), for pipelines which can fit a glitch component separately from the signal.
+   * - ``likelihood:components:noise:psd``
+     - ``fit``, ``fixed``
+     - Whether the power spectral density is inferred as part of the analysis (``fit``, as done by BayesWave/BayesLine) or supplied, for example via the ``psds`` asset of an analysis in ``needs`` (``fixed``, as done by bilby or RIFT).
+   * - ``likelihood:components:noise:lines``
+     - True, False
+     - Whether spectral lines are modelled as part of the noise.
 
 Calibration settings
 --------------------

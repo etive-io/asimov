@@ -514,7 +514,59 @@ terms:
         description: The time-domain source model function.
       coherence test:
         type: boolean
-        description: Whether to perform a coherence test.
+        description: >-
+          Whether to perform a coherence test: compares a hypothesis in
+          which a signal is coherent across detectors against incoherent
+          hypotheses (detector-local glitch and/or noise). Pipelines which
+          implement this through ``likelihood.components`` (for example
+          BayesWave) should treat a coherence test as implying both a
+          ``signal`` and a ``glitch`` component.
+      components:
+        description: >-
+          Which components of the data model an analysis fits, for
+          pipelines (such as BayesWave) which can reconstruct a signal
+          and/or glitch component separately from the noise. A pipeline
+          which cannot fit a requested combination of components should
+          raise an error at build time rather than silently ignore it.
+        children:
+          signal:
+            type: string
+            description: >-
+              The model used for an astrophysical signal which is
+              coherent across detectors. One of ``none`` (no signal
+              component), ``wavelets`` or ``chirplets`` (a
+              morphology-independent, wavelet/chirplet-basis
+              reconstruction, as used by BayesWave), or ``cbc`` (a
+              compact-binary-coalescence template, using the
+              ``waveform`` section, e.g. ``waveform.approximant``, to
+              specify the template).
+            synonyms: [signal model]
+          glitch:
+            type: string
+            description: >-
+              The model used for incoherent, detector-local transient
+              noise (glitches). One of ``none`` (no glitch component),
+              ``wavelets`` or ``chirplets`` (a morphology-independent
+              reconstruction of glitches local to each detector, as used
+              by BayesWave).
+            synonyms: [glitch model, glitches]
+          noise:
+            description: How the Gaussian noise background is modelled.
+            children:
+              psd:
+                type: string
+                description: >-
+                  How the power spectral density is obtained. ``fit``
+                  means the PSD is inferred as part of the analysis
+                  (for example by BayesWave/BayesLine); ``fixed`` means
+                  a PSD is supplied rather than inferred, for example
+                  from the ``psds`` asset of an analysis listed in
+                  ``needs`` (as done by bilby or RIFT).
+              lines:
+                type: boolean
+                description: >-
+                  Whether spectral lines are modelled as part of the
+                  noise, in addition to the smooth PSD.
       calibration:
         description: How the likelihood treats calibration uncertainty.
         children:
@@ -956,3 +1008,18 @@ assets:
     description: Frame cache files, as a mapping from detector to file.
   calibration:
     description: Calibration uncertainty envelopes, as a mapping from detector to file.
+  reconstructions:
+    description: >-
+      Waveform reconstructions, as a mapping from component (for example
+      ``signal`` or ``glitch``, matching ``likelihood.components``) to a
+      mapping from detector to file, giving the median and credible-interval
+      reconstruction for that component in that detector.
+    synonyms: [waveform reconstructions, reconstruction]
+  bayes factors:
+    description: >-
+      Log Bayes factors between hypotheses (or components), as a mapping
+      from a name such as ``signal:noise`` or ``signal:glitch`` to a number.
+    synonyms: [evidence, bayes factor, log bayes factors]
+  skymap:
+    description: A sky-localisation map file (e.g. a FITS file).
+    synonyms: [sky map, skymap file, fits]
