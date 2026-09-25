@@ -872,7 +872,7 @@ class Production:
         dictionary["job id"] = self.job_id
 
         # Remove duplicates of pipeline defaults
-        if self.pipeline.name.lower() in self.event.ledger.data["pipelines"]:
+        if "pipelines" in self.event.ledger.data and self.pipeline.name.lower() in self.event.ledger.data["pipelines"]:
             defaults = deepcopy(
                 self.event.ledger.data["pipelines"][self.pipeline.name.lower()]
             )
@@ -1062,6 +1062,9 @@ class Production:
     @classmethod
     def from_dict(cls, parameters, event, issue=None):
         name, pars = list(parameters.items())[0]
+        # Normalise None metadata (production stored as {name: null})
+        if pars is None:
+            pars = {}
         # Check that pars is a dictionary
         if not isinstance(pars, dict):
             if "event" in parameters:

@@ -4,10 +4,12 @@ import configparser
 import glob
 import os
 import re
+import shutil
 import subprocess
 from shutil import copyfile, copytree
 
 import numpy as np
+from gwpy.frequencyseries import FrequencySeries
 
 from asimov import config
 from asimov.utils import set_directory
@@ -128,12 +130,22 @@ class BayesWave(Pipeline):
 
         gps_time = self.production.get_meta("event time")
 
-        pipe_cmd = os.path.join(
+        default_executable = os.path.join(
             config.get("pipelines", "environment"), "bin", "bayeswave_pipe"
         )
+        executable = self.production.meta.get("executable", default_executable)
+        if (executable := shutil.which(executable)) is not None:
+            pass
+        elif (executable := shutil.which("bayeswave_pipe")) is not None:
+            pass
+        else:
+            raise PipelineException(
+                "Cannot find bayeswave_pipe executable",
+                production=self.production.name,
+            )
 
         command = [
-            pipe_cmd,
+            executable,
             # "-l", f"{gps_file}",
             f"--trigger-time={gps_time}",
         ]
@@ -152,10 +164,10 @@ class BayesWave(Pipeline):
                 command += ["--transfer-files"]
 
                 if "copy frames" not in self.production.meta["scheduler"]:
-                    command += ["--osg-deploy"]
+                    command += ["--igwn-pool"]
                 if "copy frames" in self.production.meta["scheduler"]:
                     if not self.production.meta["scheduler"]["copy frames"]:
-                        command += ["--osg-deploy"]
+                        command += ["--igwn-pool"]
 
         command += [
             "-r",
@@ -185,8 +197,19 @@ class BayesWave(Pipeline):
                 self.logger.info("DAG file created")
                 self.logger.debug(out)
 
+    def _original_psds(self):
+        psds = {}
+        results_dir = glob.glob(f"{self.production.rundir}/trigtime_*")[0]
+        for det in self.production.meta["interferometers"]:
+            asset = os.path.join(
+                results_dir, "post", "clean", f"glitch_median_PSD_forLI_{det}.dat"
+            )
+            if os.path.exists(asset):
+                psds[det] = asset
+        return psds
+
     def detect_completion(self):
-        psds = self.collect_assets()["psds"]
+        psds = self._original_psds()
         if len(list(psds.values())) > 0:
             return True
         else:
@@ -242,9 +265,42 @@ class BayesWave(Pipeline):
             )
 
     def after_completion(self):
+        """
+        Collect the outputs of the pipeline so that they can be used
+        in subsequent analyses.
+        
+        Stages:
+
+        - Collect PSDs from the working directory.
+        - Apply suppression if required.
+        - Convert the (possibly suppressed) PSDs to XML format.
+        - Add the PSDs to the event data repository.
+        """
+        self.logger.error("BW complete")
+
+        psds = self._original_psds()
+
+        if "supress" in self.production.meta["quality"]:
+            self.logger.warning("suppressing PSD")
+            sample_rate = self.production.meta["likelihood"]["sample rate"]
+            for ifo in self.production.meta["quality"]["supress"]:
+                if ifo in self.production.meta["interferometers"]:
+                    ranges = self.production.meta["quality"]["supress"][ifo]
+                    if isinstance(ranges, dict):
+                        ranges = [ranges]
+                    self.supress_psd(ifo, ranges, psds[ifo])
+                    repo_psd = os.path.join(
+                        self.production.event.repository.directory,
+                        self.category,
+                        "psds",
+                        str(sample_rate),
+                        f"{ifo}-psd.dat",
+                    )
+                    psds[ifo] = repo_psd
 
         try:
-            for ifo, psd in self.collect_assets()["psds"].items():
+            for ifo, psd in psds.items():
+                self.logger.warning(f"Converting the PSD for {ifo} to XML")
                 self._convert_psd(ascii_format=psd, ifo=ifo)
         except Exception as e:
             self.logger.error("Failed to convert the PSDs to XML")
@@ -267,17 +323,6 @@ class BayesWave(Pipeline):
                 issue=self.production.event.issue_object,
                 production=self.production.name,
             )
-
-        if "supress" in self.production.meta["quality"]:
-            for ifo in self.production.meta["quality"]["supress"]:
-                if ifo in self.production.meta["interferometers"]:
-                    self.supress_psd(
-                        ifo,
-                        self.production.meta["quality"]["supress"][ifo]["lower"],
-                        self.production.meta["quality"]["supress"][ifo]["upper"],
-                    )
-
-        self.production.meta.update(self.collect_assets())
 
         self.production.status = "uploaded"
 
@@ -388,7 +433,7 @@ class BayesWave(Pipeline):
         sample = self.production.meta["likelihood"]["sample rate"]
         git_location = os.path.join(self.category, "psds")
 
-        for detector, asset in self.collect_assets()["psds"]:
+        for detector, asset in self._original_psds().items():
             self.production.event.repository.add_file(
                 asset,
                 os.path.join(git_location, str(sample), f"{detector}-psd.dat"),
@@ -410,6 +455,10 @@ class BayesWave(Pipeline):
                     self.production.name,
                     file=asset,
                     new_name=f"{detector}-{sample_rate}-psd.dat",
+                )
+            except AlreadyPresentException:
+                self.logger.warning(
+                    f"Attempted to add a PSD for {detector} which already exists."
                 )
             except Exception as e:
                 self.logger.error(
@@ -448,80 +497,79 @@ class BayesWave(Pipeline):
         Collect the assets for this job and commit them to the event repository.
         Since this job also generates the PSDs these should be added to the production ledger.
         """
-        psds = {}
-        results_dir = glob.glob(f"{self.production.rundir}/trigtime_*")[0]
-        for det in self.production.meta["interferometers"]:
-            asset = os.path.join(
-                results_dir, "post", "clean", f"glitch_median_PSD_forLI_{det}.dat"
-            )
-            if os.path.exists(asset):
-                psds[det] = asset
-
         outputs = {}
-        outputs["psds"] = psds
 
         xml_psds = {}
+        psds = {}
         for det in self.production.meta["interferometers"]:
-            asset = os.path.join(
-                self.production.event.repository.directory,
-                self.production.category,
-                "psds",
-                f"{self.production.meta['likelihood']['sample rate']}",
-                f"{det.upper()}-psd.xml.gz",
-            )
-            if os.path.exists(asset):
-                xml_psds[det] = os.path.abspath(asset)
+            for extension, container in [("dat", psds), ("xml.gz", xml_psds)]:
+                asset = os.path.join(
+                    self.production.event.repository.directory,
+                    self.production.category,
+                    "psds",
+                    f"{self.production.meta['likelihood']['sample rate']}",
+                    f"{det.upper()}-psd.{extension}",
+                )
+                if os.path.exists(asset):
+                    container[det] = os.path.abspath(asset)
 
         outputs["xml psds"] = xml_psds
+        outputs["psds"] = psds
 
         return outputs
 
-    def supress_psd(self, ifo, fmin, fmax):
+    def supress_psd(self, ifo, ranges, psd_file):
         """
         Suppress portions of a PSD.
+
+        Applies one or more frequency-range notches to the PSD for a given
+        interferometer, writing and committing the result once.
+
         Author: Carl-Johan Haster - August 2020
-        (Updated for asimov by Daniel Williams - November 2020
+        (Updated for asimov by Daniel Williams - November 2020)
+        (Multi-range support added April 2026)
+
+        Parameters
+        ----------
+        ifo : str
+            The interferometer name (e.g. ``"H1"``).
+        ranges : list of dict
+            Each dict must have ``"lower"`` and ``"upper"`` keys specifying
+            the frequency band (in Hz) to suppress.  A single dict is also
+            accepted for backwards compatibility.
         """
+        if isinstance(ranges, dict):
+            ranges = [ranges]
+
         store = Store(root=config.get("storage", "directory"))
-        sample_rate = self.production.meta["quality"]["sample-rate"]
-        orig_PSD_file = np.genfromtxt(
-            os.path.join(
-                self.production.event.repository.directory,
-                self.category,
-                "psds",
-                str(sample_rate),
-                f"{ifo}-psd.dat",
-            )
-        )
+        sample_rate = self.production.meta["likelihood"]["sample rate"]
+        orig_PSD_file = FrequencySeries.read(psd_file, format="txt")
 
         self.logger.info("PSD supression has been set")
-        self.logger.info(
-            f"{ifo}-psd.dat will be supressed between {fmin}-Hz and {fmax}-Hz"
-        )
 
-        freq = orig_PSD_file[:, 0]
-        PSD = orig_PSD_file[:, 1]
+        freq = orig_PSD_file.frequencies.value
 
-        suppression_region = np.logical_and(
-            np.greater_equal(freq, fmin), np.less_equal(freq, fmax)
-        )
-
-        # Suppress the PSD in this region
-
-        PSD[suppression_region] = 1.0
-
-        new_PSD = np.vstack([freq, PSD]).T
+        for r in ranges:
+            fmin, fmax = r["lower"], r["upper"]
+            self.logger.info(
+                f"{ifo}-psd.dat will be supressed between {fmin}-Hz and {fmax}-Hz"
+            )
+            suppression_region = np.logical_and(
+                np.greater_equal(freq, fmin), np.less_equal(freq, fmax)
+            )
+            orig_PSD_file[suppression_region] = 1.0
 
         asset = f"{ifo}-psd.dat"
-        np.savetxt(asset, new_PSD, fmt="%+.5e")
+        orig_PSD_file.write(asset, format="txt")
 
         destination = os.path.join(
             self.category, "psds", str(sample_rate), f"{ifo}-psd.dat"
         )
 
-        self.logger.info(
-            f"{ifo}-psd.dat has been supressed between {fmin}-Hz and {fmax}-Hz"
-        )
+        for r in ranges:
+            self.logger.info(
+                f"{ifo}-psd.dat has been supressed between {r['lower']}-Hz and {r['upper']}-Hz"
+            )
 
         try:
             self.production.event.repository.add_file(
@@ -533,12 +581,12 @@ class BayesWave(Pipeline):
             )
             self.logger.exception(e)
 
-        copyfile(asset, f"{ifo}-{sample_rate}-psd-suppresed.dat")
+        copyfile(asset, f"{ifo}-{sample_rate}-psd.dat")
         try:
             store.add_file(
                 self.production.event.name,
                 self.production.name,
-                file=f"{ifo}-{sample_rate}-psd-suppresed.dat",
+                file=f"{ifo}-{sample_rate}-psd.dat",
             )
         except AlreadyPresentException:
             self.logger.warning(

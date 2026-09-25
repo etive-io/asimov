@@ -25,8 +25,8 @@ logger = logger.getChild("cli").getChild("apply")
 logger.setLevel(LOGGER_LEVEL)
 
 
-def apply_page(file, event, ledger=ledger, update_page=False):
-    if file[:4] == "http":
+def apply_page(file, event=None, ledger=ledger, update_page=False):
+    if file.startswith("http://") or file.startswith("https://"):
         r = requests.get(file)
         if r.status_code == 200:
             data = r.text
@@ -52,12 +52,21 @@ def apply_page(file, event, ledger=ledger, update_page=False):
                 old_event = deepcopy(ledger.events[event.name])
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
-                analyses = [
-                    # I appreciate this looks insane, but the way the yaml stores these
-                    # is poorly designed.
-                    {list(prod.keys())[0]: update(list(prod.values())[0], old_event)}
-                    for prod in ledger.events[event.name]["productions"]
-                ]
+                analyses = []
+                for prod in ledger.events[event.name].get("productions", []):
+                    if isinstance(prod, dict) and len(prod) == 1:
+                        prod_name, prod_data = next(iter(prod.items()))
+                    elif isinstance(prod, dict):
+                        prod_name = prod.get("name")
+                        prod_data = {k: v for k, v in prod.items() if k != "name"} if prod_name else prod
+                    else:
+                        continue
+
+                    if prod_data is None:
+                        prod_data = {}
+
+                    merged = update(old_event, prod_data, inplace=False)
+                    analyses.append({prod_name: merged} if prod_name else merged)
 
                 # Add the old version to the history
                 if "history" not in ledger.data:
@@ -68,10 +77,10 @@ def apply_page(file, event, ledger=ledger, update_page=False):
                 history[version]["date changed"] = datetime.now()
 
                 ledger.data["history"][event.name] = history
-                ledger.save()
                 update(ledger.events[event.name], event.meta)
                 ledger.events[event.name]["productions"] = analyses
                 ledger.events[event.name].pop("ledger", None)
+                ledger.save()
 
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event.name}"

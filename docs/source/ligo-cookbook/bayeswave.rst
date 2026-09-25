@@ -57,3 +57,56 @@ The job this creates will be called ``psd-generation``, so you'll need to specif
 		   - psd-generation
 
 in their YAML file.
+
+Suppressing frequency bands in the PSD
+---------------------------------------
+
+Sometimes a specific frequency band needs to be excluded from the PSD before it is used by downstream analyses — for example to remove power from a known spectral line.
+This is done with the ``supress`` key under ``quality``.
+
+Single notch
+~~~~~~~~~~~~
+
+To suppress a single band in one or more interferometers, provide a mapping with ``lower`` and ``upper`` frequency limits (in Hz):
+
+.. code-block:: yaml
+
+        kind: analysis
+        name: psd-generation
+        pipeline: bayeswave
+        comment: Bayeswave on-source PSD estimation job
+        quality:
+          supress:
+            H1:
+              lower: 59.0
+              upper: 61.0
+            L1:
+              lower: 59.0
+              upper: 61.0
+
+Multiple notches
+~~~~~~~~~~~~~~~~
+
+To suppress more than one band per interferometer, provide a list of ``lower``/``upper`` pairs:
+
+.. code-block:: yaml
+
+        kind: analysis
+        name: psd-generation
+        pipeline: bayeswave
+        comment: Bayeswave on-source PSD estimation job
+        quality:
+          supress:
+            H1:
+              - lower: 59.0
+                upper: 61.0
+              - lower: 119.0
+                upper: 121.0
+            L1:
+              - lower: 59.0
+                upper: 61.0
+              - lower: 119.0
+                upper: 121.0
+
+All notches for a given interferometer are applied in a single pass before the PSD is committed to the repository, so multi-notch jobs produce the same number of git commits as single-notch ones.
+The single-mapping form (without a list) is still accepted for backwards compatibility.

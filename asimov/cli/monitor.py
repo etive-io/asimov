@@ -2,6 +2,7 @@ import shutil
 import configparser
 import os
 import sys
+import traceback
 import click
 from copy import deepcopy
 
@@ -362,8 +363,10 @@ def monitor(ctx, event, update, dry_run, chain):
                 if hook.name in list(ledger.data["hooks"]["postmonitor"].keys()):
                     try:
                         hook.load()(deepcopy(ledger)).run()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("%s experienced %s", hook.name, type(exc))
+                        traceback_lines = traceback.format_exc().splitlines()
+                        logger.warning("Traceback:\n" + "\n".join(traceback_lines))
 
     if chain:
         ctx.invoke(report.html)

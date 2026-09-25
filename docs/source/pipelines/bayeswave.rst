@@ -40,6 +40,37 @@ These settings specifically relate to data quality related settings.
   The start time of the segment.
   If not specified, the start time of the segment is determined by subtracting the ``quality>segment length`` setting from the ``event time``, and adding 2 (that is, the event time is placed two seconds from the end of the segment.
 
+``supress``
+  Optional. A mapping of interferometer names to one or more frequency bands that should be suppressed in the PSD before it is passed to downstream analyses.
+  Suppression sets the PSD value to 1.0 in the specified band, effectively notching that frequency range out of the analysis.
+
+  A single notch is specified as a mapping with ``lower`` and ``upper`` keys:
+
+  .. code-block:: yaml
+
+     quality:
+       supress:
+         H1:
+           lower: 59.0
+           upper: 61.0
+         L1:
+           lower: 59.0
+           upper: 61.0
+
+  Multiple notches per interferometer can be specified as a list:
+
+  .. code-block:: yaml
+
+     quality:
+       supress:
+         H1:
+           - lower: 59.0
+             upper: 61.0
+           - lower: 119.0
+             upper: 121.0
+
+  The single-mapping form is retained for backwards compatibility; both forms may be freely mixed across interferometers.
+
 
 ``sampler``
 ~~~~~~~~~~~

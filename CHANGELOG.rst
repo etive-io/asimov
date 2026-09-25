@@ -1,3 +1,79 @@
+0.5.15
+======
+
+This release refactors PSD collection, suppression, and storage in the BayesWave pipeline, and adds support for running BayesWave from within a container.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!183 <https://git.ligo.org/asimov/asimov/-/merge_requests/183>`_: Refactors PSD collection and suppression in the BayesWave pipeline to operate on the raw pipeline output PSDs directly, using ``gwpy.FrequencySeries`` in place of manual ``numpy`` text I/O. Fixes a bug where completion detection and asset collection read PSDs from mismatched locations, and adds handling for the case where a PSD has already been committed to the event repository.
++ `ligo!184 <https://git.ligo.org/asimov/asimov/-/merge_requests/184>`_: Adds support for running the BayesWave pipeline from within a container.
+
+0.5.14
+======
+
+This release adds support for suppressing multiple frequency bands in the BayesWave PSD output, while remaining fully backwards compatible with the existing single-range configuration format.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!182 <https://git.ligo.org/asimov/asimov/-/merge_requests/182>`_: Adds support for specifying multiple PSD suppression notches per interferometer in the BayesWave pipeline. The ``quality.supress`` ledger key now accepts either a single ``{lower, upper}`` mapping (existing format, unchanged) or a list of such mappings for multi-notch suppression. All notches are applied in a single read/write/commit cycle, so the number of git commits is unchanged. Documentation updated for both the pipeline reference and the cookbook.
+
+0.5.13
+======
+
+This is a maintenance release with no functional changes. It reverts an experimental multi-range PSD suppression enhancement that was merged in error; the feature was reinstated properly in 0.5.14.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+0.5.12
+======
+
+This is a bug-fix release, back-porting fixes from v0.7, which does not introduce any new backwards-incompatible features.
+It fixes a bug where the ledger could be written to the wrong location when the working directory changed during a monitor run, ensures that failures in post-monitor hooks are logged rather than silently swallowed, and corrects ``asimov apply --update`` to robustly handle productions stored with null or variably-structured metadata.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!179 <https://git.ligo.org/asimov/asimov/-/merge_requests/179>`_: Back-ports fixes from v0.7 to stabilise ledger path handling, improve post-monitor hook error reporting, and fix ``asimov apply --update`` for productions with null or variable metadata structures.
+
+0.5.11
+======
+
+This is a bug-fix release which does not introduce any new backwards-incompatible features.
+It fixes several issues with the PESummary post-processing pipeline, improves the robustness of bilby executable discovery, and fixes a crash in the review CLI when adding notes without a status.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!172 <https://git.ligo.org/asimov/asimov/-/merge_requests/172>`_: Fixes several bugs in the PESummary pipeline: corrects iteration over keyword arguments (was unpacking tuples instead of calling ``.items()``), adds support for user-defined ``environment variables`` in the submit description, adds ``HOME`` to the ``getenv`` list, and adds the missing ``Queue`` statement to the generated submit file.
++ `ligo!167 <https://git.ligo.org/asimov/asimov/-/merge_requests/167>`_: Backports bilby configuration improvements: executable discovery now falls back gracefully from the configured environment path to ``shutil.which("bilby_pipe")`` before raising a clear error; normalises the pipeline ``name`` attribute to lowercase ``"bilby"``.
++ `ligo!170 <https://git.ligo.org/asimov/asimov/-/merge_requests/170>`_: Fixes a crash in ``asimov review add`` when no status is provided, and allows status-free notes to be added to an analysis.
++ `ligo!168 <https://git.ligo.org/asimov/asimov/-/merge_requests/168>`_: Adds SAST, dependency scanning, and secret detection CI templates to the GitLab CI configuration.
+
 0.5.10
 ======
 

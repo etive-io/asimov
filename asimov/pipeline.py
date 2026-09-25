@@ -159,6 +159,7 @@ class Pipeline:
         """
         Store the PE Summary results
         """
+        from .storage import AlreadyPresentException
 
         files = [
             f"{self.production.name}_pesummary.dat",
@@ -176,9 +177,12 @@ class Pipeline:
                 filename,
             )
             store = Store(root=config.get("storage", "directory"))
-            store.add_file(
-                self.production.event.name, self.production.name, file=results
-            )
+            try:
+                store.add_file(
+                    self.production.event.name, self.production.name, file=results
+                )
+            except AlreadyPresentException:
+                pass
 
     def detect_completion_processing(self):
         files = f"{self.production.name}_pesummary.dat"

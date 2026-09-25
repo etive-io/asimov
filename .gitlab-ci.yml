@@ -51,6 +51,7 @@ test-python-39:
     - pip install unittest-xml-reporting
     - pip install .
     - pip install bilby-pipe
+    - pip install git+https://git.ligo.org/lscsoft/bayeswave.git#subdirectory=BayesWaveUtils
     - pip install -U "htcondor<23"
     - coverage run -m xmlrunner discover tests/ -o junit-reports
     - coverage report
@@ -75,6 +76,7 @@ test-python-310:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install git+https://git.ligo.org/lscsoft/bayeswave.git#subdirectory=BayesWaveUtils
     - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
@@ -88,6 +90,7 @@ test-python-311:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install git+https://git.ligo.org/lscsoft/bayeswave.git#subdirectory=BayesWaveUtils
     - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
@@ -101,6 +104,7 @@ test-python-312:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install git+https://git.ligo.org/lscsoft/bayeswave.git#subdirectory=BayesWaveUtils
     - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 
@@ -114,6 +118,7 @@ test-python-313:
     - pip install coverage
     - pip install .
     - pip install bilby-pipe
+    - pip install git+https://git.ligo.org/lscsoft/bayeswave.git#subdirectory=BayesWaveUtils
     - pip install -U "htcondor<23"
     - python -m unittest discover tests/
 

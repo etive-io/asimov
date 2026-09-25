@@ -33,18 +33,13 @@ class Ledger:
                 "This hasn't been ported to the new interface yet. Stay tuned!"
             )
 
-        elif engine == "gitlab":
-            raise NotImplementedError(
-                "This hasn't been ported to the new interface yet. Stay tuned!"
-            )
-
 
 class YAMLLedger(Ledger):
     def __init__(self, location=None):
         if not location:
             location = os.path.join(".asimov", "ledger.yml")
-        self.location = location
-        with open(location, "r") as ledger_file:
+        self.location = os.path.abspath(location)
+        with open(self.location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 
         self.data["events"] = [

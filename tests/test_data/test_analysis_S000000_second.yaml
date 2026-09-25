@@ -1,0 +1,6 @@
+kind: analysis
+name: bilby-IMRPhenomXPHM-HighSpin
+event: S000000
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM

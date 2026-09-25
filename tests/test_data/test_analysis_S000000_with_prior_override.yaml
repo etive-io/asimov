@@ -1,0 +1,10 @@
+kind: analysis
+name: bilby-IMRPhenomXPHM-WithOverride
+event: S000000
+pipeline: bilby
+waveform:
+  approximant: IMRPhenomXPHM
+priors:
+  luminosity distance:
+    minimum: 10
+    maximum: 500
