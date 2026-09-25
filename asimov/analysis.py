@@ -328,8 +328,12 @@ class Analysis:
                     )
                     matches = set.union(matches, set(filtered_analyses))
             
-            # Exclude self-dependencies
-            for analysis in matches:
+            # Exclude self-dependencies. Iterate the matches in a
+            # deterministic (name-sorted) order rather than the set's own
+            # order, which varies between processes because of hash
+            # randomisation; callers such as ``_collect_psds`` rely on this
+            # order being stable and reproducible.
+            for analysis in sorted(matches, key=lambda a: a.name):
                 if analysis.name != self.name:
                     all_matches.append(analysis.name)
 
@@ -2031,6 +2035,40 @@ class GravitationalWaveTransient(SimpleAnalysis):
         """
 
         self.category = config.get("general", "calibration_directory")
+
+        # Capture whether PSDs were set directly on this analysis, before
+        # `SimpleAnalysis.__init__` merges the event's meta into `self.meta`
+        # (`self.meta = update(self.meta, deepcopy(self.subject.meta))`) --
+        # after that merge `"psds" in self.meta` is true for every analysis
+        # of an event with a `psds:` block, whether or not the analysis set
+        # one itself. We keep the raw kwarg value too, rather than reading
+        # it back out of `self.meta`, because `update()` deep-merges nested
+        # dicts: an analysis-level `psds: {H1: a}` merged onto an
+        # event-level `{H1: x, L1: y}` would otherwise become
+        # `{H1: a, L1: y}`, mixing PSD sources across detectors (#153).
+        #
+        # Note: `SimpleAnalysis.to_dict()` diffs the analysis meta against
+        # the event meta and drops anything that matches, so an
+        # analysis-level value that happens to be *identical* to the
+        # event's is not saved separately. After a save/reload of the
+        # ledger such an analysis would read back as "not set on the
+        # analysis" (i.e. falling through to dependency/event resolution
+        # again) even though it once was explicit. In practice this makes
+        # no observable difference, since the value is the same either way,
+        # so this edge case is accepted rather than worked around.
+        self._psds_kwarg = deepcopy(kwargs.get("psds"))
+        self._xml_psds_kwarg = deepcopy(kwargs.get("xml psds"))
+        self._psds_set_on_analysis = "psds" in kwargs
+        self._xml_psds_set_on_analysis = "xml psds" in kwargs
+
+        # Problems found while resolving PSDs (e.g. more than one `needs:`
+        # dependency provides them) are recorded here rather than raised,
+        # since the whole ledger is reconstructed on every load and an
+        # exception here would break commands that have nothing to do with
+        # this analysis. `manage.py`'s build-time check turns these into a
+        # hard failure before a run configuration is generated.
+        self._psd_errors = []
+
         super().__init__(subject, name, pipeline, **kwargs)
         self._checks()
 
@@ -2223,52 +2261,158 @@ class GravitationalWaveTransient(SimpleAnalysis):
         """
         return True
 
+    def _normalise_psds(self, psds, keyword):
+        """
+        Normalise a PSD mapping into the detector-keyed form the ledger
+        vocabulary documents (``psds``/``xml psds`` in ``vocabulary.yaml``).
+
+        Some older event blueprints key PSDs by sample rate first, e.g.
+        ``psds: {1024: {H1: ..., L1: ...}}`` (see
+        ``tests/integration/GW190426190642.yaml``), instead of directly by
+        detector. When every key of the mapping looks like a sample rate
+        (an ``int``, or a string of digits) and every value is itself a
+        mapping, this picks out the entry for this analysis's configured
+        ``likelihood: sample rate``, rather than passing the whole,
+        sample-rate-keyed dict on as if it were detector-keyed.
+
+        Parameters
+        ----------
+        psds : dict
+            The raw PSD mapping, as found on the analysis or event.
+        keyword : str
+            ``"psds"`` or ``"xml psds"``, used only for log messages.
+
+        Returns
+        -------
+        dict
+            The detector-keyed PSD mapping, or ``{}`` if ``psds`` was
+            sample-rate-keyed but no entry matched.
+        """
+        if not isinstance(psds, dict) or not psds:
+            return psds or {}
+
+        def _looks_like_rate(key):
+            return isinstance(key, int) or (isinstance(key, str) and key.isdigit())
+
+        if not (
+            all(_looks_like_rate(key) for key in psds)
+            and all(isinstance(value, dict) for value in psds.values())
+        ):
+            # Already detector-keyed.
+            return psds
+
+        sample_rate = self.meta.get("likelihood", {}).get("sample rate")
+        if sample_rate is None:
+            self.logger.warning(
+                f"'{keyword}' for {self.name} looks like it's keyed by sample "
+                "rate, but this analysis has no 'likelihood: sample rate' "
+                "set, so the correct entry can't be picked; ignoring these PSDs."
+            )
+            return {}
+
+        # Try both the int and str forms of the sample rate, since the
+        # blueprint may have written either as the mapping's keys.
+        candidates = [sample_rate, str(sample_rate)]
+        try:
+            candidates.append(int(sample_rate))
+        except (TypeError, ValueError):
+            pass
+
+        for candidate in candidates:
+            if candidate in psds:
+                return deepcopy(psds[candidate])
+
+        self.logger.warning(
+            f"None of the sample-rate-keyed entries in '{keyword}' for "
+            f"{self.name} match its sample rate ({sample_rate}); "
+            "ignoring these PSDs."
+        )
+        return {}
+
     def _collect_psds(self, format="ascii"):
         """
-        Collect the required psds for this production.
-        """
-        psds = {}
-        # If the PSDs are specifically provided in the ledger,
-        # use those.
+        Collect the required PSDs for this production.
 
+        The precedence, highest first, is:
+
+        1. ``psds``/``xml psds`` set on this analysis itself.
+        2. PSDs from a ``needs:`` dependency's ``pipeline.collect_assets()``.
+        3. ``psds``/``xml psds`` set at the event level.
+
+        If more than one dependency provides PSDs of the requested format,
+        this is ambiguous -- silently picking one (as used to happen,
+        because ``self.dependencies`` iterated a set in a non-deterministic
+        order) could give different results between runs. Rather than
+        raising here -- the whole ledger is rebuilt on every load, so an
+        exception in ``__init__`` would break unrelated commands -- the
+        problem is recorded on ``self._psd_errors`` and ``{}`` is returned;
+        ``asimov.cli.manage.check_psds_available`` turns this into a hard
+        error at build time.
+        """
         if format == "ascii":
             keyword = "psds"
+            set_on_analysis = self._psds_set_on_analysis
+            analysis_value = self._psds_kwarg
         elif format == "xml":
             keyword = "xml psds"
+            set_on_analysis = self._xml_psds_set_on_analysis
+            analysis_value = self._xml_psds_kwarg
         else:
             raise ValueError(f"This PSD format ({format}) is not recognised.")
 
-        if keyword in self.meta:
-            # if self.meta["likelihood"]["sample rate"] in self.meta[keyword]:
-            psds = self.meta[keyword]  # [self.meta["likelihood"]["sample rate"]]
+        if set_on_analysis:
+            # The analysis's own value wins outright, and replaces any
+            # event-level block entirely rather than being merged with it
+            # (see the comment in __init__ about update()'s deep merge).
+            psds = self._normalise_psds(analysis_value, keyword)
+        else:
+            psds = {}
+            providers = []
+            if self.dependencies:
+                productions = {}
+                for production in self.event.productions:
+                    productions[production.name] = production
 
-        # First look through the list of the job's dependencies
-        # to see if they're provided by a job there.
-        elif self.dependencies:
-            productions = {}
-            for production in self.event.productions:
-                productions[production.name] = production
-
-            for previous_job in self.dependencies:
-                try:
-                    # Check if the job provides PSDs as an asset and were produced with compatible settings
-                    if keyword in productions[previous_job].pipeline.collect_assets():
-                        if self._check_compatible(productions[previous_job]):
-                            psds = productions[previous_job].pipeline.collect_assets()[
-                                keyword
-                            ]
-                            break
+                for previous_job in self.dependencies:
+                    dependency = productions.get(previous_job)
+                    if dependency is None:
+                        continue
+                    try:
+                        assets = dependency.pipeline.collect_assets()
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Could not collect assets from dependency "
+                            f"'{previous_job}' while looking for {keyword}: {e}",
+                            exc_info=True,
+                        )
+                        continue
+                    if keyword in assets and assets[keyword]:
+                        if self._check_compatible(dependency):
+                            providers.append((previous_job, assets[keyword]))
                         else:
                             self.logger.info(
                                 f"The PSDs from {previous_job} are not compatible with this job."
                             )
-                    else:
-                        psds = {}
-                except Exception:
-                    psds = {}
-        # Otherwise return no PSDs
-        else:
-            psds = {}
+
+            if len(providers) > 1:
+                candidate_names = ", ".join(name for name, _ in providers)
+                self.logger.error(
+                    f"Analysis '{self.name}' has more than one 'needs:' "
+                    f"dependency providing {keyword}: {candidate_names}. "
+                    "Refusing to guess which one to use; narrow the "
+                    "'needs:' list, or set the PSDs explicitly on this "
+                    "analysis."
+                )
+                self._psd_errors.append(
+                    f"Ambiguous {keyword}: dependencies {candidate_names} "
+                    "all provide PSDs."
+                )
+            elif len(providers) == 1:
+                psds = providers[0][1]
+            elif keyword in self.subject.meta:
+                # No (unambiguous) dependency provided PSDs; fall back to
+                # the event-level block.
+                psds = self._normalise_psds(self.subject.meta[keyword], keyword)
 
         for ifo, psd in psds.items():
             self.logger.debug(f"PSD-{ifo}: {psd}")
