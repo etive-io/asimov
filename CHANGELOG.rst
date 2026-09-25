@@ -210,6 +210,27 @@ GitHub Pull Requests
 + `github#131 <https://github.com/etive-io/asimov/pull/131>`_: Remove built-in bayeswave, lalinference, and pesummary pipelines
 + `github#133 <https://github.com/etive-io/asimov/pull/133>`_: Fix CI: pin sphinx<9 for docs build, update cbcflow test fixture for v3 schema
 
+0.6.2
+=====
+
+This is the final release of the 0.6 series, which is now end of life. It is a bug-fix release, and does not introduce any new backwards-incompatible features.
+
+Most of the functionality specific to the 0.6 series was retired or replaced in 0.7, and 0.6 will receive no further updates. Please upgrade to asimov 0.7 or later.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `#104 <https://github.com/etive-io/asimov/pull/104>`_: Removes the LensingFlow-specific submission-priority logic from ``asimov manage build`` and ``asimov manage submit``, which LensingFlow now handles itself, and restores the 0.6.1 submission behaviour for project analyses (using ``analysis._subjects``). Thanks to Disha Hegde.
++ Fixes a ``SyntaxError`` in ``asimov/cli/review.py`` introduced when merging the 0.5 backports, which prevented the review commands from loading.
++ `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (forward-ported from the 0.5 series).
++ Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
++ Includes backports from the 0.5 series: coinc.xml retrieval, updating events from blueprints, the review CLI, bilby configuration and PESummary fixes, and updated GWOSC configuration.
+
 0.6.1
 =====
 
@@ -259,6 +280,39 @@ Merges and fixes
 + `ligo!66 <https://git.ligo.org/asimov/asimov/-/merge_requests/66>`_: Updates the post-processing interface.
 + `ligo!128 <https://git.ligo.org/asimov/asimov/-/merge_requests/128>`_: Updates to the README
 + `ligo!157 <https://git.ligo.org/asimov/asimov/-/merge_requests/157>`_: Fixes to the interface between asimov and lensingflow
+
+0.5.16
+======
+
+This is the final release of the 0.5 series, which is now end of life. It is a maintenance release, and does not introduce any new backwards-incompatible features.
+
+Most of the functionality specific to the 0.5 series was retired or replaced in 0.7, and 0.5 will receive no further updates. Please upgrade to asimov 0.7 or later.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (`#114 <https://github.com/etive-io/asimov/pull/114>`_).
++ Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
+
+0.5.13
+======
+
+This release adds support for suppressing multiple frequency bands in the BayesWave PSD output, while remaining fully backwards compatible with the existing single-range configuration format.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!182 <https://git.ligo.org/asimov/asimov/-/merge_requests/182>`_: Adds support for specifying multiple PSD suppression notches per interferometer in the BayesWave pipeline. The ``quality.supress`` ledger key now accepts either a single ``{lower, upper}`` mapping (existing format, unchanged) or a list of such mappings for multi-notch suppression. All notches are applied in a single read/write/commit cycle, so the number of git commits is unchanged. Documentation updated for both the pipeline reference and the cookbook.
 
 0.5.12
 ======
