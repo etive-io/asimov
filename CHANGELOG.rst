@@ -305,7 +305,23 @@ Merges
 + `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (`#114 <https://github.com/etive-io/asimov/pull/114>`_).
 + Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
 
-0.5.13
+0.5.15
+======
+
+This release refactors PSD collection, suppression, and storage in the BayesWave pipeline, and adds support for running BayesWave from within a container.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!183 <https://git.ligo.org/asimov/asimov/-/merge_requests/183>`_: Refactors PSD collection and suppression in the BayesWave pipeline to operate on the raw pipeline output PSDs directly, using ``gwpy.FrequencySeries`` in place of manual ``numpy`` text I/O. Fixes a bug where completion detection and asset collection read PSDs from mismatched locations, and adds handling for the case where a PSD has already been committed to the event repository.
++ `ligo!184 <https://git.ligo.org/asimov/asimov/-/merge_requests/184>`_: Adds support for running the BayesWave pipeline from within a container.
+
+0.5.14
 ======
 
 This release adds support for suppressing multiple frequency bands in the BayesWave PSD output, while remaining fully backwards compatible with the existing single-range configuration format.
@@ -320,10 +336,21 @@ Merges
 
 + `ligo!182 <https://git.ligo.org/asimov/asimov/-/merge_requests/182>`_: Adds support for specifying multiple PSD suppression notches per interferometer in the BayesWave pipeline. The ``quality.supress`` ledger key now accepts either a single ``{lower, upper}`` mapping (existing format, unchanged) or a list of such mappings for multi-notch suppression. All notches are applied in a single read/write/commit cycle, so the number of git commits is unchanged. Documentation updated for both the pipeline reference and the cookbook.
 
+0.5.13
+======
+
+This is a maintenance release with no functional changes. It reverts an experimental multi-range PSD suppression enhancement that was merged in error; the feature was reinstated properly in 0.5.14.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
 0.5.12
 ======
 
-This is a bug-fix and backport release for the v0.5 maintenance branch.
+This is a bug-fix release, back-porting fixes from v0.7, which does not introduce any new backwards-incompatible features.
+It fixes a bug where the ledger could be written to the wrong location when the working directory changed during a monitor run, ensures that failures in post-monitor hooks are logged rather than silently swallowed, and corrects ``asimov apply --update`` to robustly handle productions stored with null or variably-structured metadata.
 
 Breaking changes
 ----------------
@@ -333,14 +360,13 @@ This release is not believed to introduce any backwards-incompatible changes.
 Merges
 ------
 
-+ `ligo!179 <https://git.ligo.org/asimov/asimov/-/merge_requests/179>`_: Backport ledger updates and post-monitor hooks from the v0.7 development series.
-+ Update HTCondor test configuration.
-+ Update GWOSC YAML configuration for gravitational wave event analysis.
++ `ligo!179 <https://git.ligo.org/asimov/asimov/-/merge_requests/179>`_: Back-ports fixes from v0.7 to stabilise ledger path handling, improve post-monitor hook error reporting, and fix ``asimov apply --update`` for productions with null or variable metadata structures.
 
 0.5.11
 ======
 
-This is a bug-fix release for the v0.5 maintenance branch.
+This is a bug-fix release which does not introduce any new backwards-incompatible features.
+It fixes several issues with the PESummary post-processing pipeline, improves the robustness of bilby executable discovery, and fixes a crash in the review CLI when adding notes without a status.
 
 Breaking changes
 ----------------
@@ -350,10 +376,10 @@ This release is not believed to introduce any backwards-incompatible changes.
 Merges
 ------
 
-+ `ligo!172 <https://git.ligo.org/asimov/asimov/-/merge_requests/172>`_: PESummary fixes correcting configuration errors in post-processing.
-+ Backport bilby configuration changes from more recent releases.
-+ Fix the ``asimov review`` CLI.
-+ Add security testing to the CI build.
++ `ligo!172 <https://git.ligo.org/asimov/asimov/-/merge_requests/172>`_: Fixes several bugs in the PESummary pipeline: corrects iteration over keyword arguments (was unpacking tuples instead of calling ``.items()``), adds support for user-defined ``environment variables`` in the submit description, adds ``HOME`` to the ``getenv`` list, and adds the missing ``Queue`` statement to the generated submit file.
++ `ligo!167 <https://git.ligo.org/asimov/asimov/-/merge_requests/167>`_: Backports bilby configuration improvements: executable discovery now falls back gracefully from the configured environment path to ``shutil.which("bilby_pipe")`` before raising a clear error; normalises the pipeline ``name`` attribute to lowercase ``"bilby"``.
++ `ligo!170 <https://git.ligo.org/asimov/asimov/-/merge_requests/170>`_: Fixes a crash in ``asimov review add`` when no status is provided, and allows status-free notes to be added to an analysis.
++ `ligo!168 <https://git.ligo.org/asimov/asimov/-/merge_requests/168>`_: Adds SAST, dependency scanning, and secret detection CI templates to the GitLab CI configuration.
 
 0.5.10
 ======
@@ -412,6 +438,7 @@ Merges
 
 + `ligo!140 <https://git.ligo.org/asimov/asimov/-/merge_requests/140>`_: Change CLI outputs to list events in alphanumeric order.
 + `ligo!145 <https://git.ligo.org/asimov/asimov/-/merge_requests/145>`_: Adds an error message if an unavailable pipeline is requested by an analysis.
++ `ligo!148 <https://git.ligo.org/asimov/asimov/-/merge_requests/148>`_: Fixes degraded performance when repeatedly querying the asimov ledger by caching the list of events rather than reconstructing it on every access.
 + `ligo!149 <https://git.ligo.org/asimov/asimov/-/merge_requests/149>`_: Fixes errors with various parts of the analysis review CLI, and improves error and information messages.
 + `ligo!151 <https://git.ligo.org/asimov/asimov/-/merge_requests/151>`_: Adds a confirmation message when a plugin is used to apply a new event to a project.
 + `ligo!152 <https://git.ligo.org/asimov/asimov/-/merge_requests/152>`_: Allows keyword arguments to be specified for summarypages jobs via a blueprint.
@@ -433,7 +460,7 @@ Merges
 + `ligo!133 <https://git.ligo.org/asimov/asimov/-/merge_requests/133>`_: Fix a bug with template discovery for pipeline plugins.
 + `ligo!144 <https://git.ligo.org/asimov/asimov/-/merge_requests/144>`_: Allow the PSD roll-off factor to be specified rather than hardcoded.
 
-
+  
 0.5.6
 =====
 
@@ -448,6 +475,7 @@ Merges
 ------
 
 + `ligo!124 <https://git.ligo.org/asimov/asimov/-/merge_requests/124>`_: Fixes a bug in the disk request for bayeswave_post in bayeswave_pipe.
+
 
 0.5.5
 =====
@@ -464,6 +492,7 @@ Merges
 
 + `ligo!115 <https://git.ligo.org/asimov/asimov/-/merge_requests/121>`_: Fixes a bug with bilby_pipe configurations when frame files are passed
 + `ligo!116 <https://git.ligo.org/asimov/asimov/-/merge_requests/116>`_: Allows configuration of a handful of bilby parameters and updates defaults to align with current bilby_pipe releases.
++ `ligo!118 <https://git.ligo.org/asimov/asimov/-/merge_requests/118>`_: Fixes the lower frequency cut-off (``flow``) not being passed to BayesWave correctly for PSD generation, so that the lowest interferometer minimum frequency is used.
 + `ligo!121 <https://git.ligo.org/asimov/asimov/-/merge_requests/121>`_: Fixes a bug with bilby_pipe when frame files as specified in a frame_dict.
 + `ligo!122 <https://git.ligo.org/asimov/asimov/-/merge_requests/122>`_: Adds a bayeswave_post disk request to the bayeswave config template.
 + `ligo!123 <https://git.ligo.org/asimov/asimov/-/merge_requests/123>`_: Fixes a bug related to filepaths and frame type specifications when bilby is using OSDF data retrieval.
@@ -505,6 +534,7 @@ Merges
 
 + `ligo!105 <https://git.ligo.org/asimov/asimov/-/merge_requests/105>`_: Fixes an issue with accounting tags for the ``asimov start`` command.
 + `ligo!104 <https://git.ligo.org/asimov/asimov/-/merge_requests/104>`_: Restores ability to calculate the precessing SNR in a PESummary post-processing pipeline.
++ `ligo!106 <https://git.ligo.org/asimov/asimov/-/merge_requests/106>`_: Fixes a bug where the accounting group for PESummary jobs was submitted as a tuple rather than a string, which could prevent jobs from being accepted by some clusters.
 
 0.5.2
 =====
@@ -628,7 +658,6 @@ What's next?
 ------------
 
 You can find the most up to date O4 development roadmap `on the project wiki<https://git.ligo.org/asimov/asimov/-/wikis/o4-roadmap>`.
-
 
 0.4.1
 =====
