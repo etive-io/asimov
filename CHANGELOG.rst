@@ -19,6 +19,12 @@ Merges
 + Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
 + Includes backports from the 0.5 series: coinc.xml retrieval, updating events from blueprints, the review CLI, bilby configuration and PESummary fixes, and updated GWOSC configuration.
 
+New contributors
+----------------
+
++ **Disha Hegde** (`@disharh <https://github.com/disharh>`_) made their first contribution in `#104 <https://github.com/etive-io/asimov/pull/104>`_, removing the LensingFlow-specific submission logic and fixing the review CLI. The change is included in this release via `#189 <https://github.com/etive-io/asimov/pull/189>`_.
++ **Justin Janquart** made their first contribution to a release: the correction to ``ProjectAnalysis.dependencies`` from their LensingFlow work (``318ea72``) is included in this release.
+
 0.6.1
 =====
 
