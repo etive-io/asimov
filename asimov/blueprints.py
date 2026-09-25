@@ -2,7 +2,7 @@
 Code to handle blueprints and their associated specification.
 """
 
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Literal, Optional, Tuple, Type
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -186,6 +186,40 @@ class RelativeBinning(Blueprint):
     model_config = ConfigDict(extra='forbid')
 
 
+class Noise(Blueprint):
+    """
+    A blueprint defining the configuration for the noise model.
+    """
+    psd: Optional[Literal["fit", "fixed"]] = pydantic.Field(
+        default=None,
+        description="Whether the PSD is inferred as part of the analysis ('fit') or supplied ('fixed')."
+    )
+    lines: Optional[bool] = pydantic.Field(
+        default=None,
+        description="Whether spectral lines are modelled as part of the noise."
+    )
+
+    model_config = ConfigDict(extra='forbid')
+
+class Components(Blueprint):
+    """
+    A blueprint defining which components of the data model an analysis fits.
+    """
+    signal: Optional[Literal["none", "wavelets", "chirplets", "cbc"]] = pydantic.Field(
+        default=None,
+        description="The model used for an astrophysical signal coherent across detectors."
+    )
+    glitch: Optional[Literal["none", "wavelets", "chirplets"]] = pydantic.Field(
+        default=None,
+        description="The model used for incoherent, detector-local transient noise (glitches)."
+    )
+    noise: Optional[Noise] = pydantic.Field(
+        default=None,
+        description="Configuration parameters for the noise model."
+    )
+
+    model_config = ConfigDict(extra='forbid')
+
 class Likelihood(Blueprint):
     """
     Configuration parameters for the likelihood.
@@ -267,6 +301,11 @@ class Likelihood(Blueprint):
     maximum_frequency: Optional[Dict[str, float]] = pydantic.Field(
         alias="maximum frequency",
         description="The maximum frequency for the likelihood evaluation, given as a dictionary of values per interferometer.",
+        default=None,
+    )
+    components: Optional[Components] = pydantic.Field(
+        alias="components",
+        description="Which components of the data model this analysis fits (signal, glitch, noise).",
         default=None,
     )
 
