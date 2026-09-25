@@ -50,6 +50,20 @@ class CoreVocabularyTests(unittest.TestCase):
         term = self.vocabulary.lookup("pipelines.bilby.scheduler.request cpus")
         self.assertEqual(term.dotted, "scheduler.request cpus")
 
+    def test_lookup_likelihood_components(self):
+        signal = self.vocabulary.lookup("likelihood.components.signal")
+        self.assertEqual(signal.type, "string")
+        glitch = self.vocabulary.lookup("likelihood.components.glitch")
+        self.assertEqual(glitch.type, "string")
+        psd = self.vocabulary.lookup("likelihood.components.noise.psd")
+        self.assertEqual(psd.type, "string")
+        lines = self.vocabulary.lookup("likelihood.components.noise.lines")
+        self.assertEqual(lines.type, "boolean")
+
+    def test_likelihood_components_assets_present(self):
+        for name in ("reconstructions", "bayes factors", "skymap"):
+            self.assertIn(name, self.vocabulary.assets)
+
     def test_blueprint_models_are_in_the_vocabulary(self):
         """The pydantic blueprint models must not drift from the vocabulary."""
         models = {
@@ -120,6 +134,33 @@ class CheckTests(unittest.TestCase):
         found = self.kinds({"waveform": {"f_ref": 20}})
         self.assertEqual(
             found["waveform.f_ref"], ("unknown", "waveform.reference frequency")
+        )
+
+    def test_likelihood_components_blueprint_is_clean(self):
+        document = {
+            "kind": "analysis",
+            "pipeline": "bayeswave",
+            "likelihood": {
+                "components": {
+                    "signal": "wavelets",
+                    "glitch": "wavelets",
+                    "noise": {"psd": "fit", "lines": True},
+                }
+            },
+        }
+        found = self.kinds(document)
+        problems = {
+            path: kind
+            for path, (kind, _) in found.items()
+            if kind in {"unknown", "duplicate", "type"}
+        }
+        self.assertEqual(problems, {})
+
+    def test_likelihood_components_signal_synonym_suggests_term(self):
+        found = self.kinds({"likelihood": {"components": {"signal model": "cbc"}}})
+        self.assertEqual(
+            found["likelihood.components.signal model"],
+            ("unknown", "likelihood.components.signal"),
         )
 
     def test_unknown_key_suggests_close_spelling(self):

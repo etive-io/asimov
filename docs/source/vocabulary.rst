@@ -81,6 +81,27 @@ or on any finding with ``--strict``, so it can be used in a plugin's CI.
 other tools, and ``asimov vocabulary lint`` reports plugin-registered terms
 which clash with or duplicate core terms.
 
+``likelihood.components``
+--------------------------
+
+Some pipelines (for example BayesWave) can fit different combinations of
+components of the data model rather than always assuming a single
+compact-binary signal on top of a fixed, Gaussian noise PSD. These are
+described generically, so that any pipeline capable of it can read them:
+
+.. code-block:: yaml
+
+   likelihood:
+     components:
+       signal: wavelets
+       glitch: wavelets
+       noise:
+         psd: fit
+         lines: true
+
+A pipeline which cannot fit a requested combination of components should
+raise an error at build time rather than silently ignoring it.
+
 Standard assets
 ---------------
 
