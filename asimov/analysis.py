@@ -2432,7 +2432,10 @@ class GravitationalWaveTransient(SimpleAnalysis):
 
             if len(providers) > 1:
                 candidate_names = ", ".join(name for name, _ in providers)
-                self.logger.error(
+                # Logged at debug level: the ledger rebuilds every analysis
+                # on each load, and `check_psds_available` reports this as
+                # an error at build time, which is when it matters.
+                self.logger.debug(
                     f"Analysis '{self.name}' has more than one 'needs:' "
                     f"dependency providing {keyword}: {candidate_names}. "
                     "Refusing to guess which one to use; narrow the "

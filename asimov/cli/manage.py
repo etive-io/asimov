@@ -72,7 +72,11 @@ def check_psds_available(analysis, logger):
     Raises:
     DescriptionException: if the analysis's PSDs can't be trusted.
     """
-    problems = list((getattr(analysis, "_psd_errors", None) or {}).values())
+    # The same problem can be recorded for both formats (e.g. a pending
+    # dependency provides neither), so report each distinct one once.
+    problems = list(
+        dict.fromkeys((getattr(analysis, "_psd_errors", None) or {}).values())
+    )
 
     if problems:
         message = (
