@@ -10,8 +10,8 @@ Breaking changes
 
 This release is not believed to introduce any backwards-incompatible changes.
 
-Changes
--------
+Merges
+------
 
 + `#104 <https://github.com/etive-io/asimov/pull/104>`_: Removes the LensingFlow-specific submission-priority logic from ``asimov manage build`` and ``asimov manage submit``, which LensingFlow now handles itself, and restores the 0.6.1 submission behaviour for project analyses (using ``analysis._subjects``). Thanks to Disha Hegde.
 + Fixes a ``SyntaxError`` in ``asimov/cli/review.py`` introduced when merging the 0.5 backports, which prevented the review commands from loading.
