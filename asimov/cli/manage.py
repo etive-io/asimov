@@ -2,6 +2,7 @@
 Olivaw management commands
 """
 
+from asimov.analysis import subjects_dirname
 import os
 import pathlib
 import warnings
@@ -147,7 +148,7 @@ def build(event, dryrun):
 
         if analysis.status in {"ready"}:
             # Need to ensure a directory exists for these!
-            subj_string = "_".join([f"{subject}" for subject in analysis._subjects])
+            subj_string = subjects_dirname(analysis._subjects)
             project_analysis_dir = os.path.join(
                 "checkouts", "project-analyses", subj_string
             )
@@ -284,7 +285,7 @@ def submit(event, update, dryrun):
     # keep only the highest production number for the analyses
     interest_dict_project_analyses = {}
     for analysis in ledger.project_analyses:
-        subj_string = "_".join([f"{subj}" for subj in analysis._subjects])
+        subj_string = subjects_dirname(analysis._subjects)
         if analysis.pipeline.name not in interest_dict_project_analyses.keys():
             interest_dict_project_analyses[analysis.pipeline.name] = {}
         if subj_string not in interest_dict_project_analyses[analysis.pipeline.name].keys():
@@ -303,7 +304,7 @@ def submit(event, update, dryrun):
     
     for analysis in ledger.project_analyses:
         # see which events are being analyzed
-        subj_string = "_".join([f"{subj}" for subj in analysis._subjects])
+        subj_string = subjects_dirname(analysis._subjects)
         # need to change the logic of analysis set up as to account for
         # dependencies
         to_analyse = True
