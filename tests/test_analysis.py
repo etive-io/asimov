@@ -283,3 +283,24 @@ class TestIsStale(unittest.TestCase):
 #         for analysis in analyses:
 #             self.assertTrue(str(analysis.pipeline).lower() == "lalinference")
 #             self.assertTrue(str(analysis.meta['waveform']['approximant']).lower() == "imrphenomxphm")
+
+
+class SubjectsDirnameTests(unittest.TestCase):
+    """Project-analysis directory names from their subjects."""
+
+    def test_short_joined_names_are_unchanged(self):
+        from asimov.analysis import subjects_dirname
+
+        self.assertEqual(subjects_dirname(["GW150914", "GW151226"]), "GW150914_GW151226")
+
+    def test_long_joined_names_are_shortened_stably(self):
+        from asimov.analysis import subjects_dirname
+
+        # e.g. a PTA search over 52 pulsars: ~570 characters joined, beyond
+        # the 255-character filename limit.
+        subjects = [f"J{i:04d}+{i:04d}" for i in range(52)]
+        name = subjects_dirname(subjects)
+        self.assertTrue(name.startswith("52-subjects-"))
+        self.assertLess(len(name), 255)
+        self.assertEqual(name, subjects_dirname(list(subjects)))
+        self.assertNotEqual(name, subjects_dirname(subjects[:-1] + ["J9999+9999"]))
