@@ -5,11 +5,19 @@ Bilby pipelines
 
 The Bilby interface allows for some bilby-specific metadata.
 
-Review Status
--------------
+Current status
+--------------
 
 .. note::
-   The current integration with bilby is fully reviewed and is suitable for use with all collaboration analyses.
+
+   The bilby pipeline implementation was removed from asimov core in the 0.7 release
+   (``asimov/pipelines/bilby.py`` was deleted). Support is now provided by ``bilby_pipe`` itself:
+
+   ::
+
+      $ pip install bilby_pipe
+
+   Once it's installed, ``pipeline: bilby`` in a blueprint will resolve to it as before.
 
 Examples
 --------

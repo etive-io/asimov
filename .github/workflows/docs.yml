@@ -60,7 +60,7 @@ jobs:
           cd docs
           make multi
 
-      - name: Create index redirect to master
+      - name: Create index redirect to main
         run: |
           mkdir -p docs/build/html
           cat > docs/build/html/index.html << 'EOF'
@@ -69,10 +69,10 @@ jobs:
             <head>
               <meta charset="utf-8">
               <title>Asimov Documentation</title>
-              <meta http-equiv="refresh" content="0; url=./master/index.html" />
+              <meta http-equiv="refresh" content="0; url=./main/index.html" />
             </head>
             <body>
-              <p><a href="./master/index.html">Click here to go to the documentation.</a></p>
+              <p><a href="./main/index.html">Click here to go to the documentation.</a></p>
             </body>
           </html>
           EOF

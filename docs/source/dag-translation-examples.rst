@@ -14,8 +14,15 @@ HTCondor DAG → Slurm batch script
 ----------------------------------
 
 Many pipelines (bilby, bayeswave, lalinference, …) produce HTCondor DAG files.
-When you are running on a Slurm cluster asimov converts them automatically before
-submission.
+When you are running on a Slurm cluster, ``Slurm.submit_dag()`` (``asimov/scheduler.py``) picks
+between three strategies, in order:
+
+1. If the DAG file given to it is itself already a Slurm batch script (e.g. produced directly by
+   ``bilby_pipe`` with ``scheduler=slurm``), it's submitted with ``sbatch`` as-is.
+2. If an ``sbatch_submit.sh`` wrapper script exists alongside the DAG file (written by the
+   pipeline's own ``build_dag()``), that wrapper is submitted instead.
+3. Otherwise, asimov falls back to submitting each job in the HTCondor DAG **individually and
+   directly from the Python process**, described below.
 
 **Starting point: the HTCondor DAG file (``workflow.dag``)**
 
@@ -44,51 +51,43 @@ A typical submit file looks like:
     request_memory = 4096
     queue
 
-**Result: the generated Slurm batch script**
+**Result: per-job wrapper scripts, submitted individually**
+
+For each ``JOB`` line, ``_submit_dag_jobs()`` writes a wrapper script derived from that job's
+``.sub`` file:
 
 .. code-block:: bash
 
+    # align_run.sh
     #!/bin/bash
-    #SBATCH --job-name=gw-analysis
-    #SBATCH --output=/project/workflow.out
-    #SBATCH --error=/project/workflow.err
-    #SBATCH --cpus-per-task=1
-    #SBATCH --mem=1GB
+    set -e
+    cd /project && /usr/bin/python3 align.py --input data.h5 --output aligned.h5
 
-    # Asimov DAG execution script (converted from HTCondor DAG)
+and then submits each wrapper with its own ``sbatch`` call, made directly from the asimov Python
+process (not from inside another Slurm job), in topological order, chaining dependencies with
+``--dependency=afterok:``:
 
-    # Submit jobs and track their IDs
-    declare -A job_ids
+.. code-block:: text
 
-    # Job align (no dependencies)
-    job_id=$(sbatch --parsable --wrap "cd /project && /usr/bin/python3 align.py --input data.h5 --output aligned.h5")
-    job_ids[align]="$job_id"
-    echo "Submitted align as job $job_id"
-
-    # Job analyse depends on: align
-    job_id=$(sbatch --dependency=afterok:${job_ids[align]} --parsable --wrap "cd /project && /usr/bin/python3 analyse.py --input aligned.h5 --output results.json")
-    job_ids[analyse]="$job_id"
-    echo "Submitted analyse as job $job_id"
-
-    # Job postprocess depends on: analyse
-    job_id=$(sbatch --dependency=afterok:${job_ids[analyse]} --parsable --wrap "cd /project && /usr/bin/python3 postprocess.py --results results.json --output report.pdf")
-    job_ids[postprocess]="$job_id"
-    echo "Submitted postprocess as job $job_id"
-
-    echo 'All jobs submitted'
+    sbatch --parsable --export=ALL --output=align_%j.out --error=align_%j.err align_run.sh
+    sbatch --parsable --export=ALL --output=analyse_%j.out --error=analyse_%j.err \
+        --dependency=afterok:<align job id> analyse_run.sh
+    sbatch --parsable --export=ALL --output=postprocess_%j.out --error=postprocess_%j.err \
+        --dependency=afterok:<analyse job id> postprocess_run.sh
 
 Key translation decisions:
 
-* **Job order** — a topological sort ensures that jobs are submitted in dependency
-  order, so ``job_ids[align]`` is always defined before ``job_ids[analyse]``
-  references it.
+* **Job order** — a topological sort ensures each job's ``sbatch`` call happens after all of its
+  dependencies have already been submitted, so their job IDs are known.
 * **Dependencies** — HTCondor ``PARENT align CHILD analyse`` becomes
-  ``--dependency=afterok:${job_ids[align]}`` on the ``sbatch`` call for ``analyse``.
-* **Commands** — the executable and arguments from each ``.sub`` file are inlined
-  as a ``--wrap`` argument, so no additional script files are needed.
-* **The outer job** — the generated script is itself submitted as a single Slurm
-  job (the "DAG manager").  It is lightweight (1 CPU, 1 GB) because it only
-  drives the ``sbatch`` submissions; the real compute happens in the child jobs.
+  ``--dependency=afterok:<align job id>`` on the ``sbatch`` call for ``analyse``.
+* **Commands** — the executable and arguments from each ``.sub`` file are written into that job's
+  own wrapper script, rather than being inlined into an ``sbatch --wrap`` argument.
+* **No orchestrator job** — unlike an earlier version of this translation, there is no single outer
+  "DAG manager" Slurm job submitting the others from inside the cluster. Jobs are submitted directly
+  by the asimov process, because submitting from inside a Slurm job inherits ``SLURM_ACCOUNT`` from
+  the parent environment, which caused ``InvalidAccount`` failures on clusters with minimal
+  accounting configuration.
 
 
 Slurm batch script → HTCondor DAG
