@@ -866,7 +866,7 @@ def html(event, webdir):
     // attach the handlers to the rendered SVG nodes ourselves.
     function bindNodeClicks(container) {
         container.querySelectorAll('g.node').forEach(function(g) {
-            var m = /^flowchart-(.+)-\d+$/.exec(g.id || '');
+            var m = /^flowchart-(.+)-\\d+$/.exec(g.id || '');
             if (!m || !window.asimovNodeMap[m[1]]) return;
             g.style.cursor = 'pointer';
             g.addEventListener('click', function() { openAnalysisModalFromMermaid(m[1]); });
