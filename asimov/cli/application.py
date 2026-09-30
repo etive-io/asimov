@@ -106,7 +106,26 @@ def next_available_name(name, existing_names):
     return f"{stem}-{n}"
 
 
-def _update_event_in_database_ledger(ledger, event_obj):
+# Analyses in these states have not yet used the event settings, so an event
+# update with update_unstarted=True lets them inherit the new values.
+UNSTARTED_STATES = {"ready", "wait"}
+
+
+def _refresh_inherited(analysis_meta, old_event, new_event):
+    """
+    Give an analysis the new event values for every setting it merely
+    inherited (i.e. still equal to the old event value), leaving any setting
+    the analysis overrides untouched.
+    """
+    for key, value in new_event.items():
+        current = analysis_meta.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            _refresh_inherited(current, old_event.get(key) or {}, value)
+        elif key not in analysis_meta or current == old_event.get(key):
+            analysis_meta[key] = deepcopy(value)
+
+
+def _update_event_in_database_ledger(ledger, event_obj, update_unstarted=False):
     """
     Merge a new event definition into an existing event in a database ledger.
 
@@ -114,14 +133,21 @@ def _update_event_in_database_ledger(ledger, event_obj):
     settings which are about to be changed are frozen into each analysis
     (unless the analysis already sets them) so that existing analyses keep
     the configuration they were created with, and the previous event
-    settings are kept in the ledger history.
+    settings are kept in the ledger history. If update_unstarted is set,
+    analyses which have not yet started are left to inherit the new values.
     """
     existing = ledger.get_event(event_obj.name)[0]
     old_event = deepcopy(existing.meta)
     for key in ["name", "productions", "working directory", "repository", "ledger"]:
         old_event.pop(key, None)
 
+    new_meta = deepcopy(event_obj.meta)
+    new_meta.pop("ledger", None)
+
     for production in existing.productions:
+        if update_unstarted and str(production.status).lower() in UNSTARTED_STATES:
+            _refresh_inherited(production.meta, old_event, new_meta)
+            continue
         merged = update(deepcopy(old_event), production.meta)
         production.meta.clear()
         production.meta.update(merged)
@@ -132,14 +158,14 @@ def _update_event_in_database_ledger(ledger, event_obj):
     event_history[version] = old_event
     event_history[version]["date changed"] = datetime.now().isoformat()
 
-    new_meta = deepcopy(event_obj.meta)
-    new_meta.pop("ledger", None)
     update(existing.meta, new_meta)
     ledger.update_event(existing)
     ledger.save()
 
 
-def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False):
+def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False):
+    if update_unstarted:
+        update_page = True
     # Get ledger if not provided
     if ledger is None:
         ledger = get_ledger()
@@ -175,7 +201,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 event_exists = event_obj.name in [e.name for e in events]
 
             if event_exists and update_page is True and not isinstance(events, dict):
-                _update_event_in_database_ledger(ledger, event_obj)
+                _update_event_in_database_ledger(ledger, event_obj, update_unstarted=update_unstarted)
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
                 )
@@ -201,7 +227,11 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     if prod_data is None:
                         prod_data = {}
 
-                    merged = update(prod_data, old_event, inplace=False)
+                    status = str(prod_data.get("status", "")).lower()
+                    if update_unstarted and status in UNSTARTED_STATES:
+                        merged = prod_data
+                    else:
+                        merged = update(prod_data, old_event, inplace=False)
 
                     if prod_name:
                         analyses.append({prod_name: merged})
@@ -547,6 +577,14 @@ def apply_via_plugin(event, hookname, **kwargs):
     help="Update the project with this blueprint rather than adding a new record.",
 )
 @click.option(
+    "--update-unstarted",
+    is_flag=True,
+    default=False,
+    help="Update the event (implies --update), and let analyses which have not yet "
+    "started inherit the new event settings. Analyses which have started or "
+    "finished keep the settings they were created with.",
+)
+@click.option(
     "--name",
     "-n",
     default=None,
@@ -559,11 +597,11 @@ def apply_via_plugin(event, hookname, **kwargs):
     default=False,
     help="Automatically increment the analysis name suffix to avoid a name conflict.",
 )
-def apply(file, event, plugin, update, name, iterate):
+def apply(file, event, plugin, update, update_unstarted, name, iterate):
     from asimov import setup_file_logging
     current_ledger = get_ledger()
     setup_file_logging()
     if plugin:
         apply_via_plugin(event, hookname=plugin)
     elif file:
-        apply_page(file, event, ledger=current_ledger, update_page=update, name=name, iterate=iterate)
+        apply_page(file, event, ledger=current_ledger, update_page=update, name=name, iterate=iterate, update_unstarted=update_unstarted)
