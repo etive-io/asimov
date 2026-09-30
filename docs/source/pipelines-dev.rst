@@ -447,6 +447,25 @@ report page's log preview. If your pipeline uses different filenames, override t
 unless you need genuinely different logic (for example, reading logs from somewhere other
 than the run directory).
 
+Result page links in the report
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The analysis modal in the HTML report has a "Results" section. Previously its links were
+hard-coded per pipeline inside asimov, so a pipeline interface distributed as a plugin could
+not add any. ``Pipeline.result_pages()`` now lets a pipeline supply its own. It returns a list
+of ``(label, url)`` pairs, with URLs relative to the root of the report, and asimov shows them
+once the analysis is ``finished`` or ``uploaded``:
+
+.. code-block:: python
+
+    def result_pages(self):
+        pages_dir = os.path.join(self.production.event.name, self.production.name)
+        return [("Full output page", f"{pages_dir}/index.html")]
+
+The default returns an empty list. If the method raises, asimov logs a warning and still builds
+the report. The pipeline is responsible for copying the pages it links to into the report
+directory, typically from ``Pipeline.collect_pages``.
+
 New entry point: ``asimov.labellers``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
