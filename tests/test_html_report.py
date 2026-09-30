@@ -147,3 +147,50 @@ class TestReportGraphClicks(unittest.TestCase):
         if "securityLevel: 'loose'" not in self.source:
             self.assertNotIn("'    click ' + n.id", self.source)
         self.assertIn("bindNodeClicks(container)", self.source)
+
+
+class TestPipelineResultPages(unittest.TestCase):
+    """Pipelines can supply the result links shown in the analysis modal."""
+
+    def _event_html(self, status, pages):
+        import networkx as nx
+        from asimov.event import Event
+
+        node = Mock()
+        node.name = "generate-psd"
+        node.status = status
+        node.comment = None
+        node.rundir = "/proj/working/GW1/generate-psd"
+        node.meta = {}
+        node.dependencies = []
+        node.review = []
+        node.category = "analyses"
+        node.pipeline = Mock()
+        node.pipeline.name = "BayesWave"
+        node.pipeline.result_pages = Mock(return_value=pages)
+        node.event = Mock(webdir=None)
+
+        graph = nx.DiGraph()
+        graph.add_node(node)
+
+        event = Mock(spec=Event)
+        event.name = "GW1"
+        event.productions = []
+        event.meta = {"gps": 1.0}
+        event.graph = graph
+        return Event.html(event)
+
+    def test_pipeline_result_pages_appear_in_modal_data(self):
+        html = self._event_html(
+            "uploaded", [("Full Megaplot output", "GW1/generate-psd/index.html")]
+        )
+        self.assertIn(
+            'data-result-pages="GW1/generate-psd/index.html|Full Megaplot output"',
+            html,
+        )
+
+    def test_unfinished_analysis_has_no_result_pages(self):
+        html = self._event_html(
+            "running", [("Full Megaplot output", "GW1/generate-psd/index.html")]
+        )
+        self.assertIn('data-result-pages=""', html)

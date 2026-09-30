@@ -733,6 +733,16 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                         elif pipeline_name.lower() == 'pesummary':
                             result_pages.append(f"{base_url}/home.html|PESummary Results")
 
+                    node_pipeline = getattr(node, 'pipeline', None)
+                    if node_pipeline is not None and status in ('finished', 'uploaded'):
+                        try:
+                            for page_label, page_url in node_pipeline.result_pages():
+                                result_pages.append(f"{page_url}|{page_label}")
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Could not get result pages for {node.name}: {e}"
+                            )
+
                     default_plots = ['luminosity_distance', 'chirp_mass']
                     modal_plots = (self.meta.get('report', {}).get('modal_plots', default_plots)
                                    if hasattr(self, 'meta') and self.meta else default_plots)
