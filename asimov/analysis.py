@@ -1748,6 +1748,34 @@ class ProjectAnalysis(Analysis):
                         if analysis not in self.analyses:
                             self.analyses.append(analysis)
 
+    def source_analyses_ready(self):
+        """
+        Check whether the analyses this project analysis depends on are finished.
+
+        This is the ``ProjectAnalysis`` counterpart of
+        ``SubjectAnalysis.source_analyses_ready()``. A project analysis with no
+        ``analyses:`` spec has nothing to wait for and is always ready. When a
+        spec is present, the dependencies are re-resolved (they may have been
+        created or approved since this object was built), and an empty match
+        counts as *not* ready, so an analysis applied before its inputs exist
+        is left waiting rather than being submitted and failing.
+
+        Returns
+        -------
+        bool
+            True if there is no ``analyses:`` spec, or if every analysis it
+            resolves to has finished; False otherwise.
+        """
+        if not self._analysis_spec:
+            return True
+
+        self.resolve_analyses()
+        if not self.analyses:
+            return False
+
+        finished_statuses = {"finished", "uploaded", "processing", "complete"}
+        return all(analysis.status in finished_statuses for analysis in self.analyses)
+
     @property
     def is_stale(self):
         """

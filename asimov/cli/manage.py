@@ -339,6 +339,13 @@ def submit(event, update, dryrun):
                     if subj_string in interest_dict_project_analyses[extra_prio_pipeline].keys():
                         extra_prio = interest_dict_project_analyses[extra_prio_pipeline][subj_string]["interest status"]
 
+        # Smart dependencies (``analyses:``): wait until the analyses this one
+        # depends on exist and have finished, rather than building it now and
+        # letting the pipeline mark it "stuck" permanently. It is reported as
+        # "not ready to submit" below and re-checked on the next pass.
+        if to_analyse and not analysis.source_analyses_ready():
+            to_analyse = False
+
         running_and_requiring_priority_check = False
         if analysis.status in {"running"} and analysis.meta['needs']:
             if "needs settings" in analysis.meta.keys():
