@@ -607,6 +607,17 @@ class Pipeline:
     def collect_pages(self):
         pass
 
+    def result_pages(self):
+        """
+        Return links to this pipeline's result pages, for the report modal.
+
+        Returns
+        -------
+        list of (str, str)
+            ``(label, url)`` pairs, with urls relative to the report root.
+        """
+        return []
+
     def build(self):
         pass
 
