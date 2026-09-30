@@ -68,6 +68,26 @@ review_map = {
 }
 
 
+
+# Longest subject-joined directory name used as-is; beyond this a short,
+# stable name is used instead (a project analysis over e.g. 52 pulsars
+# would otherwise exceed the 255-character filename limit).
+MAX_SUBJECTS_DIRNAME = 100
+
+
+def subjects_dirname(subjects):
+    """Directory name for a project analysis's subjects: their names joined
+    with ``_`` (as before), or, if that is longer than
+    ``MAX_SUBJECTS_DIRNAME``, ``"<n>-subjects-<first 12 hex of its sha1>"`` -
+    stable for the same subjects in the same order."""
+    import hashlib
+
+    joined = "_".join(f"{subject}" for subject in subjects)
+    if len(joined) <= MAX_SUBJECTS_DIRNAME:
+        return joined
+    digest = hashlib.sha1(joined.encode()).hexdigest()[:12]
+    return f"{len(list(subjects))}-subjects-{digest}"
+
 class Analysis:
     """
     The base class for all other types of analysis.
@@ -1576,7 +1596,7 @@ class ProjectAnalysis(Analysis):
         if "working_directory" in kwargs:
             self.work_dir = kwargs["working_directory"]
         else:
-            subj_string = "_".join([f"{subject}" for subject in self._subjects])
+            subj_string = subjects_dirname(self._subjects)
             self.work_dir = os.path.join("working", "project-analyses", subj_string, f"{self.name}")
 
         if not os.path.exists(self.work_dir):
