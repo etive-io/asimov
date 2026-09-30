@@ -121,8 +121,8 @@ jobs:
       - name: Verify telemetry functionality
         run: python "$GITHUB_WORKSPACE/tests/verify_telemetry.py"
 
-      - name: Archive artifacts on failure
-        if: failure()
+      - name: Archive test outputs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: testing-pipelines-slurm-debug
@@ -130,4 +130,5 @@ jobs:
             .asimov/
             working/
             checkouts/
-          retention-days: 5
+          if-no-files-found: warn
+          retention-days: 14

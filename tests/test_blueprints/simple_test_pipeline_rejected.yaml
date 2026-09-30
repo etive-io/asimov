@@ -1,0 +1,6 @@
+# Simple analysis which is reviewed and rejected
+kind: analysis
+name: test-simple-rejected
+pipeline: simpletestpipeline
+comment: Simple analysis which is reviewed and rejected
+status: ready

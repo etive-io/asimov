@@ -374,14 +374,11 @@ jobs:
                 sys.exit(1)
             EOF
 
-      - name: Archive testing artifacts
+      - name: Collect test outputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/collect-test-outputs
         with:
-          path: |
-            checkouts/
-            working/
-          retention-days: 5
+          name: htcondor-tests-outputs
 
       - name: Stop background server
         if: always()

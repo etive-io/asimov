@@ -1,0 +1,59 @@
+name: 'Collect Test Outputs'
+description: >
+  Generate the asimov HTML report and upload the outputs of an end-to-end test
+  (the report, every analysis's working directory including its ledger dump,
+  the ledger and the project configuration) as a workflow artifact, so that
+  reviewers can download and inspect them. Always uploads, whether or not the
+  test passed. Run it as one of the last steps, with `if: always()`.
+inputs:
+  name:
+    description: 'Name of the artifact to upload'
+    required: true
+  report-dir:
+    description: 'Where to write the HTML report (relative to GITHUB_WORKSPACE)'
+    default: 'report'
+    required: false
+  retention-days:
+    description: 'How long to keep the artifact'
+    default: '14'
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate the HTML report
+      # A failure to build the report must not hide the other outputs.
+      if: always()
+      continue-on-error: true
+      uses: ./.github/actions/run-asimov-command
+      with:
+        script: |
+          mkdir -p "${{ inputs.report-dir }}"
+          asimov report html --location "$GITHUB_WORKSPACE/${{ inputs.report-dir }}"
+
+    - name: Gather the ledger dumps
+      if: always()
+      shell: bash {0}
+      run: |
+        # Collect every analysis's ledger dump in one place, named after the
+        # analysis, so they can be read without hunting through working/.
+        mkdir -p "$GITHUB_WORKSPACE/ledger-dumps"
+        find "$GITHUB_WORKSPACE/working" -name ledger_dump.json 2>/dev/null | while read -r f; do
+          name="$(basename "$(dirname "$f")")"
+          cp "$f" "$GITHUB_WORKSPACE/ledger-dumps/${name}.json" || true
+        done
+        ls -la "$GITHUB_WORKSPACE/ledger-dumps" || true
+
+    - name: Upload test outputs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}
+        path: |
+          ${{ inputs.report-dir }}/
+          ledger-dumps/
+          working/
+          .asimov/
+          checkouts/
+        if-no-files-found: warn
+        retention-days: ${{ inputs.retention-days }}

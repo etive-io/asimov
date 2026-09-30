@@ -175,6 +175,124 @@ jobs:
         with:
           script: asimov monitor
 
+      # ---------------------------------------------------------------
+      # Multi-event scenario. Two events; the first has several analyses
+      # which are reviewed differently, is then changed with
+      # `asimov apply --update`, and gets a further analysis afterwards.
+      # A subject analysis and a project analysis then combine only the
+      # approved analyses. tests/verify_ledger_dumps.py checks the result
+      # against the ledger dump each testing pipeline writes.
+      # ---------------------------------------------------------------
+
+      - name: Add a second event
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/second_event.yaml"
+      - name: Add more analyses to the first event
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline_rejected.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline_unreviewed.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline_second_event.yaml" -e GW151226_033853
+      - name: Build and submit the additional analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov manage build submit
+      - name: Wait for the rejected analysis
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW150914_095045/test-simple-rejected"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+      - name: Wait for the unreviewed analysis
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW150914_095045/test-simple-unreviewed"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+      - name: Wait for the second event analysis
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW151226_033853/test-simple-second-event"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+      - name: Run asimov monitor for the additional analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov monitor
+      - name: Review the analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            asimov review add GW150914_095045 test-simple-pipeline approved -m "Approved by the end-to-end test"
+            asimov review add GW150914_095045 test-simple-rejected rejected -m "Rejected by the end-to-end test"
+            asimov review add GW151226_033853 test-simple-second-event approved -m "Approved by the end-to-end test"
+      - name: Update the first event
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply --update -f "$GITHUB_WORKSPACE/tests/test_blueprints/gwosc_event_update.yaml"
+      - name: Add an analysis after the update
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/simple_test_pipeline_after_update.yaml" -e GW150914_095045
+      - name: Build and submit the analysis added after the update
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov manage build submit
+      - name: Wait for the analysis added after the update
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "results.dat"
+          directory: "working/GW150914_095045/test-simple-after-update"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+      - name: Run asimov monitor for the analysis added after the update
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov monitor
+      - name: Add the filtered subject and project analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: |
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/subject_test_pipeline_filtered.yaml" -e GW150914_095045
+            asimov apply -f "$GITHUB_WORKSPACE/tests/test_blueprints/project_test_pipeline_multi.yaml"
+      - name: Build and submit the filtered subject and project analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov manage build submit
+      - name: Wait for the filtered subject analysis
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "combined_results.dat"
+          directory: "working/GW150914_095045/test-subject-approved"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+      - name: Wait for the filtered project analysis
+        uses: ./.github/actions/wait-for-files
+        with:
+          patterns: "population_results.dat"
+          directory: "working/project-analyses/GW150914_095045_GW151226_033853/test-project-approved"
+          timeout: "300"
+          interval: "10"
+          working-directory: .
+      - name: Run asimov monitor for the filtered analyses
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: asimov monitor
+      - name: Verify the ledger dumps
+        uses: ./.github/actions/run-asimov-command
+        with:
+          script: python "$GITHUB_WORKSPACE/tests/verify_ledger_dumps.py"
+
       - name: Write pipeline verification script
         run: |
           cat > /tmp/verify_pipelines.py <<'EOF'
@@ -211,13 +329,8 @@ jobs:
         with:
           script: python "$GITHUB_WORKSPACE/tests/verify_labels.py"
 
-      - name: Archive artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Collect test outputs
+        if: always()
+        uses: ./.github/actions/collect-test-outputs
         with:
-          name: testing-pipelines-debug
-          path: |
-            .asimov/
-            working/
-            checkouts/
-          retention-days: 5
+          name: testing-pipelines-outputs

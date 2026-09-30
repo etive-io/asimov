@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from ...pipeline import Pipeline
+from ._dump import write_ledger_dump
 from ._util import accounting_submit_lines
 
 
@@ -166,6 +167,7 @@ class SimpleTestPipeline(Pipeline):
                     f.write(f"\nbash {job_script}\n")
                 os.chmod(sbatch_file, 0o755)
 
+                write_ledger_dump(self.production)
                 self.logger.info(f"Built test DAG in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified, cannot build DAG")

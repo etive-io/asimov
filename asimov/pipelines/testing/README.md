@@ -119,6 +119,33 @@ Testing pipeline for population/catalog analyses across multiple events.
 - Template for population studies
 - Testing multi-event workflows
 
+## Ledger dumps
+
+Each testing pipeline writes a `ledger_dump.json` into its run directory when
+its DAG is built. It records everything the ledger makes available to that
+analysis at that moment, so end-to-end runs (and reviewers) can see exactly
+what asimov handed the pipeline:
+
+| Key | Contents |
+| --- | --- |
+| `analysis` | the analysis's name, pipeline, status, run directory and dependencies; its `ledger entry` (as stored) and its `effective settings` (including everything inherited from the subject) |
+| `subjects` | each subject the analysis operates on, with its settings |
+| `visible analyses` | every other analysis on those subjects: status, review status, the files in its run directory and the assets its pipeline reports. `dependency` is true for the ones this analysis `needs` |
+| `encompassed analyses` | subject and project analyses only: the analyses they combine, selected by `analyses:` or `needs:` filters (for example `review: approved`) |
+
+The dump is generated at build time because that is when asimov, rather than
+the job on the cluster, has the ledger. It therefore shows what the analysis
+could see at submission. `SubjectTestPipeline` and `ProjectTestPipeline` also
+list the analyses they combine in the results file they write.
+
+The helpers live in `asimov/pipelines/testing/_dump.py`. To write your own
+pipeline's dump, call `write_ledger_dump(self.production)` from `build_dag()`.
+
+`tests/verify_ledger_dumps.py` checks the dumps produced by the multi-event
+scenario in `.github/workflows/testing-pipelines.yml`, which covers
+`asimov apply --update` (a later analysis sees the new settings; existing
+ones are unchanged) and filtering by review status.
+
 ## Implementation Details
 
 ### Required Methods
