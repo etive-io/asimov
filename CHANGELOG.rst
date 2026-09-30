@@ -21,6 +21,14 @@ Bug Fixes
   ``Analysis.dependencies`` is now returned sorted by name. Its order previously depended
   on Python's string hash randomisation, so it could differ between runs.
 
+**Project Analyses**
+  ``asimov manage submit`` now waits for a project analysis's ``analyses:`` dependencies
+  to exist and finish before submitting it. Previously it was built immediately, the
+  pipeline refused, and the analysis was marked ``stuck`` permanently (#197).
+  ``asimov review add`` can now review project analyses, with or without ``--other_subjects``,
+  and saves the review to the ledger (#198). Analyses over many subjects no longer fail with
+  ``File name too long`` (#199).
+
 The fixes and improvements from the 0.7.1 release are listed under 0.7.1 below.
 
 Breaking Changes

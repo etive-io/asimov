@@ -49,92 +49,132 @@ def add(event, production, status, message, other_subjects=None, pipeline=None):
       the review status.
 
     """
-    if other_subjects is None:
-        valid = {"REJECTED", "APPROVED", "PREFERRED", "DEPRECATED"}
-        events = current_ledger.get_event(event)
-        if events is None:
-            click.echo(
-                click.style("●", fg="red") + f" Could not find an event called {event}"
-            )
-        else:
-            for event in events:
-                production = [
-                    production_o
-                    for production_o in event.productions
-                    if production_o.name == production
-                ][0]
-                click.secho(event.name, bold=True)
+    valid = {"REJECTED", "APPROVED", "PREFERRED", "DEPRECATED"}
+    if status is not None and status.upper() not in valid:
+        click.echo(
+            click.style("●", fg="red")
+            + f" Did not understand the review status {status.lower()}."
+            + " The review status must be one of "
+            + "{APPROVED, REJECTED, PREFERRED, DEPRECATED}"
+        )
+        return
 
-                if status.upper() in valid:
-                    message = ReviewMessage(
-                        message=message, status=status, production=production
-                    )
-                    production.review.add(message)
-                elif status is None:
-                    message = ReviewMessage(
-                        message=message, status=None, production=production
-                    )
-                    production.review.add(message)
-                else:
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Did not understand the review status {status.lower()}."
-                        + " The review status must be one of "
-                        + "{APPROVED, REJECTED, PREFERRED, DEPRECATED}"
-                    )
-
-                if hasattr(event, "issue_object"):
-                    production.event.update_data()
-                current_ledger.update_event(event)
-            if status is not None:
-                    click.echo(
-                        click.style("●", fg="green")
-                        + f" {event.name}/{production.name} {status.lower()}"
-                    )
-
-    else:
-        found = False
-
-        subjects = list(other_subjects.replace("[", "").replace("]", "").split(","))
-        subjects = [subject.strip() for subject in subjects]
-        subjects = [event] + subjects
-
-        for analysis in current_ledger.project_analyses:
-            # analysis.subjects is a list of Event objects, not names -
-            # compare/join by .name rather than the objects themselves.
-            analysis_subject_names = {s.name for s in analysis.subjects}
-            if (
-                (analysis.name == production)
-                and (analysis.pipeline.name == pipeline)
-                and (analysis_subject_names == set(subjects))
-            ):
-
-                found = True
-                click.secho(analysis.name, bold=True)
-                click.secho(analysis.pipeline)
-                click.secho(" ".join(sorted(analysis_subject_names)))
-
-                message = ReviewMessage(
-                    message=message, status=status, production=production
-                )
-                analysis.review.add(message)
-
-                click.echo(
-                    click.style("●", fg="green")
-                    + f" {event.name}/{production.name} {status.lower()}"
-                )
-
-        if not found:
+    if other_subjects is not None:
+        subjects = [event] + [
+            subject.strip()
+            for subject in other_subjects.replace("[", "").replace("]", "").split(",")
+        ]
+        matches = _find_project_analyses(production, subjects, pipeline)
+        if not matches:
             click.secho(
                 f"Unable to find a project analysis for pipeline {pipeline}, "
                 f"production {production} and subjects {set(subjects)}",
                 fg="red",
             )
-        else:
+            return
+        _add_project_review(matches, status, message)
+        return
+
+    # A single subject: this is either an ordinary analysis of the event, or a
+    # project analysis over just that subject.
+    events = current_ledger.get_event(event)
+    if events is None:
+        click.echo(
+            click.style("●", fg="red") + f" Could not find an event called {event}"
+        )
+        return
+
+    found = False
+    for event_obj in events:
+        matching = [
+            production_o
+            for production_o in event_obj.productions
+            if production_o.name == production
+        ]
+        if not matching:
+            continue
+        found = True
+        analysis = matching[0]
+        click.secho(event_obj.name, bold=True)
+
+        analysis.review.add(
+            ReviewMessage(message=message, status=status, production=analysis)
+        )
+        if hasattr(event_obj, "issue_object"):
+            analysis.event.update_data()
+        current_ledger.update_event(event_obj)
+        if status is not None:
             click.echo(
                 click.style("●", fg="green")
-                + f" {event.name}/{production.name} Note added"
+                + f" {event_obj.name}/{analysis.name} {status.lower()}"
             )
+
+    if not found:
+        matches = _find_project_analyses(production, [event], pipeline)
+        if matches:
+            _add_project_review(matches, status, message)
+            found = True
+
+    if not found:
+        click.secho(
+            f"Unable to find an analysis called {production} for {event}",
+            fg="red",
+        )
+
+
+def _find_project_analyses(name, subject_names, pipeline=None):
+    """
+    Find the project analyses called ``name`` over exactly ``subject_names``.
+
+    If ``pipeline`` is given, the analysis must also use that pipeline.
+    ``ProjectAnalysis.subjects`` holds ``Event`` objects, so the comparison
+    is made on their names.
+    """
+    matches = []
+    for analysis in current_ledger.project_analyses:
+        analysis_subject_names = {getattr(s, "name", s) for s in analysis.subjects}
+        if analysis.name != name:
+            continue
+        if pipeline is not None and not _pipeline_matches(analysis, pipeline):
+            continue
+        if analysis_subject_names != set(subject_names):
+            continue
+        matches.append(analysis)
+    return matches
+
+
+def _pipeline_matches(analysis, pipeline):
+    """
+    Check whether ``analysis`` uses the pipeline called ``pipeline``.
+
+    The name is matched case-insensitively against the pipeline's own name,
+    its class name, and the name it was registered under in the blueprint.
+    """
+    candidates = {
+        str(getattr(analysis.pipeline, "name", "")),
+        type(analysis.pipeline).__name__,
+        str(analysis.meta.get("pipeline", "")),
+    }
+    return pipeline.lower() in {c.lower() for c in candidates if c}
+
+
+def _add_project_review(analyses, status, message):
+    """Add a review message to each project analysis and save it to the ledger."""
+    for analysis in analyses:
+        subject_names = sorted(getattr(s, "name", s) for s in analysis.subjects)
+        click.secho(analysis.name, bold=True)
+        click.secho(f"{getattr(analysis.pipeline, 'name', analysis.pipeline)}: {' '.join(subject_names)}")
+        analysis.review.add(
+            ReviewMessage(message=message, status=status, production=analysis)
+        )
+        current_ledger.update_analysis_in_project_analysis(analysis)
+        if status is not None:
+            click.echo(
+                click.style("●", fg="green")
+                + f" {analysis.name} {status.lower()}"
+            )
+        else:
+            click.echo(click.style("●", fg="green") + f" {analysis.name} note added")
 
 
 @click.argument("production", default=None, required=False)
