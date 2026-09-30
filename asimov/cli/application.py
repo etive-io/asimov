@@ -106,6 +106,39 @@ def next_available_name(name, existing_names):
     return f"{stem}-{n}"
 
 
+def _update_event_in_database_ledger(ledger, event_obj):
+    """
+    Merge a new event definition into an existing event in a database ledger.
+
+    The analyses attached to the event are never removed. Event-level
+    settings which are about to be changed are frozen into each analysis
+    (unless the analysis already sets them) so that existing analyses keep
+    the configuration they were created with, and the previous event
+    settings are kept in the ledger history.
+    """
+    existing = ledger.get_event(event_obj.name)[0]
+    old_event = deepcopy(existing.meta)
+    for key in ["name", "productions", "working directory", "repository", "ledger"]:
+        old_event.pop(key, None)
+
+    for production in existing.productions:
+        merged = update(deepcopy(old_event), production.meta)
+        production.meta.clear()
+        production.meta.update(merged)
+
+    history = ledger.data.setdefault("history", {})
+    event_history = history.setdefault(event_obj.name, {})
+    version = f"version-{len(event_history) + 1}"
+    event_history[version] = old_event
+    event_history[version]["date changed"] = datetime.now().isoformat()
+
+    new_meta = deepcopy(event_obj.meta)
+    new_meta.pop("ledger", None)
+    update(existing.meta, new_meta)
+    ledger.update_event(existing)
+    ledger.save()
+
+
 def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False):
     # Get ledger if not provided
     if ledger is None:
@@ -133,10 +166,21 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             event_obj = asimov.event.Event.from_yaml(yaml.dump(document))
 
             # Check if the event is in the ledger already
-            # ledger.events is a dict with event names as keys
-            event_exists = event_obj.name in ledger.events
+            # ledger.events is a dict for the YAML ledger, but a list of
+            # Event objects for the database ledger.
+            events = ledger.events
+            if isinstance(events, dict):
+                event_exists = event_obj.name in events
+            else:
+                event_exists = event_obj.name in [e.name for e in events]
 
-            if event_exists and update_page is True:
+            if event_exists and update_page is True and not isinstance(events, dict):
+                _update_event_in_database_ledger(ledger, event_obj)
+                click.echo(
+                    click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
+                )
+
+            elif event_exists and update_page is True:
                 old_event = deepcopy(ledger.events[event_obj.name])
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
