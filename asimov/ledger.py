@@ -36,6 +36,27 @@ class Ledger:
         """Drop the cached ``project_analyses`` result. See _invalidate_events_cache."""
         self._project_analyses_cache = None
 
+    def get_defaults(self):
+        """
+        Gather project-level defaults from the ledger.
+
+        At present data, quality, priors, and likelihood settings can all be set at a project level as defaults.
+        """
+        defaults = {}
+        if "data" in self.data:
+            defaults["data"] = self.data["data"]
+        if "priors" in self.data:
+            defaults["priors"] = self.data["priors"]
+        if "quality" in self.data:
+            defaults["quality"] = self.data["quality"]
+        if "likelihood" in self.data:
+            defaults["likelihood"] = self.data["likelihood"]
+        if "scheduler" in self.data:
+            defaults["scheduler"] = self.data["scheduler"]
+        if "waveform" in self.data:
+            defaults["waveform"] = self.data["waveform"]
+        return defaults
+
     @classmethod
     def create(cls, name=None, engine=None, location=None):
         """
@@ -242,27 +263,6 @@ class YAMLLedger(Ledger):
 
     def add_production(self, event, production):
         self.add_analysis(analysis=production, event=event)
-
-    def get_defaults(self):
-        """
-        Gather project-level defaults from the ledger.
-
-        At present data, quality, priors, and likelihood settings can all be set at a project level as defaults.
-        """
-        defaults = {}
-        if "data" in self.data:
-            defaults["data"] = self.data["data"]
-        if "priors" in self.data:
-            defaults["priors"] = self.data["priors"]
-        if "quality" in self.data:
-            defaults["quality"] = self.data["quality"]
-        if "likelihood" in self.data:
-            defaults["likelihood"] = self.data["likelihood"]
-        if "scheduler" in self.data:
-            defaults["scheduler"] = self.data["scheduler"]
-        if "waveform" in self.data:
-            defaults["waveform"] = self.data["waveform"]
-        return defaults
 
     @property
     def project_analyses(self):
@@ -594,7 +594,7 @@ class DatabaseLedger(Ledger):
         return self._events_cache
 
     def _event_from_dict(self, event_dict):
-        kwargs = dict(event_dict)
+        kwargs = update(self.get_defaults(), dict(event_dict), inplace=False)
         kwargs.pop("ledger", None)
         event = Event(**kwargs, ledger=self)
 
@@ -650,22 +650,6 @@ class DatabaseLedger(Ledger):
                 for analysis in self.db.query("project_analysis")
             ]
         return self._project_analyses_cache
-
-    def get_defaults(self):
-        """
-        Get project-level defaults from the ledger.
-
-        Note: For database ledgers, defaults should be stored in configuration
-        rather than the database. This method is kept for compatibility.
-
-        Returns
-        -------
-        dict
-            Default settings (empty for database ledger).
-        """
-        # For database backend, defaults are in config, not in the database
-        # This keeps the database focused on analysis data
-        return {}
 
     def get_subject(self, subject=None):
         """

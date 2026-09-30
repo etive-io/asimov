@@ -842,6 +842,49 @@ class TestDatabaseLedger(unittest.TestCase):
         """Test that .data starts out matching YAMLLedger's guard expectations."""
         self.assertEqual(self.ledger.data, {"project": {}, "pipelines": {}})
 
+    def test_project_defaults_are_merged_under_event_values(self):
+        """Project-level defaults in the ledger config must apply to events
+        read from a database ledger, as they do for the YAML ledger, with
+        event-level values winning and other project keys preserved."""
+        from asimov.utils import update as merge_update
+
+        merge_update(self.ledger.data, {
+            "priors": {
+                "chirp mass": {"minimum": 1, "maximum": 100},
+                "spin 1": {"minimum": 0, "maximum": 0.99, "type": "Uniform"},
+                "tilt 1": {"type": "Sine"},
+            },
+        })
+        self.ledger.save()
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {"priors": {"chirp mass": {"minimum": 8.5, "maximum": 10}}},
+        })
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        priors = fresh.get_event("GW150914")[0].meta["priors"]
+
+        self.assertEqual(priors["chirp mass"], {"minimum": 8.5, "maximum": 10})
+        self.assertEqual(priors["spin 1"]["maximum"], 0.99)
+        self.assertEqual(priors["tilt 1"], {"type": "Sine"})
+
+    def test_events_without_project_defaults_are_unchanged(self):
+        """With no project-level defaults configured, event metadata is
+        read back exactly as stored."""
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {"priors": {"chirp mass": {"minimum": 8.5, "maximum": 10}}},
+        })
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        priors = fresh.get_event("GW150914")[0].meta["priors"]
+
+        self.assertEqual(priors, {"chirp mass": {"minimum": 8.5, "maximum": 10}})
+
     def test_data_mutation_persists_across_save(self):
         """Test the exact pattern `kind: configuration` blueprints use:
         mutate ledger.data in place, then call ledger.save() to persist it.

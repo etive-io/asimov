@@ -21,6 +21,14 @@ Bug Fixes
   ``Analysis.dependencies`` is now returned sorted by name. Its order previously depended
   on Python's string hash randomisation, so it could differ between runs.
 
+**Project-Level Defaults on the Database Ledger**
+  Project-level defaults (``data``, ``priors``, ``quality``, ``likelihood``, ``scheduler`` and
+  ``waveform``) are now applied to events read from a database ledger, as they already were
+  for the YAML ledger. Previously they were stored but never merged, so an event that set only
+  some priors silently lost the rest of the project's priors, for example the spin priors, and
+  the pipeline was given an incomplete prior. Event-level values still take precedence, and the
+  two are merged recursively.
+
 **Project Analyses**
   ``asimov manage submit`` now waits for a project analysis's ``analyses:`` dependencies
   to exist and finish before submitting it. Previously it was built immediately, the
