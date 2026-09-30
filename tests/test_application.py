@@ -461,3 +461,24 @@ class DatabaseLedgerEventTests(unittest.TestCase):
         self.assertEqual(event.meta["event time"], 909)
         self.assertEqual(self._analyses(), before)
         self.assertIn("version-1", self.ledger.data["history"]["S000000"])
+
+
+class DatabaseLedgerProductionSetTests(DatabaseLedgerEventTests):
+    """`asimov production set` must persist on the database ledger."""
+
+    def test_set_status_is_persisted(self):
+        from click.testing import CliRunner
+        from unittest.mock import patch
+        import asimov.cli.production as production_cli
+
+        name = self._analyses()[0]
+        with patch.object(production_cli, "ledger", self.ledger), patch.object(
+            production_cli.config, "get", return_value="sqlalchemy"
+        ):
+            result = CliRunner().invoke(
+                production_cli.production, ["set", "S000000", name, "-s", "stuck"]
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        event = self.ledger.get_event("S000000")[0]
+        status = {p.name: p.status for p in event.productions}[name]
+        self.assertEqual(status, "stuck")
