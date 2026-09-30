@@ -1,0 +1,6 @@
+# Simple analysis which is never reviewed
+kind: analysis
+name: test-simple-unreviewed
+pipeline: simpletestpipeline
+comment: Simple analysis which is never reviewed
+status: ready

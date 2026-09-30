@@ -1,0 +1,9 @@
+# A SubjectAnalysis which combines only the analyses of its subject that have
+# been approved, and excludes the rest.
+kind: analysis
+name: test-subject-approved
+pipeline: subjecttestpipeline
+comment: Combines only approved analyses of the subject
+status: ready
+analyses:
+  - "review: approved"

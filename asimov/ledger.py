@@ -12,7 +12,7 @@ from functools import reduce
 import asimov
 import asimov.database
 from asimov import config
-from asimov.analysis import ProjectAnalysis
+from asimov.analysis import ProjectAnalysis, SubjectAnalysis
 from asimov.event import Event, Production, Subject
 from asimov.utils import update, diff_dict, set_directory
 from filelock import FileLock
@@ -602,7 +602,18 @@ class DatabaseLedger(Ledger):
         for prod_dict in self.db.query("production", "event_name", event.name):
             ledger_backup = event.meta.pop("ledger", None)
             try:
-                production = Production.from_dict(prod_dict, event, ledger=self)
+                stored_meta = prod_dict.get("meta") or {}
+                if "analyses" in stored_meta or "analyses" in prod_dict:
+                    # An analysis with an ``analyses:`` filter combines other
+                    # analyses of the subject: rebuild it as a SubjectAnalysis,
+                    # as Event does for the YAML ledger, otherwise it silently
+                    # loses its filter and combines nothing.
+                    flat = {k: v for k, v in prod_dict.items() if k != "meta"}
+                    flat.update(stored_meta)
+                    flat.pop("event_name", None)
+                    production = SubjectAnalysis.from_dict(flat, subject=event)
+                else:
+                    production = Production.from_dict(prod_dict, event, ledger=self)
                 if production.name not in [p.name for p in event.productions]:
                     event.add_production(production)
             except Exception as e:

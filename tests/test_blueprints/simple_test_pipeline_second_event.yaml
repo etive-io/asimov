@@ -1,0 +1,6 @@
+# Simple analysis on the second event
+kind: analysis
+name: test-simple-second-event
+pipeline: simpletestpipeline
+comment: Simple analysis on the second event
+status: ready

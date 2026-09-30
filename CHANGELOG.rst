@@ -29,6 +29,22 @@ Bug Fixes
   and saves the review to the ledger (#198). Analyses over many subjects no longer fail with
   ``File name too long`` (#199).
 
+**Analyses After an ``asimov apply --update``**
+  Adding an analysis to an event on the YAML ledger, after the event had been changed with
+  ``asimov apply --update``, changed the reference frequency of the event's *existing*
+  analyses to the new event-level value. An explicit ``waveform`` setting now takes
+  precedence over the deprecated ``likelihood: reference frequency`` (and top-level
+  ``approximant``) it is migrated from.
+
+**Subject Analyses on the Database Ledger**
+  An analysis with an ``analyses:`` filter was reloaded from the database ledger (the default)
+  as an ordinary analysis, so it lost its filter and combined nothing. It is now rebuilt as a
+  ``SubjectAnalysis``, as it is for the YAML ledger.
+
+**Project Analysis Subjects**
+  ``ProjectAnalysis.subjects`` could raise ``AttributeError`` on a second access for events
+  which already had analyses. The subjects are now fetched once and cached.
+
 The fixes and improvements from the 0.7.1 release are listed under 0.7.1 below.
 
 Breaking Changes

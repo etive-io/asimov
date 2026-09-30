@@ -214,13 +214,8 @@ jobs:
         with:
           script: asimov monitor stop
 
-      - name: Archive artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Collect test outputs
+        if: always()
+        uses: ./.github/actions/collect-test-outputs
         with:
-          name: ldg-parity-debug
-          path: |
-            .asimov/
-            working/
-            checkouts/
-          retention-days: 5
+          name: ldg-parity-outputs

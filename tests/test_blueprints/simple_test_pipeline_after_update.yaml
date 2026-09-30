@@ -1,0 +1,6 @@
+# Simple analysis added after an `apply --update` of its event
+kind: analysis
+name: test-simple-after-update
+pipeline: simpletestpipeline
+comment: Simple analysis added after an `apply --update` of its event
+status: ready
