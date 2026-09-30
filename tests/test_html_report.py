@@ -132,3 +132,18 @@ class TestHTMLReporting(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestReportGraphClicks(unittest.TestCase):
+    """Mermaid ignores `click` directives unless securityLevel is 'loose'."""
+
+    def setUp(self):
+        import inspect
+        import asimov.cli.report as report
+
+        self.source = inspect.getsource(report)
+
+    def test_click_handlers_are_bound_to_rendered_nodes(self):
+        if "securityLevel: 'loose'" not in self.source:
+            self.assertNotIn("'    click ' + n.id", self.source)
+        self.assertIn("bindNodeClicks(container)", self.source)

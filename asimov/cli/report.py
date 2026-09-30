@@ -834,7 +834,6 @@ def html(event, webdir):
             var lbl = '"' + n.label + '"';
             var shape = n.isSubject ? ('{{' + lbl + '}}') : ('[' + lbl + ']');
             lines.push('    ' + n.id + shape + ':::' + n.status);
-            lines.push('    click ' + n.id + ' openAnalysisModalFromMermaid');
         });
         visibleEdges.forEach(function(e) {
             lines.push('    ' + e.from + ' --> ' + e.to);
@@ -854,7 +853,7 @@ def html(event, webdir):
                 var container = document.getElementById(gd.containerId);
                 if (container) {
                     container.innerHTML = result.svg;
-                    if (result.bindFunctions) result.bindFunctions(container);
+                    bindNodeClicks(container);
                 }
             } catch(e) {
                 console.warn('Mermaid render error for ' + eventName + ':', e);
@@ -863,7 +862,18 @@ def html(event, webdir):
         checkEventVisibility();
     }
 
-    // Called by Mermaid click handlers in the rendered SVG
+    // Mermaid only honours `click` directives at securityLevel 'loose', so
+    // attach the handlers to the rendered SVG nodes ourselves.
+    function bindNodeClicks(container) {
+        container.querySelectorAll('g.node').forEach(function(g) {
+            var m = /^flowchart-(.+)-\d+$/.exec(g.id || '');
+            if (!m || !window.asimovNodeMap[m[1]]) return;
+            g.style.cursor = 'pointer';
+            g.addEventListener('click', function() { openAnalysisModalFromMermaid(m[1]); });
+        });
+    }
+
+    // Opens the analysis modal for a graph node id
     function openAnalysisModalFromMermaid(nodeId) {
         var dataId = window.asimovNodeMap && window.asimovNodeMap[nodeId];
         if (dataId) openAnalysisModal(dataId);
