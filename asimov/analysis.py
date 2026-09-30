@@ -1682,8 +1682,20 @@ class ProjectAnalysis(Analysis):
 
     @property
     def subjects(self):
-        """Return a list of subjects for this project analysis."""
-        return [self.ledger.get_event(subject)[0] for subject in self._subjects]
+        """
+        Return a list of subjects for this project analysis.
+
+        Fetching a subject reconstructs a fresh :class:`~asimov.event.Event`
+        from the ledger, and doing that twice for an event which already has
+        analyses can raise ``AttributeError`` deep inside the second
+        reconstruction (see :attr:`dependencies`). They are therefore fetched
+        once and cached in :attr:`_subject_obs`.
+        """
+        if len(self._subject_obs) != len(self._subjects):
+            self._subject_obs = [
+                self.ledger.get_event(subject)[0] for subject in self._subjects
+            ]
+        return self._subject_obs
 
     @property
     def events(self):
@@ -2212,14 +2224,20 @@ class GravitationalWaveTransient(SimpleAnalysis):
                 "moving to waveform area of ledger"
             )
             approximant = self.meta.pop("approximant")
-            self.meta["waveform"]["approximant"] = approximant
+            # An explicit waveform setting wins over the deprecated key, which
+            # may have been inherited from the event.
+            self.meta["waveform"].setdefault("approximant", approximant)
         if "reference frequency" in self.meta["likelihood"]:
             self.logger.warning(
                 "Found deprecated ref freq information, "
                 "moving to waveform area of ledger"
             )
             ref_freq = self.meta["likelihood"].pop("reference frequency")
-            self.meta["waveform"]["reference frequency"] = ref_freq
+            # An explicit waveform setting wins over the deprecated key. This
+            # matters after ``apply --update``: the event-level value is
+            # inherited by every analysis on each load, and must not overwrite
+            # the value an existing analysis already migrated (and froze).
+            self.meta["waveform"].setdefault("reference frequency", ref_freq)
 
         # Gather the PSDs for the job
         self.psds = self._collect_psds()
