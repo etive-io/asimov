@@ -701,6 +701,8 @@ class Slurm(Scheduler):
                         f"Unrecognised memory unit in {mem!r}. Use 'MB' or 'GB'."
                     )
             lines.append(f"#SBATCH --mem={mem}")
+        if "gpus" in submit_dict:
+            lines.append(f"#SBATCH --gres=gpu:{submit_dict['gpus']}")
         if "time" in submit_dict:
             lines.append(f"#SBATCH --time={submit_dict['time']}")
         for key, value in submit_dict.items():
@@ -1787,6 +1789,7 @@ class JobDescription:
         "cpus": "request_cpus",
         "memory": "request_memory",
         "disk": "request_disk",
+        "gpus": "request_gpus",
     }
 
     def __init__(self, 
@@ -1879,7 +1882,9 @@ class JobDescription:
             # Slurm doesn't have a direct disk request parameter
             # Store it for potential use in specialized configurations
             description["disk"] = self.kwargs["disk"]
-        
+        if "gpus" in self.kwargs:
+            description["gpus"] = self.kwargs["gpus"]
+
         # Set defaults for resource parameters if not provided
         description.setdefault("cpus", 1)
         description.setdefault("memory", "1GB")
@@ -1898,7 +1903,7 @@ class JobDescription:
         
         # Add any additional kwargs with slurm_ prefix directly
         for key, value in self.kwargs.items():
-            if key not in ["cpus", "memory", "disk", "batch_name", "arguments", "getenv"]:
+            if key not in ["cpus", "memory", "disk", "gpus", "batch_name", "arguments", "getenv"]:
                 description[key] = value
         
         return description

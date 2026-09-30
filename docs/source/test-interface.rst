@@ -13,6 +13,8 @@ Example: Checking prior files
 
 .. code-block:: python
 
+   import unittest
+
    from asimov.testing import AsimovTest
 
    class TestBilbyPrior(AsimovTest):
@@ -21,9 +23,9 @@ Example: Checking prior files
 
 	   for event in self.events:
 	       for production in event.productions:
-		   if production.pipeline == "bilby":
-		       with self.subTest(event=event.title, production=production.name):
-			   repo = event.event_object.repository.directory
+		   if production.pipeline.name.lower() == "bilby":
+		       with self.subTest(event=event.name, production=production.name):
+			   repo = event.repository.directory
 			   try:
 			       with open(f"{repo}/analyses/{production.name}.prior", "r") as priorfile:
 				   self.assertFalse("name='chirp_mass', minimum=7.932707, maximum=14.759644" in priorfile.read())

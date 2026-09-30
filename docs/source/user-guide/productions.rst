@@ -169,14 +169,13 @@ Analysis status
 Asimov uses its ledger to record the last known state of a production, in the form of a state machine.
 Details of the possible states are documented in the :ref:`detailed analysis documentation<states>`.
 
-By default a new production is assigned a ``wait`` state, which prevents asimov from generating the configuration file for the pipeline, or starting the analysis.
-This is a useful state to put jobs into until you're happy that all of the settings are correct.
+By default a new production is assigned a ``ready`` state, meaning asimov will pick it up and start it as soon as its dependencies (if any) are met.
 
-If you want a production to be ready to start as soon as it is created, however, you can pass the ``--status`` option, for example
+If you'd rather hold a job back until you're happy that all of its settings are correct, pass an explicit ``--status`` (or a ``status:`` key in a YAML blueprint) of e.g. ``wait``, and set it to ``ready`` yourself once you want it to start:
 
 .. code-block:: console
 
-		$ asimov production create GW150914 lalinference --status ready
+		$ asimov production create GW150914 lalinference --status wait
 
 
 Pipeline template

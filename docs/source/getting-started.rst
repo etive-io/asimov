@@ -203,3 +203,9 @@ What's next?
 + **Advanced project configuration**
   For most analyses the default project setup should be sufficient, but if you need to run an extremely large set of analyses, and are sharing the job with lots of other people, it might be convenient to be able to change things.
   You can find more details about doing that in the :ref:`project guide<project-guide>`.
+
++ **Auto-updating combined results**
+  Rather than manually re-running a summary job every time a new analysis finishes, you can mark it ``refreshable: true`` and asimov will keep it up to date on its own — see :ref:`subject analyses<subject-analysis>` in the analyses guide.
+
++ **Running parameter sweeps**
+  If you want to run the same analysis with several waveforms, samplers, or other settings, a single blueprint with a ``strategy`` section can expand into all of the combinations for you, rather than writing out each blueprint by hand — see :ref:`strategies<strategies>` in the blueprints guide.

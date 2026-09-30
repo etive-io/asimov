@@ -63,6 +63,38 @@ class JobDescriptionTests(unittest.TestCase):
         self.assertEqual(slurm_dict["memory"], "8GB")
         self.assertEqual(slurm_dict["batch_name"], "test-job")
 
+    def test_to_htcondor_gpus(self):
+        """Test that a gpus request is mapped to request_gpus for HTCondor."""
+        job = JobDescription(
+            executable="/bin/echo",
+            output="out.log",
+            error="err.log",
+            log="job.log",
+            gpus=2,
+        )
+
+        htcondor_dict = job.to_htcondor()
+
+        self.assertEqual(htcondor_dict["request_gpus"], 2)
+        # No gpu request should be made by default
+        self.assertNotIn("request_gpus", JobDescription(
+            executable="/bin/echo", output="out.log", error="err.log", log="job.log",
+        ).to_htcondor())
+
+    def test_to_slurm_gpus(self):
+        """Test that a gpus request is carried through to the Slurm description."""
+        job = JobDescription(
+            executable="/bin/echo",
+            output="out.log",
+            error="err.log",
+            log="job.log",
+            gpus=2,
+        )
+
+        slurm_dict = job.to_slurm()
+
+        self.assertEqual(slurm_dict["gpus"], 2)
+
     def test_to_htcondor_defaults(self):
         """Test that HTCondor defaults are set correctly."""
         job = JobDescription(
@@ -220,6 +252,19 @@ class SlurmSchedulerTests(unittest.TestCase):
         self.assertIn("#SBATCH --mem=8192", script)
         self.assertIn("#SBATCH --export=ALL", script)
         self.assertIn("/bin/echo Hello World", script)
+
+    def test_create_batch_script_gpus(self):
+        """Test that a gpus request is rendered as a --gres=gpu:N line."""
+        scheduler = Slurm()
+
+        submit_dict = {
+            "executable": "/bin/echo",
+            "output": "out.log",
+            "error": "err.log",
+            "gpus": 2,
+        }
+        script = scheduler._create_batch_script(submit_dict)
+        self.assertIn("#SBATCH --gres=gpu:2", script)
 
     def test_create_batch_script_memory_conversion(self):
         """Test that memory is converted correctly."""

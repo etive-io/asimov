@@ -23,7 +23,7 @@
 	 <a class="btn btn-lg btn-primary d-flex align-items-center justify-content-center fw-semibold"
 	    href="getting-started.html"
 	 >
-	 <i class="bi bi-book"></i><span>  </span><span style="padding-left: 1rem;">Documentation</span>
+	 <i class="bi bi-book"></i><span>  </span><span style="padding-left: 1rem;">Quickstart Guide</span>
 	 </a>
 	 </div>
 
@@ -61,7 +61,7 @@ Uniform pipeline interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Asimov provides an API layer which allows a single configuration to be deployed to numerous different analysis pipelines.
-Current gravitational wave pipelines which are supported are ``lalinference``, ``bayeswave``, ``RIFT``, and ``bilby``.
+Gravitational wave pipelines are supported via optional plugin packages; see :doc:`pipelines` for the current list.
 
 .. raw:: html
 
@@ -98,6 +98,11 @@ Reporting overview
 
 Asimov can provide both machine-readible and human-friendly reports of all jobs it is monitoring, while collating relevant log files and outputs.
 
+.. figure:: screenshots/report-dashboard.png
+   :alt: The asimov report's summary dashboard, showing live counts of analyses by status
+
+   A live-updating project dashboard is one click away — see the :doc:`reporting guide <user-guide/reporting>` for the full interactive report, including per-event workflow graphs.
+
 .. raw:: html
 
 	 </div>
@@ -131,7 +136,7 @@ Users' guide
    user-guide/monitoring
    user-guide/reporting
    storage
-   olivaw/review
+   user-guide/review
    citing
 	     
 .. toctree::
@@ -146,10 +151,12 @@ Users' guide
    :maxdepth: 1
    :caption: Pipeline Guides
 
+   pipelines
    pipelines/lalinference
    pipelines/bilby
    pipelines/rift
    pipelines/bayeswave
+   pipelines/pesummary
 
 Advanced topics
 ---------------
@@ -159,6 +166,8 @@ Advanced topics
    :caption: Advanced topics
 
    analyses
+   blueprints
+   priors
    environment-reproducibility
    provenance
    build-process
@@ -170,6 +179,8 @@ Advanced topics
    configuration
    test-interface
    clusters
+   gracedb
+   advanced/projects
 
 Developers' Guide
 -----------------
@@ -181,23 +192,10 @@ Developers' Guide
    contributing.rst
    code-of-conduct.rst
 
-   
    asimov-repository
-	     
-   ledger   
-   pipelines-dev
-   hooks
-
-   building-docs
-   
-   asimov-repository
-
    code-overview
-
-   ledger
    pipelines-dev
    hooks
-
    building-docs
 
 Tutorials
@@ -235,7 +233,6 @@ Python API
    api/condor
    api/event
    api/git
-   api/gitlab
    api/ini
    api/ledger
    api/locutus
@@ -255,6 +252,7 @@ LIGO Analysis Cookbook
 
    ligo-cookbook/bayeswave
    ligo-cookbook/bilby
+   ligo-cookbook/defaults
    ligo-cookbook/working-with-gwosc
 
 Indices and tables
