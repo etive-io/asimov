@@ -405,3 +405,59 @@ class NameIterateTests(AsimovTestCase):
         self.assertIn("bilby-IMRPhenomXPHM-2", analysis_names)
         self.assertIn("bilby-SEOBNRv4PHM-2", analysis_names)
         self.assertIn("bilby-IMRPhenomD-2", analysis_names)
+
+
+class DatabaseLedgerEventTests(unittest.TestCase):
+    """Re-applying an existing event must never lose its analyses."""
+
+    def setUp(self):
+        import tempfile
+        from unittest.mock import patch
+        from asimov.ledger import DatabaseLedger
+
+        self.cwd = os.getcwd()
+        self.test_dir = tempfile.mkdtemp()
+        db_path = os.path.join(self.test_dir, "ledger.db")
+        self.config_patcher = patch("asimov.database.config")
+        mock_config = self.config_patcher.start()
+        mock_config.get.side_effect = lambda section, key, fallback=None: {
+            ("ledger", "engine"): "sqlalchemy",
+            ("ledger", "location"): db_path,
+        }.get((section, key), fallback or db_path)
+        self.ledger = DatabaseLedger(engine="sqlalchemy")
+        self.ledger.db.create_tables()
+        self.data = f"{self.cwd}/tests/test_data"
+        apply_page(f"{self.data}/test_event.yaml", event="S000000", ledger=self.ledger)
+        apply_page(
+            f"{self.data}/test_analysis_S000000.yaml", event="S000000", ledger=self.ledger
+        )
+
+    def tearDown(self):
+        self.config_patcher.stop()
+        shutil.rmtree(self.test_dir)
+
+    def _analyses(self):
+        return sorted(p.name for p in self.ledger.get_event("S000000")[0].productions)
+
+    def test_reapply_without_update_does_not_overwrite(self):
+        before = self._analyses()
+        self.assertTrue(before)
+        apply_page(
+            f"{self.data}/test_event_update.yaml", event="S000000", ledger=self.ledger
+        )
+        event = self.ledger.get_event("S000000")[0]
+        self.assertNotEqual(event.meta.get("event time"), 909)
+        self.assertEqual(self._analyses(), before)
+
+    def test_update_keeps_analyses_and_applies_changes(self):
+        before = self._analyses()
+        apply_page(
+            f"{self.data}/test_event_update.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            update_page=True,
+        )
+        event = self.ledger.get_event("S000000")[0]
+        self.assertEqual(event.meta["event time"], 909)
+        self.assertEqual(self._analyses(), before)
+        self.assertIn("version-1", self.ledger.data["history"]["S000000"])
