@@ -842,6 +842,100 @@ class TestDatabaseLedger(unittest.TestCase):
         """Test that .data starts out matching YAMLLedger's guard expectations."""
         self.assertEqual(self.ledger.data, {"project": {}, "pipelines": {}})
 
+    def test_project_defaults_are_merged_under_event_values(self):
+        """Project-level defaults in the ledger config must apply to events
+        read from a database ledger, as they do for the YAML ledger, with
+        event-level values winning and other project keys preserved."""
+        from asimov.utils import update as merge_update
+
+        merge_update(self.ledger.data, {
+            "priors": {
+                "chirp mass": {"minimum": 1, "maximum": 100},
+                "spin 1": {"minimum": 0, "maximum": 0.99, "type": "Uniform"},
+                "tilt 1": {"type": "Sine"},
+            },
+        })
+        self.ledger.save()
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {"priors": {"chirp mass": {"minimum": 8.5, "maximum": 10}}},
+        })
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        priors = fresh.get_event("GW150914")[0].meta["priors"]
+
+        self.assertEqual(priors["chirp mass"], {"minimum": 8.5, "maximum": 10})
+        self.assertEqual(priors["spin 1"]["maximum"], 0.99)
+        self.assertEqual(priors["tilt 1"], {"type": "Sine"})
+
+    def _insert_event_with_chirp_mass(self):
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {"priors": {"chirp mass": {"minimum": 8.5, "maximum": 10}}},
+        })
+
+    def _cached_priors(self):
+        """The priors of the event as served from the ledger's event cache."""
+        (event,) = self.ledger.events
+        return event.meta["priors"]
+
+    def test_cached_events_pick_up_changed_project_defaults(self):
+        """A long-lived ledger must not keep serving cached events built with
+        old project defaults once the defaults change and are saved."""
+        from asimov.utils import update as merge_update
+
+        self._insert_event_with_chirp_mass()
+        self.assertNotIn("spin 1", self._cached_priors())
+
+        merge_update(self.ledger.data, {"priors": {"spin 1": {"maximum": 0.99}}})
+        self.ledger.save()
+
+        priors = self._cached_priors()
+        self.assertEqual(priors["spin 1"], {"maximum": 0.99})
+        self.assertEqual(priors["chirp mass"], {"minimum": 8.5, "maximum": 10})
+
+    def test_cached_events_pick_up_defaults_changed_by_another_process(self):
+        """The same, when the defaults were changed through a different
+        ledger instance and only arrive when this one next saves."""
+        from asimov.utils import update as merge_update
+
+        self._insert_event_with_chirp_mass()
+        self.assertNotIn("spin 1", self._cached_priors())
+
+        other = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        merge_update(other.data, {"priors": {"spin 1": {"maximum": 0.99}}})
+        other.save()
+
+        self.ledger.save()
+        self.assertEqual(self._cached_priors()["spin 1"], {"maximum": 0.99})
+
+    def test_saving_unchanged_defaults_keeps_cached_events(self):
+        """Saving without a change to the defaults must not rebuild events."""
+        self._insert_event_with_chirp_mass()
+        (first,) = self.ledger.events
+        self.ledger.save()
+        (second,) = self.ledger.events
+        self.assertIs(second, first)
+
+    def test_events_without_project_defaults_are_unchanged(self):
+        """With no project-level defaults configured, event metadata is
+        read back exactly as stored."""
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {"priors": {"chirp mass": {"minimum": 8.5, "maximum": 10}}},
+        })
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        priors = fresh.get_event("GW150914")[0].meta["priors"]
+
+        self.assertEqual(priors, {"chirp mass": {"minimum": 8.5, "maximum": 10}})
+
     def test_data_mutation_persists_across_save(self):
         """Test the exact pattern `kind: configuration` blueprints use:
         mutate ledger.data in place, then call ledger.save() to persist it.
