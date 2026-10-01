@@ -69,18 +69,19 @@ def get_ledger():
 def _raw_production_names(ledger, event_name):
     """Return the set of production names for an event from raw ledger data.
 
-    Reads directly from ``ledger.events`` (a plain dict) rather than
-    constructing a full ``Event`` object, avoiding expensive git and
-    Production initialisation just to obtain a set of strings.
+    Reads directly from ``ledger.events`` (a plain dict) or, for the database
+    ledger, from the stored rows, rather than constructing a full ``Event``
+    object, avoiding expensive git and Production initialisation just to
+    obtain a set of strings.
     """
     names = set()
+    db = getattr(ledger, "db", None)
+    if db is not None:
+        # The database ledger: read the persisted rows directly. Loading the
+        # event would skip any analysis which fails to load, and collapse
+        # duplicates, so its names could be handed out a second time.
+        return {row["name"] for row in db.query("production", "event_name", event_name)}
     events = ledger.events
-    if not isinstance(events, dict):
-        # The database ledger holds a list of Event objects, not raw dicts.
-        for event in events:
-            if event.name == event_name:
-                names.update(production.name for production in event.productions)
-        return names
     for prod in events.get(event_name, {}).get("productions", []):
         if isinstance(prod, dict) and len(prod) == 1:
             names.add(next(iter(prod)))

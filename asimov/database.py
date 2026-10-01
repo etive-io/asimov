@@ -330,7 +330,29 @@ class AsimovSQLDatabase(AsimovDatabase):
         with self.get_session() as session:
             # Validate with Pydantic
             production_schema = ProductionSchema(**data)
-            
+
+            # Names are unique per event. Checking inside this session, rather
+            # than in a separate query beforehand, narrows the window in which
+            # two writers can both see no existing row. SQLite serialises its
+            # writers, which closes it; other databases would also need a
+            # unique constraint on (event_name, name), which existing ledgers
+            # holding duplicates would have to be cleaned up for first.
+            already = (
+                session.query(ProductionModel.id)
+                .filter(
+                    and_(
+                        ProductionModel.event_name == production_schema.event_name,
+                        ProductionModel.name == production_schema.name,
+                    )
+                )
+                .first()
+            )
+            if already is not None:
+                raise ValueError(
+                    f"A production named '{production_schema.name}' already exists "
+                    f"for event '{production_schema.event_name}'."
+                )
+
             # Create ORM model
             production = ProductionModel(
                 name=production_schema.name,
@@ -473,7 +495,10 @@ class AsimovSQLDatabase(AsimovDatabase):
                     elif hasattr(ProductionModel, key):
                         query = query.filter(getattr(ProductionModel, key) == value)
             
-            results = query.all()
+            # Oldest first. Callers which meet two rows of the same name (see
+            # insert_production) must all pick the same one, and so must
+            # update_production.
+            results = query.order_by(ProductionModel.id).all()
             # Expunge objects so they can be used outside the session
             for prod in results:
                 session.expunge(prod)

@@ -160,6 +160,80 @@ class ReapplyAnalysisSQLite(ReapplyAnalysis):
             row for row in ledger.db.query("production", "event_name", SUBJECT)
         ]
 
+    def insert_legacy_duplicate(self, original):
+        """Add a second row of the same name, as an older asimov could."""
+        from asimov.models import ProductionModel
+
+        ledger = self.ledger()
+        with ledger.db.get_session() as session:
+            session.add(
+                ProductionModel(
+                    name=original.name,
+                    event_name=original.event_name,
+                    pipeline=original.pipeline,
+                    status="ready",
+                    comment=None,
+                    meta=original.meta,
+                )
+            )
+
+    def insert_unloadable(self, name):
+        """A stored analysis which cannot be loaded (its pipeline is unknown)."""
+        self.ledger().db.insert_production(
+            {
+                "name": name,
+                "event_name": SUBJECT,
+                "pipeline": "nosuchpipeline",
+                "status": "ready",
+                "comment": None,
+                "meta": {},
+            }
+        )
+
+    def test_the_database_itself_refuses_a_duplicate(self):
+        """The check is made in the insert's own transaction, not only before it."""
+        self.apply(analysis_blueprint("first"))
+        (original,) = self.ledger().db.query_productions({"event_name": SUBJECT})
+        with self.assertRaises(ValueError):
+            self.ledger().db.insert_production(
+                {
+                    "name": "first",
+                    "event_name": SUBJECT,
+                    "pipeline": original.pipeline,
+                    "status": "ready",
+                    "comment": None,
+                    "meta": {},
+                }
+            )
+        self.assertEqual([row["name"] for row in self.rows()], ["first"])
+
+    def test_iterate_counts_analyses_which_fail_to_load(self):
+        """The name of a stored but unloadable analysis must not be reused."""
+        self.insert_unloadable("first")
+        self.assertEqual(self.names(), [])  # skipped when the event is loaded
+
+        self.apply(analysis_blueprint("first"), iterate=True)
+
+        self.assertEqual(self.names(), ["first-2"])
+        self.assertEqual(
+            sorted(row["name"] for row in self.rows()), ["first", "first-2"]
+        )
+
+    def test_reapplying_an_analysis_which_fails_to_load_is_refused(self):
+        self.insert_unloadable("first")
+        output = self.apply(analysis_blueprint("first"))
+        self.assertIn("already exists", output)
+        self.assertEqual([row["name"] for row in self.rows()], ["first"])
+
+    def test_rows_are_read_oldest_first(self):
+        for name in ("c", "a", "b"):
+            self.apply(analysis_blueprint(name))
+        ids = [row.id for row in self.ledger().db.query_productions({"event_name": SUBJECT})]
+        self.assertEqual(ids, sorted(ids))
+        self.assertEqual(
+            [row["name"] for row in self.rows()], ["c", "a", "b"]
+        )
+
     def test_no_duplicate_row_is_stored(self):
         self.apply(analysis_blueprint("first"))
         self.apply(analysis_blueprint("first"))
@@ -171,16 +245,7 @@ class ReapplyAnalysisSQLite(ReapplyAnalysis):
         self.apply(analysis_blueprint("first", comment="original"))
         ledger = self.ledger()
         (original,) = ledger.db.query_productions({"event_name": SUBJECT})
-        ledger.db.insert_production(
-            {
-                "name": "first",
-                "event_name": SUBJECT,
-                "pipeline": original.pipeline,
-                "status": "ready",
-                "comment": None,
-                "meta": original.meta,
-            }
-        )
+        self.insert_legacy_duplicate(original)
 
         ledger = self.ledger()
         event = ledger.get_event(SUBJECT)[0]
