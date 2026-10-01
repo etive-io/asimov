@@ -870,6 +870,57 @@ class TestDatabaseLedger(unittest.TestCase):
         self.assertEqual(priors["spin 1"]["maximum"], 0.99)
         self.assertEqual(priors["tilt 1"], {"type": "Sine"})
 
+    def _insert_event_with_chirp_mass(self):
+        self.ledger.db.insert_event({
+            "name": "GW150914",
+            "repository": None,
+            "working_directory": None,
+            "meta": {"priors": {"chirp mass": {"minimum": 8.5, "maximum": 10}}},
+        })
+
+    def _cached_priors(self):
+        """The priors of the event as served from the ledger's event cache."""
+        (event,) = self.ledger.events
+        return event.meta["priors"]
+
+    def test_cached_events_pick_up_changed_project_defaults(self):
+        """A long-lived ledger must not keep serving cached events built with
+        old project defaults once the defaults change and are saved."""
+        from asimov.utils import update as merge_update
+
+        self._insert_event_with_chirp_mass()
+        self.assertNotIn("spin 1", self._cached_priors())
+
+        merge_update(self.ledger.data, {"priors": {"spin 1": {"maximum": 0.99}}})
+        self.ledger.save()
+
+        priors = self._cached_priors()
+        self.assertEqual(priors["spin 1"], {"maximum": 0.99})
+        self.assertEqual(priors["chirp mass"], {"minimum": 8.5, "maximum": 10})
+
+    def test_cached_events_pick_up_defaults_changed_by_another_process(self):
+        """The same, when the defaults were changed through a different
+        ledger instance and only arrive when this one next saves."""
+        from asimov.utils import update as merge_update
+
+        self._insert_event_with_chirp_mass()
+        self.assertNotIn("spin 1", self._cached_priors())
+
+        other = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        merge_update(other.data, {"priors": {"spin 1": {"maximum": 0.99}}})
+        other.save()
+
+        self.ledger.save()
+        self.assertEqual(self._cached_priors()["spin 1"], {"maximum": 0.99})
+
+    def test_saving_unchanged_defaults_keeps_cached_events(self):
+        """Saving without a change to the defaults must not rebuild events."""
+        self._insert_event_with_chirp_mass()
+        (first,) = self.ledger.events
+        self.ledger.save()
+        (second,) = self.ledger.events
+        self.assertIs(second, first)
+
     def test_events_without_project_defaults_are_unchanged(self):
         """With no project-level defaults configured, event metadata is
         read back exactly as stored."""

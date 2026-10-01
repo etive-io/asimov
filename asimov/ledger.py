@@ -36,26 +36,21 @@ class Ledger:
         """Drop the cached ``project_analyses`` result. See _invalidate_events_cache."""
         self._project_analyses_cache = None
 
+    #: Ledger-wide settings which act as project-level defaults for events.
+    _DEFAULT_KEYS = ("data", "priors", "quality", "likelihood", "scheduler", "waveform")
+
+    @classmethod
+    def _defaults_from(cls, data):
+        """Pick the project-level defaults out of a ledger-wide config dict."""
+        return {key: data[key] for key in cls._DEFAULT_KEYS if key in data}
+
     def get_defaults(self):
         """
         Gather project-level defaults from the ledger.
 
         At present data, quality, priors, and likelihood settings can all be set at a project level as defaults.
         """
-        defaults = {}
-        if "data" in self.data:
-            defaults["data"] = self.data["data"]
-        if "priors" in self.data:
-            defaults["priors"] = self.data["priors"]
-        if "quality" in self.data:
-            defaults["quality"] = self.data["quality"]
-        if "likelihood" in self.data:
-            defaults["likelihood"] = self.data["likelihood"]
-        if "scheduler" in self.data:
-            defaults["scheduler"] = self.data["scheduler"]
-        if "waveform" in self.data:
-            defaults["waveform"] = self.data["waveform"]
-        return defaults
+        return self._defaults_from(self.data)
 
     @classmethod
     def create(cls, name=None, engine=None, location=None):
@@ -912,9 +907,18 @@ class DatabaseLedger(Ledger):
         further out of date.
         """
         if self._data_cache is not None:
+            # ``self.data`` may already have been mutated in place, so the
+            # defaults as last loaded come from the baseline snapshot.
+            defaults_before = self._defaults_from(self._data_cache_baseline or {})
             delta = diff_dict(self._data_cache_baseline, self._data_cache)
             if delta:
                 self._data_cache = self.db.merge_config(delta)
             else:
                 self._data_cache = self.db.get_config() or self._data_cache
             self._data_cache_baseline = copy.deepcopy(self._data_cache)
+            # Events are built with the project defaults merged in underneath
+            # them (see _event_from_dict), so cached events are stale once the
+            # defaults change, whether this process changed them or the merge
+            # above has just pulled in another process's change.
+            if self.get_defaults() != defaults_before:
+                self._invalidate_events_cache()
