@@ -806,12 +806,29 @@ class DatabaseLedger(Ledger):
         """
         from asimov.analysis import ProjectAnalysis
 
+        # Names must be unique, as they are for the YAML ledger. The database
+        # has no uniqueness constraint, so without this check an analysis which
+        # already exists is silently inserted a second time: the load-time
+        # de-duplication then hides the new row, and the apply reports success.
         if isinstance(analysis, ProjectAnalysis):
+            existing = [row["name"] for row in self.db.query("project_analysis")]
+            if analysis.name in existing:
+                raise ValueError(
+                    "An analysis with that name already exists in the ledger."
+                )
             self._insert(analysis)
         else:
             # It's a Production
             if event is None:
                 raise ValueError("Event is required for Production analyses")
+            existing = [
+                row["name"] for row in self.db.query("production", "event_name", event.name)
+            ]
+            if analysis.name in existing:
+                raise ValueError(
+                    f"A production with this name already exists for {event.name}. "
+                    "New productions must have unique names."
+                )
             # Set the event reference
             analysis.event = event
             self._insert(analysis)

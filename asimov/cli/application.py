@@ -74,7 +74,14 @@ def _raw_production_names(ledger, event_name):
     Production initialisation just to obtain a set of strings.
     """
     names = set()
-    for prod in ledger.events.get(event_name, {}).get("productions", []):
+    events = ledger.events
+    if not isinstance(events, dict):
+        # The database ledger holds a list of Event objects, not raw dicts.
+        for event in events:
+            if event.name == event_name:
+                names.update(production.name for production in event.productions)
+        return names
+    for prod in events.get(event_name, {}).get("productions", []):
         if isinstance(prod, dict) and len(prod) == 1:
             names.add(next(iter(prod)))
         elif isinstance(prod, dict) and "name" in prod:

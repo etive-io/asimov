@@ -617,6 +617,10 @@ class AsimovSQLDatabase(AsimovDatabase):
                         ProductionModel.name == production_name,
                     )
                 )
+                # The oldest row, so that if a ledger already holds duplicates
+                # the same one is always updated (and loaded) rather than
+                # whichever the database happens to return first.
+                .order_by(ProductionModel.id)
                 .first()
             )
             if not production:
