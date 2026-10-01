@@ -37,6 +37,15 @@ Bug Fixes
   and saves the review to the ledger (#198). Analyses over many subjects no longer fail with
   ``File name too long`` (#199).
 
+**Re-applying an Existing Analysis on the Database Ledger**
+  ``asimov apply`` of an analysis whose name already exists was refused on the YAML ledger but
+  not on the database ledger (the default), which inserted a second row with the same name and
+  reported success. The duplicate was hidden when the event was loaded, so the new blueprint
+  silently had no effect. Both ledgers now refuse it, for analyses and project analyses
+  (the latter crashed with a database ``IntegrityError``), and updates always go to the oldest
+  row. ``asimov apply --iterate`` and ``--name`` also no longer crash on the database ledger.
+  Ledgers which already contain a duplicate row keep loading the original.
+
 **Analyses After an ``asimov apply --update``**
   Adding an analysis to an event on the YAML ledger, after the event had been changed with
   ``asimov apply --update``, changed the reference frequency of the event's *existing*
