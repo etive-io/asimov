@@ -93,7 +93,37 @@ class EventTests(AsimovTestCase):
         self.assertEqual(event['priors']['luminosity distance']['maximum'], 1000)
         self.assertEqual(event['priors']['mass ratio']['maximum'], 1.0)
 
-        
+    def _apply_with_status(self, status):
+        apply_page(f"{self.cwd}/tests/test_data/test_event.yaml", event="S000000", ledger=self.ledger)
+        apply_page(f"{self.cwd}/tests/test_data/test_analysis_S000000.yaml", event="S000000", ledger=self.ledger)
+        prod = self.ledger.events["S000000"]["productions"][0]
+        next(iter(prod.values()))["status"] = status
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_event_update.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            update_unstarted=True,
+        )
+        return self.ledger.events["S000000"]
+
+    def test_event_update_unstarted_inherits_new_settings(self):
+        event = self._apply_with_status("ready")
+        self.assertEqual(event["event time"], 909)
+        self.assertFalse("event time" in next(iter(event["productions"][0].values())))
+        analysis = self.ledger.get_event("S000000")[0].productions[0]
+        self.assertEqual(analysis.meta["event time"], 909)
+        self.assertTrue("version-1" in self.ledger.data["history"]["S000000"])
+
+    def test_event_update_unstarted_pins_started_analyses(self):
+        for status in ["running", "finished", "uploaded", "processing"]:
+            with self.subTest(status=status):
+                self.tearDown()
+                self.setUp()
+                event = self._apply_with_status(status)
+                self.assertEqual(event["event time"], 909)
+                self.assertEqual(next(iter(event["productions"][0].values()))["event time"], 900)
+
+
 class DetcharTests(AsimovTestCase):
     """Tests to ensure that various detector characterisation related
     data are handled correctly.
@@ -461,6 +491,26 @@ class DatabaseLedgerEventTests(unittest.TestCase):
         self.assertEqual(event.meta["event time"], 909)
         self.assertEqual(self._analyses(), before)
         self.assertIn("version-1", self.ledger.data["history"]["S000000"])
+
+    def _update_unstarted(self, status):
+        prod = self.ledger.get_event("S000000")[0].productions[0]
+        prod.status = status
+        self.ledger.update_event(prod.event)
+        apply_page(
+            f"{self.data}/test_event_update.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            update_unstarted=True,
+        )
+        return self.ledger.get_event("S000000")[0].productions[0]
+
+    def test_update_unstarted_lets_ready_analysis_inherit(self):
+        prod = self._update_unstarted("ready")
+        self.assertEqual(prod.meta["event time"], 909)
+
+    def test_update_unstarted_pins_finished_analysis(self):
+        prod = self._update_unstarted("finished")
+        self.assertEqual(prod.meta["event time"], 900)
 
 
 class DatabaseLedgerProductionSetTests(DatabaseLedgerEventTests):
