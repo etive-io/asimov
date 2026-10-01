@@ -514,16 +514,17 @@ class DatabaseLedger(Ledger):
     # Keys that are Python objects and must not be written to the database as JSON.
     _DB_EXCLUDED_META_KEYS = {"ledger", "pipelines"}
 
-    def _prepare_sql_event_data(self, data):
+    @classmethod
+    def _prepare_sql_event_data(cls, data):
         data = dict(data)
         meta = {}
         if isinstance(data.get("meta"), dict):
             for k, v in data["meta"].items():
-                if k not in self._DB_EXCLUDED_META_KEYS:
+                if k not in cls._DB_EXCLUDED_META_KEYS:
                     meta[k] = v
         for key, value in data.items():
             if key not in {"name", "repository", "working_directory", "working directory",
-                           "meta", "productions"} | self._DB_EXCLUDED_META_KEYS:
+                           "meta", "productions"} | cls._DB_EXCLUDED_META_KEYS:
                 meta[key] = value
         return {
             "name": data.get("name"),
@@ -532,16 +533,17 @@ class DatabaseLedger(Ledger):
             "meta": meta,
         }
 
-    def _prepare_sql_production_data(self, data):
-        data = self._normalize_nested_analysis_dict(data)
+    @classmethod
+    def _prepare_sql_production_data(cls, data):
+        data = cls._normalize_nested_analysis_dict(data)
         meta = {}
         if isinstance(data.get("meta"), dict):
             for k, v in data["meta"].items():
-                if k not in self._DB_EXCLUDED_META_KEYS:
+                if k not in cls._DB_EXCLUDED_META_KEYS:
                     meta[k] = v
         for key, value in data.items():
             if key not in {"name", "event", "event_name", "pipeline", "status", "comment",
-                           "meta"} | self._DB_EXCLUDED_META_KEYS:
+                           "meta"} | cls._DB_EXCLUDED_META_KEYS:
                 meta[key] = value
         return {
             "name": data.get("name"),
@@ -552,16 +554,17 @@ class DatabaseLedger(Ledger):
             "meta": meta,
         }
 
-    def _prepare_sql_project_analysis_data(self, data):
-        data = self._normalize_nested_analysis_dict(data)
+    @classmethod
+    def _prepare_sql_project_analysis_data(cls, data):
+        data = cls._normalize_nested_analysis_dict(data)
         meta = {}
         if isinstance(data.get("meta"), dict):
             for k, v in data["meta"].items():
-                if k not in self._DB_EXCLUDED_META_KEYS:
+                if k not in cls._DB_EXCLUDED_META_KEYS:
                     meta[k] = v
         for key, value in data.items():
             if key not in {"name", "pipeline", "status", "comment",
-                           "meta"} | self._DB_EXCLUDED_META_KEYS:
+                           "meta"} | cls._DB_EXCLUDED_META_KEYS:
                 meta[key] = value
         return {
             "name": data.get("name"),

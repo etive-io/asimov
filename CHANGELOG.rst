@@ -47,6 +47,15 @@ Bug Fixes
 
 The fixes and improvements from the 0.7.1 release are listed under 0.7.1 below.
 
+New Features
+------------
+
+**Ledger Migration**
+  ``asimov migrate-ledger --to sqlite`` (or ``--to yamlfile``) converts a project's ledger between the
+  YAML and SQL formats. It never runs automatically. The existing ledger is left in place, the new one is
+  read back and compared with it before the command reports success, and ``--dry-run`` does the whole
+  conversion into a temporary file without creating anything.
+
 Breaking Changes
 ----------------
 

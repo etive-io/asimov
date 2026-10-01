@@ -295,3 +295,90 @@ def clone(location):
 
     with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
         config.write(config_file)
+
+
+@click.command("migrate-ledger")
+@click.option(
+    "--to",
+    "target",
+    type=click.Choice(["sqlite", "yamlfile"]),
+    required=True,
+    help="The ledger engine to convert this project's ledger to.",
+)
+@click.option(
+    "--dest",
+    default=None,
+    help="Where to write the new ledger. Defaults to .asimov/ledger.db or "
+    ".asimov/ledger.yml. An existing file is never overwritten.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Convert into a temporary file and check it, without creating anything.",
+)
+@click.option(
+    "--switch/--no-switch",
+    default=True,
+    help="Point the project's asimov.conf at the new ledger once it has been "
+    "written and checked. The old ledger is always left in place.",
+)
+def migrate_ledger(target, dest, dry_run, switch):
+    """
+    Convert this project's ledger between the YAML and SQL formats.
+
+    The existing ledger is only read, never modified or deleted. The new
+    ledger is read back and compared with the old one before it is reported
+    as successful; if the two differ it is removed again.
+    """
+    from asimov.ledger_migration import MigrationError, ledger_kind
+    from asimov.ledger_migration import migrate_ledger as run_migration
+
+    conf_path = os.path.join(".asimov", "asimov.conf")
+    project_config = configparser.ConfigParser()
+    project_config.read(conf_path)
+    source_engine = project_config.get("ledger", "engine", fallback="yamlfile")
+    source_location = project_config.get(
+        "ledger", "location", fallback=os.path.join(".asimov", "ledger.yml")
+    )
+    if dest is None:
+        dest = os.path.join(
+            ".asimov", "ledger.yml" if target == "yamlfile" else "ledger.db"
+        )
+
+    try:
+        if ledger_kind(source_engine) == ledger_kind(target):
+            raise click.ClickException(
+                f"This project's ledger already uses the {source_engine!r} engine."
+            )
+        report = run_migration(
+            source_engine, source_location, target, dest, dry_run=dry_run
+        )
+    except MigrationError as exc:
+        raise click.ClickException(str(exc))
+
+    summary = ", ".join(f"{n} {name}" for name, n in report.counts.items())
+    if dry_run:
+        checked = "converted and checked" if report.verified else "converted"
+        click.echo(f"Dry run: {summary} {checked}; nothing was written to {dest}.")
+        return
+
+    click.echo(
+        click.style("●", fg="green") + f" Migrated {summary} to {dest} and checked it."
+    )
+    if switch:
+        shutil.copyfile(conf_path, conf_path + ".bak")
+        if not project_config.has_section("ledger"):
+            project_config.add_section("ledger")
+        project_config.set("ledger", "engine", target)
+        project_config.set("ledger", "location", dest)
+        with open(conf_path, "w") as config_file:
+            project_config.write(config_file)
+        click.echo(
+            f"The project now uses {dest}. The previous ledger is still at "
+            f"{source_location}, and asimov.conf was backed up to {conf_path}.bak."
+        )
+    else:
+        click.echo(
+            f"The project still uses {source_location}; set [ledger] engine = {target} "
+            f"and location = {dest} in {conf_path} to switch."
+        )

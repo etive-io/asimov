@@ -83,6 +83,7 @@ def olivaw(ctx):
 # Project initialisation
 olivaw.add_command(project.init)
 olivaw.add_command(project.clone)
+olivaw.add_command(project.migrate_ledger)
 
 olivaw.add_command(event.event)
 

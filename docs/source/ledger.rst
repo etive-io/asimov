@@ -140,28 +140,34 @@ The database backend supports advanced querying:
        filters={"status": "ready", "pipeline": "bilby"}
    )
 
-Migration from YAML to Database
+Migrating Between Ledger Formats
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To migrate an existing YAML ledger to a database:
+A project's ledger can be converted between the YAML and SQL formats with ``asimov migrate-ledger``.
+Nothing is converted automatically: new projects use the SQL ledger, but a project which already has a
+``ledger.yml`` keeps using it until you run this command.
 
-.. code-block:: python
+.. code-block:: console
 
-   from asimov.ledger import YAMLLedger, DatabaseLedger
-   
-   # Load existing YAML ledger
-   yaml_ledger = YAMLLedger(".asimov/ledger.yml")
-   
-   # Create new database ledger
-   db_ledger = DatabaseLedger.create(engine="sqlalchemy")
-   
-   # Migrate events
-   for event in yaml_ledger.get_event():
-       db_ledger.add_event(event)
-   
-   # Migrate project analyses
-   for analysis in yaml_ledger.project_analyses:
-       db_ledger.add_analysis(analysis)
+   $ asimov migrate-ledger --to sqlite --dry-run
+   $ asimov migrate-ledger --to sqlite
+
+The command converts the project's current ledger (as set by ``[ledger]`` in ``.asimov/asimov.conf``) to
+``.asimov/ledger.db``, or to ``.asimov/ledger.yml`` with ``--to yamlfile``. Use ``--dest`` to choose
+another location.
+
+* The existing ledger is only read: it is never modified or deleted, and the command will not overwrite
+  an existing destination file.
+* The new ledger is read back and compared with the original, event by event and analysis by analysis.
+  If they differ, the new ledger is removed and the differences are reported.
+* ``--dry-run`` carries out the conversion and the comparison in a temporary file, so any problem is
+  reported without creating anything in the project.
+* Once the new ledger has been written and checked, ``asimov.conf`` is pointed at it (the previous file
+  is kept as ``asimov.conf.bak``). Pass ``--no-switch`` to leave the configuration alone.
+
+Project-wide defaults in a YAML ledger (``data``, ``priors``, ``quality``, ``likelihood``, ``scheduler``
+and ``waveform``) are stored on each event when converting to SQL, since the SQL ledger doesn't apply
+them itself. They are also kept with the rest of the project configuration.
 
 Transaction Safety
 ^^^^^^^^^^^^^^^^^^
