@@ -841,25 +841,110 @@ def html(event, webdir):
         return lines.join('\\n');
     }
 
+    // Rendering a Mermaid graph (with the ELK layout) is expensive, and a
+    // project can have hundreds of events, so graphs are drawn lazily: only
+    // for events near the viewport, one at a time, yielding to the browser
+    // between renders so the page stays responsive.
+    //
+    // `asimovRenderGeneration` changes whenever the filters do. A graph is
+    // current if it was drawn for the present generation, so a filter change
+    // invalidates every graph at once without redrawing the ones off screen.
     var mermaidRenderSeq = 0;
-    async function rerenderAllGraphs() {
-        if (!window.mermaid || !window.asimovGraphs) return;
-        for (var eventName in window.asimovGraphs) {
-            var gd = window.asimovGraphs[eventName];
-            var def = buildMermaidDef(gd, asimovActiveFilters);
-            var renderId = 'asimov-mermaid-' + (mermaidRenderSeq++);
+    var asimovRenderGeneration = 0;
+    var asimovRenderedGeneration = {};   // event name -> generation drawn
+    var asimovRenderQueue = [];
+    var asimovRenderRunning = false;
+    var asimovNearViewport = new Set();  // events whose graph is near the viewport
+    var asimovContainerEvent = {};       // container id -> event name
+
+    function hasVisibleNodes(gd) {
+        return gd.nodes.some(function(n) { return isNodeVisible(n, asimovActiveFilters); });
+    }
+
+    // Returns true if the graph is now current for the generation it started in.
+    async function renderEventGraph(eventName) {
+        var gd = window.asimovGraphs[eventName];
+        var container = gd && document.getElementById(gd.containerId);
+        if (!container) return true;
+        var generation = asimovRenderGeneration;
+        if (!hasVisibleNodes(gd)) {
+            container.innerHTML = '';
+        } else {
             try {
-                var result = await mermaid.render(renderId, def);
-                var container = document.getElementById(gd.containerId);
-                if (container) {
-                    container.innerHTML = result.svg;
-                    bindNodeClicks(container);
-                }
+                var def = buildMermaidDef(gd, asimovActiveFilters);
+                var result = await mermaid.render('asimov-mermaid-' + (mermaidRenderSeq++), def);
+                // The filters changed while this was rendering: drop it.
+                if (generation !== asimovRenderGeneration) return false;
+                container.innerHTML = result.svg;
+                bindNodeClicks(container);
             } catch(e) {
                 console.warn('Mermaid render error for ' + eventName + ':', e);
             }
         }
+        asimovRenderedGeneration[eventName] = generation;
+        return true;
+    }
+
+    async function drainRenderQueue() {
+        if (asimovRenderRunning) return;
+        asimovRenderRunning = true;
+        try {
+            while (asimovRenderQueue.length > 0) {
+                var eventName = asimovRenderQueue.shift();
+                if (asimovRenderedGeneration[eventName] === asimovRenderGeneration) continue;
+                await renderEventGraph(eventName);
+                // Let the browser handle input and paint before the next graph.
+                await new Promise(function(resolve) { setTimeout(resolve, 0); });
+            }
+        } finally {
+            asimovRenderRunning = false;
+        }
+    }
+
+    function scheduleGraphRender(eventName) {
+        if (!window.mermaid) return;
+        if (asimovRenderedGeneration[eventName] === asimovRenderGeneration) return;
+        if (asimovRenderQueue.indexOf(eventName) !== -1) return;
+        asimovRenderQueue.push(eventName);
+        drainRenderQueue();
+    }
+
+    // Draw graphs as their events scroll into view (or are un-hidden by a
+    // filter or the search box).
+    function initGraphRendering() {
+        var names = Object.keys(window.asimovGraphs || {});
+        names.forEach(function(name) {
+            asimovContainerEvent[window.asimovGraphs[name].containerId] = name;
+        });
+        if (!('IntersectionObserver' in window)) {
+            names.forEach(function(name) { asimovNearViewport.add(name); });
+            names.forEach(scheduleGraphRender);
+            return;
+        }
+        var observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                var name = asimovContainerEvent[entry.target.id];
+                if (!name) return;
+                if (entry.isIntersecting) {
+                    asimovNearViewport.add(name);
+                    scheduleGraphRender(name);
+                } else {
+                    asimovNearViewport.delete(name);
+                }
+            });
+        }, { rootMargin: '600px 0px' });
+        names.forEach(function(name) {
+            var container = document.getElementById(window.asimovGraphs[name].containerId);
+            if (container) observer.observe(container);
+        });
+    }
+
+    // Called whenever the filters change.
+    function rerenderAllGraphs() {
+        asimovRenderGeneration++;
+        asimovRenderQueue.length = 0;
         checkEventVisibility();
+        asimovNearViewport.forEach(scheduleGraphRender);
     }
 
     // Mermaid only honours `click` directives at securityLevel 'loose', so
@@ -1345,8 +1430,9 @@ def html(event, webdir):
             backdrop.addEventListener('click', closeAnalysisModal);
         }
 
-        // Initial Mermaid render (filters already applied by initializeFilters)
-        rerenderAllGraphs();
+        // Draw graphs lazily as their events come into view
+        checkEventVisibility();
+        initGraphRendering();
     };
 
 </script>
