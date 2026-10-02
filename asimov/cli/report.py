@@ -892,6 +892,9 @@ def html(event, webdir):
             while (asimovRenderQueue.length > 0) {
                 var eventName = asimovRenderQueue.shift();
                 if (asimovRenderedGeneration[eventName] === asimovRenderGeneration) continue;
+                // Scrolled out of range while queued: it is redrawn if it
+                // comes back into view.
+                if (!asimovNearViewport.has(eventName)) continue;
                 await renderEventGraph(eventName);
                 // Let the browser handle input and paint before the next graph.
                 await new Promise(function(resolve) { setTimeout(resolve, 0); });

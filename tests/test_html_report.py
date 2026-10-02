@@ -171,6 +171,15 @@ class TestReportLazyGraphRendering(unittest.TestCase):
         self.assertNotIn("mermaid.render", body)
         self.assertIn("asimovRenderGeneration++", body)
 
+    def test_queued_graphs_that_left_the_viewport_are_skipped(self):
+        start = self.source.index("async function drainRenderQueue()")
+        body = self.source[start:self.source.index("function scheduleGraphRender", start)]
+        self.assertIn("asimovNearViewport.has(eventName)", body)
+        self.assertLess(
+            body.index("asimovNearViewport.has(eventName)"),
+            body.index("await renderEventGraph"),
+        )
+
     def test_graphs_are_rendered_one_at_a_time_yielding_between(self):
         self.assertIn("asimovRenderRunning", self.source)
         self.assertIn("setTimeout(resolve, 0)", self.source)
