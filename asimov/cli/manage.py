@@ -16,6 +16,10 @@ from asimov import LOGGER_LEVEL
 from asimov.event import DescriptionException
 from asimov.pipeline import PipelineException
 from asimov.git import EventRepo
+from asimov.throttle import (
+    SubmissionThrottle,
+    is_transient_submit_error,
+)
 
 def check_dependencies_satisfied(analysis, logger):
     """
@@ -271,15 +275,32 @@ def build(event, dryrun):
     default=False,
     help="Print all commands which will be executed without running them",
 )
+@click.option(
+    "--max-submit",
+    "max_submit",
+    type=int,
+    default=None,
+    help="Submit at most this many analyses in this pass "
+    "(overrides [scheduler] max_submit_per_pass).",
+)
 @manage.command()
-def submit(event, update, dryrun):
+def submit(event, update, dryrun, max_submit):
     """
     Submit the run configuration files for a given event for jobs which are ready to run.
     If no event is specified then all of the events will be processed.
+
+    Submissions are throttled by the [scheduler] max_queued,
+    max_submit_per_pass and submit_interval settings: analyses which don't
+    fit in the budget are left ready and picked up by a later pass.
     """
     asimov.setup_file_logging()
     logger = asimov.logger.getChild("cli").getChild("manage.submit")
     logger.setLevel(LOGGER_LEVEL)
+
+    throttle = SubmissionThrottle.from_config(ledger, max_per_pass=max_submit)
+    if dryrun:
+        throttle.interval = 0
+    submitted_any = False
 
     # check the interest dictionary if needed
     # keep only the highest production number for the analyses
@@ -372,6 +393,14 @@ def submit(event, update, dryrun):
                 )
                 continue
 
+            if not throttle.can_submit():
+                throttle.defer(analysis.name)
+                click.echo(
+                    click.style("●", fg="yellow")
+                    + f" Deferring project analysis {analysis.name}: submission limit reached"
+                )
+                continue
+
             # Need to ensure a directory exists for these!
             project_analysis_dir = os.path.join(
                 "checkouts",
@@ -418,8 +447,11 @@ def submit(event, update, dryrun):
                 )
                 click.echo("Try running `asimov manage build` first.")
             try:
+                throttle.pace()
                 cluster_id = pipe.submit_dag(dryrun=dryrun)
+                throttle.record_submission()
                 if not dryrun:
+                    submitted_any = True
                     analysis.job_id = int(cluster_id)
                     click.echo(
                         click.style("●", fg="green") + f" Submitted {analysis.name}"
@@ -433,23 +465,31 @@ def submit(event, update, dryrun):
                         extra_prio = 20
                         condor.change_job_priority(job_id, extra_prio, use_old=False)
 
-            except PipelineException as e:
-                analysis.status = "stuck"
-                click.echo(
-                    click.style("●", fg="red") + f" Unable to submit {analysis.name}"
-                )
-                logger.exception(e)
-                ledger.update_analysis_in_project_analysis(analysis)
-                ledger.save()
-                logger.error(
-                    f"The pipeline failed to submit the DAG file to the cluster. {e}",
-                )
+            except Exception as e:
+                if is_transient_submit_error(e):
+                    # The scheduler is busy: leave this analysis ready, and
+                    # stop submitting for this pass rather than marking it stuck.
+                    throttle.halt()
+                    throttle.defer(analysis.name)
+                    click.echo(
+                        click.style("●", fg="yellow")
+                        + f" Scheduler busy, deferring {analysis.name}"
+                    )
+                    logger.warning(f"Deferred {analysis.name}: {e}")
+                elif isinstance(e, PipelineException):
+                    analysis.status = "stuck"
+                    click.echo(
+                        click.style("●", fg="red") + f" Unable to submit {analysis.name}"
+                    )
+                    logger.exception(e)
+                    ledger.update_analysis_in_project_analysis(analysis)
+                    ledger.save()
+                    logger.error(
+                        f"The pipeline failed to submit the DAG file to the cluster. {e}",
+                    )
+                else:
+                    raise
             if not dryrun:
-                # Refresh the condor job list (only when using HTCondor)
-                from asimov import config as _cfg
-                if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
-                    job_list = condor.CondorJobList()
-                    job_list.refresh()
                 # Update the ledger
                 ledger.save()
 
@@ -538,7 +578,7 @@ def submit(event, update, dryrun):
                         + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
                     )
                 continue
-            
+
             # For SubjectAnalysis, check if all source analyses are finished
             from asimov.analysis import SubjectAnalysis
             if isinstance(production, SubjectAnalysis):
@@ -549,7 +589,15 @@ def submit(event, update, dryrun):
                             + f" {production.name} is waiting on source analyses to finish"
                         )
                     continue
-            
+
+            if not throttle.can_submit():
+                throttle.defer(f"{event.name}/{production.name}")
+                click.echo(
+                    click.style("●", fg="yellow")
+                    + f" Deferring {event.name}/{production.name}: submission limit reached"
+                )
+                continue
+
             if production.status.lower() == "restart":
                 pipe = production.pipeline
                 try:
@@ -557,15 +605,34 @@ def submit(event, update, dryrun):
                 except PipelineException as e:
                     logger.error("The pipeline failed to clean up after itself.")
                     logger.exception(e)
-                pipe.submit_dag(dryrun=dryrun)
+                try:
+                    throttle.pace()
+                    pipe.submit_dag(dryrun=dryrun)
+                except Exception as e:
+                    if not is_transient_submit_error(e):
+                        raise
+                    # The scheduler is busy: leave the analysis to restart
+                    # on a later pass and stop submitting for this pass.
+                    throttle.halt()
+                    throttle.defer(f"{event.name}/{production.name}")
+                    click.echo(
+                        click.style("●", fg="yellow")
+                        + f" Scheduler busy, deferring {event.name}/{production.name}"
+                    )
+                    logger.warning(f"Deferred {production.name}: {e}")
+                    continue
+                throttle.record_submission()
+                submitted_any = submitted_any or not dryrun
                 click.echo(
                     click.style("●", fg="green")
                     + f" Resubmitted {production.event.name}/{production.name}"
                 )
                 production.status = "running"
+                if not dryrun:
+                    ledger.update_event(event)
             else:
                 pipe = production.pipeline
-                
+
                 dag_built = False
                 try:
                     pipe.build_dag(dryrun=dryrun)
@@ -589,8 +656,11 @@ def submit(event, update, dryrun):
                 if not dag_built:
                     continue
                 try:
+                    throttle.pace()
                     cluster_id = pipe.submit_dag(dryrun=dryrun)
+                    throttle.record_submission()
                     if not dryrun:
+                        submitted_any = True
                         # cluster_id may be a scalar or a sequence; normalize it
                         if isinstance(cluster_id, (list, tuple)):
                             job_id_value = cluster_id[0]
@@ -602,26 +672,44 @@ def submit(event, update, dryrun):
                             + f" Submitted {production.event.name}/{production.name}"
                         )
                         production.status = "running"
+                        # Persist straight away so a crash later in the
+                        # pass can't lose the job id of a submitted DAG.
+                        ledger.update_event(event)
 
-                except PipelineException as e:
-                    production.status = "stuck"
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Unable to submit {production.name}"
-                    )
-                    logger.exception(e)
-                    ledger.update_event(event)
-                    logger.error(
-                        f"The pipeline failed to submit the DAG file to the cluster. {e}",
-                    )
-                if not dryrun:
-                    # Refresh the condor job list (only when using HTCondor)
-                    from asimov import config as _cfg
-                    if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
-                        job_list = condor.CondorJobList()
-                        job_list.refresh()
-                    # Update the ledger
-                    ledger.update_event(event)
+                except Exception as e:
+                    if is_transient_submit_error(e):
+                        # The scheduler is busy: leave the analysis ready
+                        # and stop submitting for this pass.
+                        throttle.halt()
+                        throttle.defer(f"{event.name}/{production.name}")
+                        click.echo(
+                            click.style("●", fg="yellow")
+                            + f" Scheduler busy, deferring {event.name}/{production.name}"
+                        )
+                        logger.warning(f"Deferred {production.name}: {e}")
+                    elif isinstance(e, PipelineException):
+                        production.status = "stuck"
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Unable to submit {production.name}"
+                        )
+                        logger.exception(e)
+                        ledger.update_event(event)
+                        logger.error(
+                            f"The pipeline failed to submit the DAG file to the cluster. {e}",
+                        )
+                    else:
+                        raise
+
+    if not dryrun and submitted_any:
+        # Refresh the condor job list once per pass (only when using HTCondor),
+        # rather than querying the whole queue after every submission.
+        from asimov import config as _cfg
+        if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
+            condor.CondorJobList(force_refresh=True)
+
+    if throttle.limited or throttle.deferred:
+        click.echo(throttle.summary())
 
 @click.option(
     "--event",
