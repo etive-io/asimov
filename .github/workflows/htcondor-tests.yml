@@ -7,7 +7,7 @@ jobs:
     name: "HTCondor Testing"
     runs-on: ubuntu-latest
     container:
-      image: htcondor/mini:latest
+      image: htcondor/mini:25.13.2-el9
       options: --privileged
     defaults:
       run:
