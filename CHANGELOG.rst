@@ -73,6 +73,21 @@ New Features
   read back and compared with it before the command reports success, and ``--dry-run`` does the whole
   conversion into a temporary file without creating anything.
 
+**Submission Throttling**
+  ``asimov manage submit`` can now limit how many analyses it submits, since schedulers such as HTCondor
+  only cope with a limited number of queued DAGs. Set ``max_queued`` (the most analyses from the project
+  which may be active at once), ``max_submit_per_pass`` and ``submit_interval`` in the ``[scheduler]``
+  section, or use ``--max-submit``. Analyses which don't fit stay ready for a later pass, and a submission
+  rejected because the scheduler is busy no longer marks the analysis as ``stuck``. The HTCondor job list
+  is now refreshed once per pass rather than after every submission. No limit is applied by default.
+
+**Lighter Event Repositories**
+  Event git repositories are now opened only for the duration of each operation, so large projects no
+  longer run out of file handles. A repository is initialised when first used rather than whenever an
+  event is loaded, ``find_prods`` pulls once per repository rather than once per analysis, and the fixed
+  15 second pause after each push has been removed. Set ``event_git = false`` in ``[general]`` to skip
+  creating and updating event repositories entirely.
+
 Breaking Changes
 ----------------
 

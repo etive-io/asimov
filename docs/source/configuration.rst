@@ -46,6 +46,39 @@ Selects and configures the ledger backend. See :doc:`ledger` for the full compar
    :doc:`scheduler-integration` for the full configuration reference for both, including the
    scheduler-specific ``[condor]`` and ``[slurm]`` sections.
 
+``max_queued``
+   The maximum number of analyses from this project which may be running (or processing) at once.
+   ``asimov manage submit`` leaves any further ready analyses to a later pass. HTCondor schedds only
+   cope with a limited number of DAGs, so set this well below that limit. Unset or ``0`` means no limit.
+
+``max_submit_per_pass``
+   The maximum number of analyses a single ``asimov manage submit`` (or ``asimov monitor --chain``) will
+   submit. May be overridden with ``asimov manage submit --max-submit N``. Unset or ``0`` means no limit.
+
+``submit_interval``
+   Seconds to wait between consecutive submissions. Defaults to ``0``.
+
+For example, to keep at most 200 analyses in the queue::
+
+   [scheduler]
+   max_queued = 200
+   max_submit_per_pass = 20
+   submit_interval = 2
+
+Analyses which are deferred stay ``ready``, and are picked up by the next pass. If the scheduler rejects
+a submission because it is busy, the pass stops and the analysis is left ready rather than being marked
+``stuck``. The number of active analyses is counted from the ledger, so a finished analysis only frees
+its slot once ``asimov monitor`` has recorded that it finished.
+
+``[general]``: event repositories
+-----------------------------------
+
+``event_git``
+   Whether a git repository is created and updated for every event. Defaults to ``true``. For very
+   large projects, set this to ``false`` to skip creating, committing to and pulling these repositories:
+   files are still written into the event's directory, but nothing is committed or pushed. Repositories
+   which are given an explicit URL are still cloned.
+
 ``[condor]`` / ``[slurm]``
 ----------------------------
 
