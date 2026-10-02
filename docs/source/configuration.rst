@@ -67,7 +67,8 @@ For example, to keep at most 200 analyses in the queue::
 
 Analyses which are deferred stay ``ready``, and are picked up by the next pass. If the scheduler rejects
 a submission because it is busy, the pass stops and the analysis is left ready rather than being marked
-``stuck``. The number of active analyses is counted from the ledger, so a finished analysis only frees
+``stuck``. Submissions are never retried within a pass, because a request which timed out may still have
+been accepted, and retrying it would queue a duplicate DAG. The number of active analyses is counted from the ledger, so a finished analysis only frees
 its slot once ``asimov monitor`` has recorded that it finished.
 
 ``[general]``: event repositories

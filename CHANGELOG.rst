@@ -78,7 +78,7 @@ New Features
   only cope with a limited number of queued DAGs. Set ``max_queued`` (the most analyses from the project
   which may be active at once), ``max_submit_per_pass`` and ``submit_interval`` in the ``[scheduler]``
   section, or use ``--max-submit``. Analyses which don't fit stay ready for a later pass, and a submission
-  rejected because the scheduler is busy no longer marks the analysis as ``stuck``. The HTCondor job list
+  rejected because the scheduler is busy stops the pass instead of marking the analysis as ``stuck``. The HTCondor job list
   is now refreshed once per pass rather than after every submission. No limit is applied by default.
 
 **Lighter Event Repositories**

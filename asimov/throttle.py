@@ -127,12 +127,19 @@ class SubmissionThrottle:
         Seconds to sleep between submissions.
     active : int, optional
         The number of analyses already active when the pass starts.
-    sleep : callable, optional
-        Replacement for :func:`time.sleep` (for testing).
+    sleep, clock : callable, optional
+        Replacements for :func:`time.sleep` and :func:`time.monotonic`
+        (for testing).
     """
 
     def __init__(
-        self, max_queued=None, max_per_pass=None, interval=0, active=0, sleep=time.sleep
+        self,
+        max_queued=None,
+        max_per_pass=None,
+        interval=0,
+        active=0,
+        sleep=time.sleep,
+        clock=time.monotonic,
     ):
         self.max_queued = _positive_int(max_queued)
         self.max_per_pass = _positive_int(max_per_pass)
@@ -142,6 +149,8 @@ class SubmissionThrottle:
         self.deferred = []
         self.halted = False
         self._sleep = sleep
+        self._clock = clock
+        self._last_submit = None
 
     @classmethod
     def from_config(cls, ledger=None, max_per_pass=None, **kwargs):
@@ -203,11 +212,23 @@ class SubmissionThrottle:
         """Record that ``name`` was ready but left for a later pass."""
         self.deferred.append(name)
 
+    def pace(self):
+        """
+        Wait until ``interval`` seconds have passed since the last submission.
+
+        Call this immediately before submitting. Pacing is done here, not
+        after a submission is recorded, so nothing sleeps between the
+        scheduler accepting a DAG and the caller saving its job id.
+        """
+        if self.interval and self._last_submit is not None:
+            wait = self.interval - (self._clock() - self._last_submit)
+            if wait > 0:
+                self._sleep(wait)
+
     def record_submission(self):
-        """Count a successful submission and pace the next one."""
+        """Count a successful submission."""
         self.submitted += 1
-        if self.interval and self.can_submit():
-            self._sleep(self.interval)
+        self._last_submit = self._clock()
 
     def summary(self):
         """A one-line, human-readable summary of the pass."""
@@ -216,25 +237,3 @@ class SubmissionThrottle:
             reason = "scheduler busy" if self.halted else "queue limit reached"
             text += f", deferred {len(self.deferred)} ({reason})"
         return text
-
-
-def submit_with_backoff(submit, retries=2, base_delay=2.0, sleep=time.sleep):
-    """
-    Call ``submit()``, retrying with exponential backoff on transient errors.
-
-    Non-transient errors are re-raised immediately. If the retries are
-    exhausted the last transient error is re-raised, so the caller can
-    decide to stop the pass rather than mark the analysis as stuck.
-    """
-    delay = base_delay
-    for attempt in range(retries + 1):
-        try:
-            return submit()
-        except Exception as error:
-            if attempt == retries or not is_transient_submit_error(error):
-                raise
-            logger.warning(
-                f"Transient submission error ({error}); retrying in {delay:.0f}s"
-            )
-            sleep(delay)
-            delay *= 2

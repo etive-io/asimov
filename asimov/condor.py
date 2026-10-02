@@ -335,10 +335,20 @@ class CondorJobList:
     more than 15 minutes old (by default)
     """
 
-    def __init__(self):
+    def __init__(self, force_refresh=False):
+        """
+        Parameters
+        ----------
+        force_refresh : bool, optional
+            Poll the schedulers straight away, whatever the state of the
+            cache. This is a single query: unlike constructing the list and
+            then calling :meth:`refresh`, it won't also refresh a stale cache.
+        """
         self.jobs = {}
         cache = os.path.join(".asimov", "_cache_jobs.yaml")
-        if not os.path.exists(cache):
+        if force_refresh:
+            self.refresh()
+        elif not os.path.exists(cache):
             self.refresh()
         else:
             age = -os.stat(cache).st_mtime + datetime.datetime.now().timestamp()

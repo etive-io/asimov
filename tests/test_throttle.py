@@ -10,7 +10,6 @@ from asimov.throttle import (
     SubmissionThrottle,
     count_active,
     is_transient_submit_error,
-    submit_with_backoff,
 )
 
 
@@ -71,12 +70,26 @@ class TestBudget(unittest.TestCase):
         throttle.halt()
         self.assertFalse(throttle.can_submit())
 
-    def test_interval_sleeps_between_but_not_after_last(self):
+    def test_pace_waits_only_for_the_remaining_interval(self):
+        sleeps, now = [], [100.0]
+        throttle = SubmissionThrottle(
+            interval=5, sleep=sleeps.append, clock=lambda: now[0]
+        )
+        throttle.pace()  # nothing submitted yet
+        throttle.record_submission()
+        now[0] += 2
+        throttle.pace()
+        self.assertEqual(sleeps, [3.0])
+        now[0] += 10
+        throttle.pace()  # interval already elapsed
+        self.assertEqual(sleeps, [3.0])
+
+    def test_recording_a_submission_never_sleeps(self):
         sleeps = []
-        throttle = SubmissionThrottle(max_per_pass=2, interval=5, sleep=sleeps.append)
+        throttle = SubmissionThrottle(interval=5, sleep=sleeps.append)
         throttle.record_submission()
         throttle.record_submission()
-        self.assertEqual(sleeps, [5.0])
+        self.assertEqual(sleeps, [])
 
     def test_summary(self):
         throttle = SubmissionThrottle(max_per_pass=1)
@@ -157,38 +170,6 @@ class TestTransient(unittest.TestCase):
                 raise RuntimeError("wrapped") from inner
         except RuntimeError as outer:
             self.assertTrue(is_transient_submit_error(outer))
-
-
-class TestBackoff(unittest.TestCase):
-    def test_retries_then_succeeds(self):
-        calls, sleeps = [], []
-
-        def submit():
-            calls.append(1)
-            if len(calls) < 3:
-                raise TimeoutError("busy")
-            return 42
-
-        self.assertEqual(submit_with_backoff(submit, retries=2, sleep=sleeps.append), 42)
-        self.assertEqual(sleeps, [2.0, 4.0])
-
-    def test_gives_up_after_retries(self):
-        def submit():
-            raise TimeoutError("busy")
-
-        with self.assertRaises(TimeoutError):
-            submit_with_backoff(submit, retries=1, sleep=lambda s: None)
-
-    def test_permanent_errors_not_retried(self):
-        calls = []
-
-        def submit():
-            calls.append(1)
-            raise ValueError("bad ini file")
-
-        with self.assertRaises(ValueError):
-            submit_with_backoff(submit, retries=3, sleep=lambda s: None)
-        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":

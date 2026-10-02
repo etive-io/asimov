@@ -19,7 +19,6 @@ from asimov.git import EventRepo
 from asimov.throttle import (
     SubmissionThrottle,
     is_transient_submit_error,
-    submit_with_backoff,
 )
 
 def check_dependencies_satisfied(analysis, logger):
@@ -448,9 +447,8 @@ def submit(event, update, dryrun, max_submit):
                 )
                 click.echo("Try running `asimov manage build` first.")
             try:
-                cluster_id = submit_with_backoff(
-                    lambda: pipe.submit_dag(dryrun=dryrun)
-                )
+                throttle.pace()
+                cluster_id = pipe.submit_dag(dryrun=dryrun)
                 throttle.record_submission()
                 if not dryrun:
                     submitted_any = True
@@ -607,7 +605,22 @@ def submit(event, update, dryrun, max_submit):
                 except PipelineException as e:
                     logger.error("The pipeline failed to clean up after itself.")
                     logger.exception(e)
-                submit_with_backoff(lambda: pipe.submit_dag(dryrun=dryrun))
+                try:
+                    throttle.pace()
+                    pipe.submit_dag(dryrun=dryrun)
+                except Exception as e:
+                    if not is_transient_submit_error(e):
+                        raise
+                    # The scheduler is busy: leave the analysis to restart
+                    # on a later pass and stop submitting for this pass.
+                    throttle.halt()
+                    throttle.defer(f"{event.name}/{production.name}")
+                    click.echo(
+                        click.style("●", fg="yellow")
+                        + f" Scheduler busy, deferring {event.name}/{production.name}"
+                    )
+                    logger.warning(f"Deferred {production.name}: {e}")
+                    continue
                 throttle.record_submission()
                 submitted_any = submitted_any or not dryrun
                 click.echo(
@@ -643,9 +656,8 @@ def submit(event, update, dryrun, max_submit):
                 if not dag_built:
                     continue
                 try:
-                    cluster_id = submit_with_backoff(
-                        lambda: pipe.submit_dag(dryrun=dryrun)
-                    )
+                    throttle.pace()
+                    cluster_id = pipe.submit_dag(dryrun=dryrun)
                     throttle.record_submission()
                     if not dryrun:
                         submitted_any = True
@@ -694,8 +706,7 @@ def submit(event, update, dryrun, max_submit):
         # rather than querying the whole queue after every submission.
         from asimov import config as _cfg
         if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
-            job_list = condor.CondorJobList()
-            job_list.refresh()
+            condor.CondorJobList(force_refresh=True)
 
     if throttle.limited or throttle.deferred:
         click.echo(throttle.summary())
