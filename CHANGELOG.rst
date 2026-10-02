@@ -88,6 +88,11 @@ New Features
   15 second pause after each push has been removed. Set ``event_git = false`` in ``[general]`` to skip
   creating and updating event repositories entirely.
 
+**Faster HTML Reports for Large Projects**
+  The workflow graphs in the HTML report are now drawn lazily, only for events near the viewport and one
+  at a time, instead of drawing every event's graph when the page loads and again on every filter click.
+  Opening a report, and changing its filters, no longer freezes the page for as long as there are events.
+
 Breaking Changes
 ----------------
 

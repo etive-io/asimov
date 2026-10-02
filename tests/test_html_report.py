@@ -149,6 +149,42 @@ class TestReportGraphClicks(unittest.TestCase):
         self.assertIn("bindNodeClicks(container)", self.source)
 
 
+class TestReportLazyGraphRendering(unittest.TestCase):
+    """
+    Rendering every event's Mermaid graph up front blocks the page for as
+    long as there are events, so graphs are drawn lazily instead.
+    """
+
+    def setUp(self):
+        import inspect
+        import asimov.cli.report as report
+
+        self.source = inspect.getsource(report)
+
+    def test_graphs_are_drawn_when_events_come_into_view(self):
+        self.assertIn("new IntersectionObserver", self.source)
+        self.assertIn("initGraphRendering();", self.source)
+
+    def test_filter_changes_do_not_redraw_every_graph(self):
+        start = self.source.index("function rerenderAllGraphs()")
+        body = self.source[start:self.source.index("}\n", start)]
+        self.assertNotIn("mermaid.render", body)
+        self.assertIn("asimovRenderGeneration++", body)
+
+    def test_queued_graphs_that_left_the_viewport_are_skipped(self):
+        start = self.source.index("async function drainRenderQueue()")
+        body = self.source[start:self.source.index("function scheduleGraphRender", start)]
+        self.assertIn("asimovNearViewport.has(eventName)", body)
+        self.assertLess(
+            body.index("asimovNearViewport.has(eventName)"),
+            body.index("await renderEventGraph"),
+        )
+
+    def test_graphs_are_rendered_one_at_a_time_yielding_between(self):
+        self.assertIn("asimovRenderRunning", self.source)
+        self.assertIn("setTimeout(resolve, 0)", self.source)
+
+
 class TestPipelineResultPages(unittest.TestCase):
     """Pipelines can supply the result links shown in the analysis modal."""
 
