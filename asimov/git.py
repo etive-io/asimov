@@ -37,6 +37,7 @@ class EventRepo:
         self._repo = None
         self._updated = False
         self._pending_init = pending_init
+        self._initialised = False
         self.url = url
 
         self.logger = logger
@@ -59,21 +60,35 @@ class EventRepo:
 
     def _ensure_initialised(self):
         """
-        Create the on-disk repository if :meth:`create` deferred doing so.
+        Create the on-disk repository if it doesn't exist yet.
 
         Creating a repository means ``git init``, writing a file, and making
         a commit. :meth:`create` is called whenever an Event without a
         repository is constructed, and Events are reconstructed on every
-        ledger read, so this is only done when the repository is first
-        needed.
+        ledger read, so :meth:`create` only makes the directory and this is
+        done when the repository is first needed. Because a later process
+        rebuilds the EventRepo from the stored directory alone, this checks
+        the disk for an existing repository rather than relying on state
+        carried by the object which called :meth:`create`.
+
+        Repositories which have a remote URL are never initialised here:
+        a missing checkout is an error (a failed clone), not something to
+        paper over with an empty repository.
         """
-        if not self._pending_init:
+        if self._initialised or not os.path.isdir(self.directory):
             return
-        self._pending_init = False
         category = config.get("general", "calibration_directory")
-        os.makedirs(os.path.join(self.directory, category), exist_ok=True)
+        if self._pending_init:
+            os.makedirs(os.path.join(self.directory, category), exist_ok=True)
+            self._pending_init = False
         if not self.git_enabled():
             return
+        if os.path.exists(os.path.join(self.directory, ".git")):
+            self._initialised = True
+            return
+        if self.url not in (None, self.directory):
+            return
+        self._initialised = True
         try:
             repo = git.Repo.init(self.directory, initial_branch="main")
         except (TypeError, git.exc.GitCommandError) as exc:
@@ -87,6 +102,7 @@ class EventRepo:
             )
             repo = git.Repo.init(self.directory)
         try:
+            os.makedirs(os.path.join(self.directory, category), exist_ok=True)
             with open(os.path.join(self.directory, category, ".gitkeep"), "w") as f:
                 f.write(" ")
             repo.git.add(os.path.join(".", category, ".gitkeep"))

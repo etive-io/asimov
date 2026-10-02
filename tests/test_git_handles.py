@@ -59,6 +59,20 @@ class TestEventRepoGit(unittest.TestCase):
         )
         repo.close()
 
+    def test_repo_rebuilt_from_directory_in_a_later_process(self):
+        # `apply` creates the directory; a later command only has the stored path.
+        EventRepo.create(self.location)
+        later = EventRepo(self.location)
+        later.get_default_branch()
+        self.assertTrue(os.path.isdir(os.path.join(self.location, ".git")))
+        later.close()
+
+    def test_url_backed_repo_is_not_silently_initialised(self):
+        os.makedirs(self.location)
+        repo = EventRepo(self.location, url="git@example.org:group/event.git")
+        with self.assertRaises(git.exc.InvalidGitRepositoryError):
+            repo.repo
+
     def test_internal_operations_close_their_handles(self):
         repo = EventRepo.create(self.location)
         with patch.object(git.Repo, "close", autospec=True, side_effect=git.Repo.close) as close:
