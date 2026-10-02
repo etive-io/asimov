@@ -62,5 +62,5 @@ runs:
         if [ -n "${{ inputs.extra-packages }}" ]; then
           "$CONDA_PYTHON" -m pip install ${{ inputs.extra-packages }}
         fi
-        "$CONDA_PYTHON" -m pip install --force-reinstall .
+        "$CONDA_PYTHON" -m pip install --force-reinstall . "htcondor<25.14"
         echo "Installed asimov from: $("$CONDA_PYTHON" -c 'import asimov; print(asimov.__file__)')"

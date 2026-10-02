@@ -115,7 +115,7 @@ test-python-313:
 
 test-htcondor:
   stage: test
-  image: htcondor/mini:latest
+  image: htcondor/mini:25.13.2-el9
   tags:
     - docker-privileged
   variables:
