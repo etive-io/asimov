@@ -146,7 +146,7 @@ test-htcondor:
     # Install dependencies & asimov
     - conda install --file conda/environment.yaml
     - conda install conda-build
-    - pip install .
+    - pip install . "htcondor<25.14"
     
     # Git configuration
     - git config --global init.defaultBranch master
