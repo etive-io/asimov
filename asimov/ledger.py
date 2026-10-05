@@ -5,6 +5,7 @@ Code for the project ledger.
 import yaml
 
 import copy
+import contextlib
 import os
 import shutil
 from functools import reduce
@@ -19,6 +20,11 @@ from filelock import FileLock
 
 
 class Ledger:
+    @contextlib.contextmanager
+    def batch_saves(self):
+        """Coalesce writes made inside the block (a no-op unless overridden)."""
+        yield self
+
     def _invalidate_events_cache(self):
         """
         Drop the cached ``events``/``get_event()`` result.
@@ -113,6 +119,8 @@ class YAMLLedger(Ledger):
         self.events = {ev["name"]: ev for ev in self.data["events"]}
         self._events_cache = None
         self._project_analyses_cache = None
+        self._batch_depth = 0
+        self._batch_dirty = False
         self.data.pop("events")
 
     def __getstate__(self):
@@ -186,6 +194,24 @@ class YAMLLedger(Ledger):
         self._invalidate_events_cache()
         self.save()
 
+    @contextlib.contextmanager
+    def batch_saves(self):
+        """
+        Defer writing the ledger to disk until the block exits.
+
+        Every ``update_event`` rewrites the whole ledger, so a loop over N
+        events costs O(N^2). Inside this context the writes are coalesced into
+        a single one (which still happens if the block raises).
+        """
+        self._batch_depth += 1
+        try:
+            yield self
+        finally:
+            self._batch_depth -= 1
+            if self._batch_depth == 0 and self._batch_dirty:
+                self._batch_dirty = False
+                self.save()
+
     def save(self):
         """
         Update the ledger YAML file with the data from the various events.
@@ -197,6 +223,9 @@ class YAMLLedger(Ledger):
 
 
         """
+        if getattr(self, "_batch_depth", 0):
+            self._batch_dirty = True
+            return
         with self.lock:  # Acquire exclusive lock for thread-safe saving
             self.data["events"] = list(self.events.values())
             with set_directory(config.get("project", "root")):

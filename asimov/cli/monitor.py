@@ -353,8 +353,17 @@ def monitor(ctx, event, update, dry_run, chain):
 
     if chain:
         logger.info("Running in chain mode")
-        ctx.invoke(manage.build, event=event)
-        ctx.invoke(manage.submit, event=event)
+        # A failure while building must not stop analyses which are already
+        # built from being submitted (or the rest of the monitor pass).
+        for step in (manage.build, manage.submit):
+            try:
+                ctx.invoke(step, event=event)
+            except Exception as e:
+                logger.exception(e)
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" asimov manage {step.name} failed: {e}"
+                )
 
     try:
         # Get the job listing using the new scheduler API
