@@ -224,6 +224,11 @@ def build(event, dryrun):
                             production.name, production.category
                         )[0]
                         if not os.path.exists(ini_loc):
+                            # Only pull if it isn't here: it may exist upstream.
+                            ini_loc = production.event.repository.find_prods(
+                                production.name, production.category, update=True
+                            )[0]
+                        if not os.path.exists(ini_loc):
                             raise KeyError
                     except KeyError:
                         try:

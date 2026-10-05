@@ -663,6 +663,51 @@ class AsimovSQLDatabase(AsimovDatabase):
             
             return True
 
+    def update_productions(
+        self, event_name: str, items: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Update several productions of one event in a single transaction.
+
+        Equivalent to calling :meth:`update_production` for each item, but
+        with one query for the event's productions instead of one per item.
+
+        Parameters
+        ----------
+        event_name : str
+            Parent event name.
+        items : list of dict
+            Production data; each must include ``name``.
+
+        Returns
+        -------
+        list of dict
+            The items which don't exist yet, for the caller to insert.
+        """
+        missing = []
+        with self.get_session() as session:
+            existing = {}
+            # Oldest row first, as in update_production, so duplicates
+            # resolve to the same row.
+            for row in (
+                session.query(ProductionModel)
+                .filter(ProductionModel.event_name == event_name)
+                .order_by(ProductionModel.id)
+            ):
+                existing.setdefault(row.name, row)
+            for data in items:
+                production = existing.get(data["name"])
+                if production is None:
+                    missing.append(data)
+                    continue
+                if "status" in data:
+                    production.status = data["status"]
+                if "comment" in data:
+                    production.comment = data["comment"]
+                if "meta" in data:
+                    production.meta = data["meta"]
+        return missing
+
     def update_project_analysis(self, name: str, data: Dict[str, Any]) -> bool:
         """
         Update a project analysis in the database.

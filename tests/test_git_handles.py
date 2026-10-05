@@ -105,7 +105,7 @@ class TestEventRepoGit(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.location, "analyses", "file.txt")))
         self.assertFalse(os.path.exists(os.path.join(self.location, ".git")))
 
-    def test_find_prods_pulls_once(self):
+    def test_find_prods_does_not_pull_by_default(self):
         repo = EventRepo.create(self.location)
         calls = []
 
@@ -116,7 +116,20 @@ class TestEventRepoGit(unittest.TestCase):
         with patch.object(EventRepo, "update", fake_update):
             repo.find_prods("Prod0")
             repo.find_prods("Prod1")
-            repo.find_prods("Prod2")
+        self.assertEqual(calls, [])
+
+    def test_find_prods_pulls_once_when_asked(self):
+        repo = EventRepo.create(self.location)
+        calls = []
+
+        def fake_update(self, *args, **kwargs):
+            calls.append(1)
+            self._updated = True
+
+        with patch.object(EventRepo, "update", fake_update):
+            repo.find_prods("Prod0", update=True)
+            repo.find_prods("Prod1", update=True)
+            repo.find_prods("Prod2", update=True)
         self.assertEqual(len(calls), 1)
 
 

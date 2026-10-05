@@ -2323,9 +2323,13 @@ class GravitationalWaveTransient(SimpleAnalysis):
         else:
             # We'll need to search the repository for it.
             try:
-                ini_loc = self.subject.repository.find_prods(self.name, self.category)[
-                    0
-                ]
+                repository = self.subject.repository
+                ini_loc = repository.find_prods(self.name, self.category)[0]
+                if not os.path.exists(ini_loc):
+                    # It may only exist upstream: pull and look again.
+                    ini_loc = repository.find_prods(
+                        self.name, self.category, update=True
+                    )[0]
                 if not os.path.exists(ini_loc):
                     raise ValueError("Could not open the ini file.")
             except IndexError:
