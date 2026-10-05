@@ -48,16 +48,22 @@ class ReapplyTestCase(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0, result.output)
         self._files = 0
+        self._ledgers = []
         apply_page(
             os.path.join(BLUEPRINTS, "gwosc_event.yaml"), ledger=self.ledger()
         )
 
     def tearDown(self):
+        for ledger in self._ledgers:
+            if hasattr(ledger, "close"):
+                ledger.close()
         os.chdir(self.cwd)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def ledger(self):
-        return Project.load(self.test_dir).ledger
+        ledger = Project.load(self.test_dir).ledger
+        self._ledgers.append(ledger)
+        return ledger
 
     def apply(self, text, event=SUBJECT, **kwargs):
         """Apply a blueprint, returning what asimov printed."""

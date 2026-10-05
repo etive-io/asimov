@@ -25,7 +25,7 @@ class TestCLI_Projects(unittest.TestCase):
         result = runner.invoke(project.init,
                                ['Test Project', '--root', f"{self.cwd}/tests/tmp/project"])
         assert result.exit_code == 0
-        assert result.output == '● New project created successfully!\n'
+        assert result.stdout == '● New project created successfully!\n'
 
     def test_project_creation_fails_missing_name(self):
         """Check that the command fails if no name is provided"""
