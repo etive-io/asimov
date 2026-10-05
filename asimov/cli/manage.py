@@ -140,119 +140,143 @@ def build(event, dryrun):
     logger = asimov.logger.getChild("cli").getChild("manage.build")
     logger.setLevel(LOGGER_LEVEL)
 
-    for analysis in ledger.project_analyses:
-        # MW disabling hanabi and golum_joint unless explicity re-enabled in submit
-        if "hanabi" in analysis.name or "golum_joint" in analysis.name:
-            if analysis.status in {"ready"}:
-                analysis.status = "unready"
-                ledger.update_analysis_in_project_analysis(analysis)
-            elif analysis.status in {"analysis-ready"}:
-                analysis.status = "ready"
-                ledger.update_analysis_in_project_analysis(analysis)
-
-        if analysis.status in {"ready"}:
-            # Need to ensure a directory exists for these!
-            subj_string = subjects_dirname(analysis._subjects)
-            project_analysis_dir = os.path.join(
-                "checkouts", "project-analyses", subj_string
-            )
-            if not os.path.exists(project_analysis_dir):
-                os.makedirs(project_analysis_dir)
-            click.echo(
-                click.style("●", fg="green")
-                + f" Building project analysis {analysis.name}"
-            )
-
-            analysis.pipeline.before_config()
-
-            check_dependencies_satisfied(analysis, logger)
+    click.echo("Loading events...")
+    events = ledger.get_event(event)
+    click.echo(f"Building {len(events)} event(s)")
+    # Coalesce ledger writes: each one rewrites the whole ledger.
+    with ledger.batch_saves():
+        for analysis in ledger.project_analyses:
             try:
-                check_psds_available(analysis, logger)
-            except DescriptionException as e:
+                # MW disabling hanabi and golum_joint unless explicity re-enabled in submit
+                if "hanabi" in analysis.name or "golum_joint" in analysis.name:
+                    if analysis.status in {"ready"}:
+                        analysis.status = "unready"
+                        ledger.update_analysis_in_project_analysis(analysis)
+                    elif analysis.status in {"analysis-ready"}:
+                        analysis.status = "ready"
+                        ledger.update_analysis_in_project_analysis(analysis)
+
+                if analysis.status in {"ready"}:
+                    # Need to ensure a directory exists for these!
+                    subj_string = subjects_dirname(analysis._subjects)
+                    project_analysis_dir = os.path.join(
+                        "checkouts", "project-analyses", subj_string
+                    )
+                    if not os.path.exists(project_analysis_dir):
+                        os.makedirs(project_analysis_dir)
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Building project analysis {analysis.name}"
+                    )
+
+                    analysis.pipeline.before_config()
+
+                    check_dependencies_satisfied(analysis, logger)
+                    try:
+                        check_psds_available(analysis, logger)
+                    except DescriptionException as e:
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Not building {analysis.name}: {e.message}"
+                        )
+                        continue
+
+                    analysis.make_config(
+                        filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
+                        dryrun=dryrun,
+                    )
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Created configuration for {analysis.name}"
+                    )
+            except Exception as e:
+                logger.exception(e)
                 click.echo(
                     click.style("●", fg="red")
-                    + f" Not building {analysis.name}: {e.message}"
+                    + f" Failed to build project analysis {analysis.name}: {e}"
                 )
-                continue
 
-            analysis.make_config(
-                filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
-                dryrun=dryrun,
-            )
-            click.echo(
-                click.style("●", fg="green")
-                + f" Created configuration for {analysis.name}"
-            )
+        for event in ledger.get_event(event):
 
-    for event in ledger.get_event(event):
-
-        click.echo(f"● Working on {event.name}")
-        ready_productions = event.get_all_latest()
-        for production in ready_productions:
-            logger.info(f"{event.name}/{production.name}")
-            click.echo(f"\tWorking on production {production.name}")
-            if production.status in {
-                "running",
-                "stuck",
-                "wait",
-                "finished",
-                "uploaded",
-                "cancelled",
-                "stopped",
-            }:
-                if dryrun:
-                    click.echo(
-                        click.style("●", fg="yellow")
-                        + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
-                    )
-                continue  # I think this test might be unused
-            try:
-                ini_loc = production.event.repository.find_prods(
-                    production.name, production.category
-                )[0]
-                if not os.path.exists(ini_loc):
-                    raise KeyError
-            except KeyError:
+            click.echo(f"● Working on {event.name}")
+            ready_productions = event.get_all_latest()
+            for production in ready_productions:
                 try:
-
-                    # if production.rundir:
-                    #     path = pathlib.Path(production.rundir)
-                    # else:
-                    #     path = pathlib.Path(config.get("general", "rundir_default"))
-
-                    check_dependencies_satisfied(production, logger)
-                    check_psds_available(production, logger)
-
-                    if dryrun:
-                        print(f"Will create {production.name}.ini")
-                    else:
-                        # path.mkdir(parents=True, exist_ok=True)
-                        config_loc = os.path.join(f"{production.name}.ini")
-                        production.pipeline.before_config()
-                        production.make_config(config_loc, dryrun=dryrun)
-                        click.echo(f"Production config {production.name} created.")
+                    logger.info(f"{event.name}/{production.name}")
+                    click.echo(f"\tWorking on production {production.name}")
+                    if production.status in {
+                        "running",
+                        "stuck",
+                        "wait",
+                        "finished",
+                        "uploaded",
+                        "cancelled",
+                        "stopped",
+                    }:
+                        if dryrun:
+                            click.echo(
+                                click.style("●", fg="yellow")
+                                + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
+                            )
+                        continue  # I think this test might be unused
+                    try:
+                        ini_loc = production.event.repository.find_prods(
+                            production.name, production.category
+                        )[0]
+                        if not os.path.exists(ini_loc):
+                            # Only pull if it isn't here: it may exist upstream.
+                            ini_loc = production.event.repository.find_prods(
+                                production.name, production.category, update=True
+                            )[0]
+                        if not os.path.exists(ini_loc):
+                            raise KeyError
+                    except KeyError:
                         try:
-                            event.repository.add_file(
-                                config_loc,
-                                os.path.join(
-                                    f"{production.category}", f"{production.name}.ini"
-                                ),
-                            )
-                            logger.info(
-                                "Configuration committed to event repository.",
-                            )
-                            ledger.update_event(event)
 
-                        except Exception as e:
-                            logger.error(
-                                f"Configuration could not be committed to repository.\n{e}",
-                            )
+                            # if production.rundir:
+                            #     path = pathlib.Path(production.rundir)
+                            # else:
+                            #     path = pathlib.Path(config.get("general", "rundir_default"))
+
+                            check_dependencies_satisfied(production, logger)
+                            check_psds_available(production, logger)
+
+                            if dryrun:
+                                print(f"Will create {production.name}.ini")
+                            else:
+                                # path.mkdir(parents=True, exist_ok=True)
+                                config_loc = os.path.join(f"{production.name}.ini")
+                                production.pipeline.before_config()
+                                production.make_config(config_loc, dryrun=dryrun)
+                                click.echo(f"Production config {production.name} created.")
+                                try:
+                                    event.repository.add_file(
+                                        config_loc,
+                                        os.path.join(
+                                            f"{production.category}", f"{production.name}.ini"
+                                        ),
+                                    )
+                                    logger.info(
+                                        "Configuration committed to event repository.",
+                                    )
+                                    ledger.update_event(event)
+
+                                except Exception as e:
+                                    logger.error(
+                                        f"Configuration could not be committed to repository.\n{e}",
+                                    )
+                                    logger.exception(e)
+                                os.remove(config_loc)
+
+                        except DescriptionException as e:
+                            logger.error("Run configuration failed")
                             logger.exception(e)
-                        os.remove(config_loc)
-
-                except DescriptionException as e:
-                    logger.error("Run configuration failed")
+                except Exception as e:
                     logger.exception(e)
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Failed to build {production.name}: {e}"
+                    )
 
 
 @click.option(

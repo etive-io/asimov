@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 
+_PACKAGE_CACHE: Dict[Any, Dict[str, Optional[str]]] = {}
+
+
 class EnvironmentCapture:
     """
     Capture details of the current software environment.
@@ -123,17 +126,26 @@ class EnvironmentCapture:
             'python_executable': sys.executable,
         }
         
+        # The package lists cannot change during a process, but ``pip freeze``
+        # costs a subprocess each time, so capture them once and reuse them
+        # for every analysis built in this run.
+        key = (self.env_type, sys.executable)
+        if key not in _PACKAGE_CACHE:
+            packages = {}
+            if self.env_type == 'conda':
+                packages['conda_environment'] = self.capture_conda_environment()
+            packages['pip_packages'] = self.capture_pip_environment()
+            _PACKAGE_CACHE[key] = packages
+        packages = _PACKAGE_CACHE[key]
+
         # Add conda-specific information
         if self.env_type == 'conda':
             info['conda_env_name'] = os.environ.get('CONDA_DEFAULT_ENV', 'unknown')
-            conda_env = self.capture_conda_environment()
-            if conda_env:
-                info['conda_environment'] = conda_env
-        
-        # Always try to capture pip packages as well
-        pip_packages = self.capture_pip_environment()
-        if pip_packages:
-            info['pip_packages'] = pip_packages
+            if packages.get('conda_environment'):
+                info['conda_environment'] = packages['conda_environment']
+
+        if packages.get('pip_packages'):
+            info['pip_packages'] = packages['pip_packages']
         
         return info
     

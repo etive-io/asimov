@@ -174,3 +174,36 @@ class TestTransient(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBatchSaves(unittest.TestCase):
+    """The ledger coalesces writes made inside ``batch_saves``."""
+
+    def test_saves_are_coalesced_and_flushed_on_error(self):
+        import os
+        import tempfile
+        from asimov.ledger import YAMLLedger
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "ledger.yml")
+            with open(path, "w") as f:
+                f.write("events: []\nproject analyses: []\nproject: {name: t}\n")
+            ledger = YAMLLedger(path)
+            calls = []
+            real_replace = os.replace
+
+            def counting_replace(src, dst):
+                calls.append(dst)
+                return real_replace(src, dst)
+
+            with patch("asimov.ledger.config.get", return_value=tmp), \
+                    patch("asimov.ledger.os.replace", counting_replace):
+                try:
+                    with ledger.batch_saves():
+                        ledger.save()
+                        ledger.save()
+                        self.assertEqual(calls, [])
+                        raise RuntimeError("boom")
+                except RuntimeError:
+                    pass
+            self.assertEqual(len(calls), 1)

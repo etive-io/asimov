@@ -5,6 +5,7 @@ Code for the project ledger.
 import yaml
 
 import copy
+import contextlib
 import os
 import shutil
 from functools import reduce
@@ -19,6 +20,11 @@ from filelock import FileLock
 
 
 class Ledger:
+    @contextlib.contextmanager
+    def batch_saves(self):
+        """Coalesce writes made inside the block (a no-op unless overridden)."""
+        yield self
+
     def _invalidate_events_cache(self):
         """
         Drop the cached ``events``/``get_event()`` result.
@@ -113,6 +119,8 @@ class YAMLLedger(Ledger):
         self.events = {ev["name"]: ev for ev in self.data["events"]}
         self._events_cache = None
         self._project_analyses_cache = None
+        self._batch_depth = 0
+        self._batch_dirty = False
         self.data.pop("events")
 
     def __getstate__(self):
@@ -186,6 +194,24 @@ class YAMLLedger(Ledger):
         self._invalidate_events_cache()
         self.save()
 
+    @contextlib.contextmanager
+    def batch_saves(self):
+        """
+        Defer writing the ledger to disk until the block exits.
+
+        Every ``update_event`` rewrites the whole ledger, so a loop over N
+        events costs O(N^2). Inside this context the writes are coalesced into
+        a single one (which still happens if the block raises).
+        """
+        self._batch_depth += 1
+        try:
+            yield self
+        finally:
+            self._batch_depth -= 1
+            if self._batch_depth == 0 and self._batch_dirty:
+                self._batch_dirty = False
+                self.save()
+
     def save(self):
         """
         Update the ledger YAML file with the data from the various events.
@@ -197,6 +223,9 @@ class YAMLLedger(Ledger):
 
 
         """
+        if getattr(self, "_batch_depth", 0):
+            self._batch_dirty = True
+            return
         with self.lock:  # Acquire exclusive lock for thread-safe saving
             self.data["events"] = list(self.events.values())
             with set_directory(config.get("project", "root")):
@@ -849,15 +878,17 @@ class DatabaseLedger(Ledger):
             except ValueError:
                 self.db.insert_event(event_data)
 
+            updates = []
             for production in event.productions:
                 prod_data = self._prepare_sql_production_data(
                     production.to_dict(event=False)
                 )
                 prod_data["event_name"] = event.name
-                try:
-                    self.db.update_production(event.name, production.name, prod_data)
-                except ValueError:
-                    self.db.insert_production(prod_data)
+                updates.append(prod_data)
+            # One session and one query for the whole event, rather than a
+            # transaction per production.
+            for prod_data in self.db.update_productions(event.name, updates):
+                self.db.insert_production(prod_data)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
         self._invalidate_events_cache()
@@ -931,10 +962,14 @@ class DatabaseLedger(Ledger):
             # defaults as last loaded come from the baseline snapshot.
             defaults_before = self._defaults_from(self._data_cache_baseline or {})
             delta = diff_dict(self._data_cache_baseline, self._data_cache)
-            if delta:
-                self._data_cache = self.db.merge_config(delta)
-            else:
-                self._data_cache = self.db.get_config() or self._data_cache
+            if not delta:
+                # Nothing of ours to write. Re-reading and deep-copying the
+                # whole config here made every save in a long-lived process
+                # (``asimov monitor`` saves after each analysis) cost ~0.1s on
+                # large projects. Any change in another process is picked up
+                # by the next save which has something to merge.
+                return
+            self._data_cache = self.db.merge_config(delta)
             self._data_cache_baseline = copy.deepcopy(self._data_cache)
             # Events are built with the project defaults merged in underneath
             # them (see _event_from_dict), so cached events are stale once the

@@ -80,6 +80,26 @@ class TestAsimovSQLDatabase(unittest.TestCase):
         self.assertEqual(production.pipeline, "bilby")
         self.assertEqual(production.status, "ready")
 
+    def test_update_productions_batches_and_reports_missing(self):
+        """update_productions updates existing rows and returns unknown ones."""
+        self.db.insert_event({"name": "GW150914", "repository": None,
+                              "working_directory": "/tmp/test", "meta": {}})
+        for name in ("a", "b"):
+            self.db.insert_production({"name": name, "event_name": "GW150914",
+                                       "pipeline": "bilby", "status": "ready",
+                                       "meta": {}})
+        missing = self.db.update_productions(
+            "GW150914",
+            [
+                {"name": "a", "status": "running", "meta": {"x": 1}},
+                {"name": "c", "event_name": "GW150914", "status": "ready"},
+            ],
+        )
+        self.assertEqual([m["name"] for m in missing], ["c"])
+        rows = {p["name"]: p for p in self.db.query("production", "event_name", "GW150914")}
+        self.assertEqual(rows["a"]["status"], "running")
+        self.assertEqual(rows["b"]["status"], "ready")
+
     def test_query_events(self):
         """Test querying events."""
         # Insert multiple events

@@ -391,7 +391,10 @@ class EventRepo:
             raise AsimovFileNotFound
 
     def find_prods(
-        self, name=None, category=config.get("general", "calibration_directory")
+        self,
+        name=None,
+        category=config.get("general", "calibration_directory"),
+        update=False,
     ):
         """
         Find all of the productions for a relevant category of runs
@@ -404,9 +407,17 @@ class EventRepo:
            If omitted then all production ini files are returned.
         category : str, optional
            The category of run. Defaults to the value of "general/calibration_directory" from config.
+        update : bool, optional
+           Pull the repository (once per EventRepo) before answering.
+           This only computes a path, and it is called while constructing
+           every analysis when the ledger is read, so by default it must not
+           touch the network: a pull and ``git lfs fetch`` per event made
+           merely loading a large ledger take minutes. Callers which need a
+           file that may only exist on the remote should pass ``update=True``.
         """
 
-        self.update_once()
+        if update:
+            self.update_once()
         if category is not None:
             path = f"{os.path.join(os.getcwd(), self.directory, category)}/{name}.ini"
         else:
