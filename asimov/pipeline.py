@@ -10,7 +10,7 @@ import time
 import asimov.analysis
 
 from asimov import utils  # NoQA
-from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
+from asimov import config, logger, logging, LOGGER_LEVEL, set_logger_level  # NoQA
 
 import otter  # NoQA
 from .storage import Store  # NoQA
@@ -100,7 +100,7 @@ class Pipeline:
             full_name = f"analysis.{production.event.name}/{production.name}"
 
         self.logger = logger.getChild(full_name)
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
         
         # Initialize scheduler instance (lazy-loaded via property)
         self._scheduler = None

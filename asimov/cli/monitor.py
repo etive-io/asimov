@@ -441,8 +441,10 @@ def monitor(ctx, event, update, dry_run, chain):
                         except Exception:
                             pass
 
-        if chain:
-            ctx.invoke(report.html)
+    # Once per pass, not once per project analysis: the report covers the
+    # whole project and is by far the most expensive step here.
+    if chain:
+        ctx.invoke(report.html)
 
     for event in sorted(ledger.get_event(event), key=lambda e: e.name):
         click.secho(f"{event.name}", bold=True)
