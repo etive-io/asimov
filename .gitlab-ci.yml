@@ -1,4 +1,4 @@
-image: python:3.9
+image: python:3.10
 
 stages:
   - analysis
@@ -42,9 +42,9 @@ pylint:
       codequality: codeclimate.json
     when: always
 
-test-python-39:
+test-python-310:
   stage: test
-  image: python:3.9
+  image: python:3.10
   script:
     - git config --global user.email "you@example.com"
     - git config --global user.name "Your Name"
@@ -140,7 +140,7 @@ test-htcondor:
     - conda config --remove channels defaults || true
     
     # Create and activate environment
-    - conda create -n asimov python=3.9
+    - conda create -n asimov python=3.10
     - source activate asimov
     
     # Install dependencies & asimov
