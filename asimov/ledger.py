@@ -414,6 +414,12 @@ class DatabaseLedger(Ledger):
         self._data_cache = None
         self._data_cache_baseline = None
 
+    def close(self):
+        """Release the database connections held by this ledger."""
+        close = getattr(self.db, "close", None)
+        if close is not None:
+            close()
+
     def __deepcopy__(self, memo):
         # Ledgers are shared singletons; deep-copying one would try to duplicate
         # the underlying database engine (which contains unpicklable module state).

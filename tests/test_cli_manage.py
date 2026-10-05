@@ -45,7 +45,7 @@ class TestBuild(unittest.TestCase):
                                ['Test Project', '--root', f"{self.cwd}/tests/tmp/project",
                                 '--engine', 'yamlfile'])
         assert result.exit_code == 0
-        assert result.output == '● New project created successfully!\n'
+        assert result.stdout == '● New project created successfully!\n'
         self.ledger = YAMLLedger(".asimov/ledger.yml")
 
         f = io.StringIO()
@@ -127,7 +127,7 @@ class TestSubmit(unittest.TestCase):
                                ['Test Project', '--root', f"{self.cwd}/tests/tmp/project",
                                 '--engine', 'yamlfile'])
         assert result.exit_code == 0
-        assert result.output == '● New project created successfully!\n'
+        assert result.stdout == '● New project created successfully!\n'
         self.ledger = YAMLLedger(".asimov/ledger.yml")
 
         #f = io.StringIO()

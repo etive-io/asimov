@@ -234,6 +234,18 @@ class AsimovSQLDatabase(AsimovDatabase):
         # Create tables if they don't exist (idempotent — safe on every connect)
         self.create_tables()
 
+    def close(self) -> None:
+        """
+        Release the database connections held by this object.
+
+        SQLAlchemy keeps connections in a pool. A pooled sqlite connection
+        which is garbage-collected without being closed emits a
+        ``ResourceWarning`` (to stderr) at an arbitrary later moment, so
+        long-lived processes and test suites should call this when they are
+        done with a database.
+        """
+        self.engine.dispose()
+
     @contextmanager
     def get_session(self) -> Session:
         """

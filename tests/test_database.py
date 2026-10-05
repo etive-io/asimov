@@ -27,6 +27,7 @@ class TestAsimovSQLDatabase(unittest.TestCase):
 
     def tearDown(self):
         """Clean up test database."""
+        self.db.close()
         if hasattr(self, 'test_dir') and os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
 
