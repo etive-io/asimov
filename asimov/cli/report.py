@@ -16,10 +16,32 @@ except ImportError:
 
 import otter
 import otter.bootstrap as bt
+from otter.html import HTMLElement
 
 from asimov import config, current_ledger
 
 tz = pytz.timezone("Europe/London")
+
+
+class _RawHTML(HTMLElement):
+    """
+    HTML which Otter should write out exactly as given.
+
+    Otter passes plain strings through Python-Markdown (with ``md_in_html``),
+    whose cost grows quadratically with the size of a block of raw HTML:
+    on real event cards 240 events took 0.3s but 960 took 5.4s, so a few
+    thousand events took minutes. Anything which is already HTML is wrapped
+    in this so that it is never parsed as Markdown.
+    """
+
+    tag = None
+
+    def __init__(self, html):
+        super().__init__()
+        self.html = html
+
+    def __repr__(self):
+        return self.html
 
 
 @click.group()
@@ -1641,7 +1663,7 @@ def html(event, webdir):
     cards += modal_html
     
     with report:
-        report += cards
+        report += _RawHTML(cards)
 
     with report:
         time = f"Report generated at {datetime.now(tz):%Y-%m-%d %H:%M}"

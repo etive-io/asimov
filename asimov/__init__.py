@@ -73,6 +73,23 @@ try:
 except configparser.NoOptionError:
     LOGGER_LEVEL = logging.INFO
 
+
+
+def set_logger_level(log, level):
+    """
+    Set the level of a freshly created logger without ``Logger.setLevel``.
+
+    ``Logger.setLevel`` clears the level cache of *every* logger which
+    exists, so calling it as each event and analysis creates its own logger
+    costs O(number of loggers) per call, and quadratic time overall: loading
+    10,000 events spent 208 of 233 seconds in it. Assigning the level
+    directly is equivalent for a logger which hasn't cached anything yet,
+    and does nothing if the level is already right.
+    """
+    if log.level != level:
+        log.level = level
+
+
 try:
     PRINT_LEVEL = logger_levels[config.get("logging", "print level")]
 except configparser.NoOptionError:

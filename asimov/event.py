@@ -16,7 +16,7 @@ if sys.version_info < (3, 10):
 else:
     from importlib.metadata import entry_points
 
-from asimov import config, logger, LOGGER_LEVEL
+from asimov import config, logger, LOGGER_LEVEL, set_logger_level
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
 
 from .git import EventRepo
@@ -78,7 +78,7 @@ class Event:
         self.name = name
 
         self.logger = logger.getChild("event").getChild(f"{self.name}")
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
 
         # pathlib.Path(os.path.join(config.get("logging", "location"), name)).mkdir(
         #    parents=True, exist_ok=True
