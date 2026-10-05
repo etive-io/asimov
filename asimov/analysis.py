@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, Optional, List, cast
 
 from liquid import Liquid
 
-from . import config, logger, LOGGER_LEVEL
+from . import config, logger, LOGGER_LEVEL, set_logger_level
 from .utils import update, diff_dict
 from .storage import Store
 
@@ -1182,7 +1182,7 @@ class SimpleAnalysis(Analysis):
         self.logger = logger.getChild("analysis").getChild(
             f"{self.event.name}/{self.name}"
         )
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
 
         # fh = logging.FileHandler(logfile)
         # formatter = logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
@@ -1275,7 +1275,7 @@ class SubjectAnalysis(Analysis):
         self.category = "subject_analyses"
 
         self.logger = logger.getChild("event").getChild(f"{self.name}")
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
 
         if status:
             self.status_str = status.lower()
@@ -1596,7 +1596,7 @@ class ProjectAnalysis(Analysis):
         super().__init__()
         self.name = name
         self.logger = logger.getChild("project analyses").getChild(f"{self.name}")
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
         self.ledger = ledger
         self.category = "project_analyses"
 
