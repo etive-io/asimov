@@ -525,6 +525,11 @@ class EventRepo:
 
             repo.git.checkout(branch)
             self._updated = True
+            if not repo.remotes:
+                # Nothing to pull from, so ``pull`` and ``git lfs fetch`` would
+                # only fail (and have their errors ignored) after two more
+                # subprocesses for each event.
+                return
             try:
                 repo.git.pull()
                 repo.git.execute(["git", "lfs", "fetch"])
