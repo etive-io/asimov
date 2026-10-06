@@ -710,6 +710,17 @@ class DatabaseLedger(Ledger):
         else:
             return self.events
 
+    def get_subject(self, subject=None):
+        """
+        Find a specific subject in the ledger and return it.
+
+        If no subject name is given, all subjects are returned instead.
+        """
+        if subject is None:
+            return self.events
+        event_dict = self.db.query("event", "name", subject)[0]
+        return Subject.from_dict(event_dict)
+
     def get_event(self, event=None):
         """
         Find a specific event in the ledger and return it.
