@@ -1264,11 +1264,14 @@ class SimpleAnalysis(Analysis):
 
     def _previous_assets(self):
         assets = {}
-        if self.dependencies:
+        # ``dependencies`` resolves ``needs`` against every analysis in the
+        # subject each time it is read, so read it once.
+        dependencies = self.dependencies
+        if dependencies:
             productions = {}
             for production in self.event.productions:
                 productions[production.name] = production
-            for previous_job in self.dependencies:
+            for previous_job in dependencies:
                 assets.update(productions[previous_job].pipeline.collect_assets())
         return assets
 
@@ -2504,12 +2507,14 @@ class GravitationalWaveTransient(SimpleAnalysis):
             # Dependencies which are expected to supply PSDs, as
             # (name, assets) pairs, in the (sorted) order of `dependencies`.
             psd_sources = []
-            if self.dependencies:
+            # Read once: ``dependencies`` scans the whole subject each time.
+            dependencies = self.dependencies
+            if dependencies:
                 productions = {}
                 for production in self.event.productions:
                     productions[production.name] = production
 
-                for previous_job in self.dependencies:
+                for previous_job in dependencies:
                     dependency = productions.get(previous_job)
                     if dependency is None:
                         continue
