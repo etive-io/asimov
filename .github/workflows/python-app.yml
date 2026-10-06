@@ -44,6 +44,42 @@ jobs:
         export ASIMOV_TESTING=1
         python -m unittest discover tests/
 
+  build-ubuntu-python-next:
+    # Early warning for the next Python release. Allowed to fail (and does not
+    # gate publishing): a failure shows up in this job's logs. Make it a
+    # required job, and add it to the matrix above, once it is stable.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.15"]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install .[lvkgw]
+        pip install .[bilby]
+    - name: Set up git
+      run: |
+          git config --global init.defaultBranch master
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+
+    - name: Run unittests
+      run: |
+        export ASIMOV_TESTING=1
+        python -m unittest discover tests/
+
   test-external-blueprints:
     # This job checks compatibility with the external asimov-data blueprints.
     # It is allowed to fail because external data files may lag behind code changes.
