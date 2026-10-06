@@ -511,14 +511,17 @@ class Event:
             ]
         )
 
+        # An analysis is waiting on nothing if no unfinished analysis feeds into
+        # it. Read that off the graph directly: copying it with ``reverse()``
+        # for every analysis made this quadratic in the size of the subject.
         ends = []
-        for production in unfinished.reverse().nodes():
+        for production in unfinished.nodes():
             if (
                 "needs settings" not in production.meta
                 or production.meta["needs settings"] == "default"
             ):
                 if (
-                    unfinished.reverse().out_degree(production) == 0
+                    unfinished.in_degree(production) == 0
                     and production.finished is False
                 ):
                     ends.append(production)
@@ -530,7 +533,7 @@ class Event:
                     and production.meta["needs settings"]["condition"]
                     == "is_interesting"
                 ):
-                    for prod in unfinished.reverse().nodes():
+                    for prod in unfinished.nodes():
                         if (
                             prod.pipeline.name != production.pipeline.name
                             and prod.pipeline.name in production._needs
