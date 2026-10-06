@@ -75,10 +75,15 @@ its slot once ``asimov monitor`` has recorded that it finished.
 -----------------------------------
 
 ``event_git``
-   Whether a git repository is created and updated for every event. Defaults to ``true``. For very
-   large projects, set this to ``false`` to skip creating, committing to and pulling these repositories:
-   files are still written into the event's directory, but nothing is committed or pushed. Repositories
-   which are given an explicit URL are still cloned.
+   Whether a git repository is created and updated for every event. Defaults to ``false``. Files are
+   still written into each event's directory, but nothing is initialised, committed or pulled. Set this
+   to ``true`` if you keep your event files under version control; creating and updating a repository
+   for every event is slow on a large project (on the order of 0.1 s per event the first time, then
+   about 25 ms per event on each ``manage build``). Repositories which are given an explicit URL are
+   still cloned.
+
+   Projects made with asimov 0.8 or earlier created these repositories without being asked. If you rely
+   on them, add ``event_git = true`` to the ``[general]`` section of ``.asimov/asimov.conf``.
 
 ``[condor]`` / ``[slurm]``
 ----------------------------
