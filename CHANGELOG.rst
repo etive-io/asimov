@@ -93,8 +93,88 @@ New Features
   at a time, instead of drawing every event's graph when the page loads and again on every filter click.
   Opening a report, and changing its filters, no longer freezes the page for as long as there are events.
 
+**Updating Pending Analyses with the Event**
+  ``asimov apply --update-unstarted`` updates an event and lets analyses which have not started
+  (``ready`` and waiting states) inherit the new settings, while started or finished analyses keep the
+  settings they ran with. Plain ``--update`` still pins every existing analysis to the old settings.
+
+**SQL Database Ledger**
+  A SQLAlchemy-backed ledger provides ACID transactions and supports SQLite, PostgreSQL and MySQL. It is now
+  the default for new projects, using a local SQLite file; existing projects keep the ledger engine their
+  ``asimov.conf`` specifies. The Python API (``Project``) now honours the configured ledger backend.
+
+**REST API**
+  A REST API with API-key authentication provides create, read, update and delete access to events and
+  analyses, and ``GET /analyses/<event>/<analysis>/logs`` returns an analysis's logs.
+
+**Python API**
+  ``Project`` provides project creation and management from Python, usable as a context manager.
+
+**Schedulers**
+  A ``LocalProcessScheduler`` runs lightweight, short jobs on the local machine without a cluster. Slurm
+  support is extended, and schedulers expose job history (``collect_history``), so CPU and GPU usage is
+  recorded and shown in the report.
+
+**Logs and Telemetry**
+  ``Pipeline.collect_logs()`` now collects an analysis's ``*.out``, ``*.err`` and ``*.log`` files independently of
+  the scheduler, and they are shown in the report's analysis modal. The monitor also emits structured
+  telemetry events (status changes and resource snapshots), always written to ``telemetry.jsonl`` in the
+  run directory, with pluggable external sinks via the ``asimov.hooks.telemetry`` entry point group. A
+  Prometheus Pushgateway sink is included, and ``examples/`` contains a runnable Prometheus/Grafana demo.
+
+**Labeller Plugins**
+  Plugins can attach arbitrary labels to analyses, which can be used as dependencies and are shown as
+  badges in the report. Labellers are discovered through an entry point group and configured in the
+  project's blueprints.
+
+**Environment Capture and Provenance**
+  The software environment (conda or pip) is captured when an analysis is built and stored with its
+  results. ``asimov provenance`` and ``asimov package`` export a W3C PROV-O graph of an analysis, with its
+  configuration, environment, dependencies and outputs, as an RO-Crate. The results store's
+  ``fetch_file`` and ``fetch_uuid`` previously failed for files stored with ``add_file``, and are fixed.
+
+**Ledger Vocabulary**
+  ``asimov/vocabulary.yaml`` defines every standard ledger key, and the ``asimov vocabulary`` command
+  (``list``, ``show``, ``check``, ``export``, ``lint``) checks documents for unknown, aliased or deprecated
+  keys. Plugins add terms through the ``asimov.vocabulary`` entry point group. The new
+  ``likelihood.components`` terms (``signal``, ``glitch``, ``noise.psd``, ``noise.lines``) describe which
+  components an analysis fits, with standard asset names for reconstructions, Bayes factors and skymaps.
+
+**Pipeline Result Pages**
+  ``Pipeline.result_pages()`` lets pipelines, including plugins, provide the result page links shown in
+  the report modal. See the 0.8 pipeline migration guide in :ref:`pipeline-dev`.
+
+**Dependency Validation**
+  ``Analysis.validate_needs()`` checks an analysis's dependencies, including those of subject and project
+  analyses, and ``asimov manage build`` calls it.
+
+**Testing Pipelines and CI**
+  The bundled testing pipelines write ``ledger_dump.json`` into their run directories, and there is a
+  multi-event end-to-end scenario. End-to-end test suites run against HTCondor (including a pool
+  configured with LIGO Data Grid submission policy), Slurm and the local scheduler.
+
+Other Fixes
+-----------
+
++ ``asimov apply`` of an existing event on the database ledger no longer silently overwrites it, and
+  ``--update`` now finds the existing record (#201).
++ ``asimov production set`` and ``create`` now persist on the database ledger, where the change was
+  previously reported but discarded (#202).
++ Blueprints of ``kind: configuration`` were silently discarded by the database ledger.
++ Concurrent saves on the database ledger no longer lose data.
++ Analysis nodes in the HTML report now open the modal (#205), and a backslash in the report's JavaScript
+  regular expression is escaped (#206).
++ Project-analysis directory names which would exceed filename limits are shortened (#207).
++ Slow ``build`` and ``monitor`` runs, and quadratic costs when loading events and writing the report,
+  on large projects were removed (#221, #222).
++ Event repositories are opened lazily, and bilby priors, including ``UniformSourceFrame``, were fixed.
+
 Breaking Changes
 ----------------
+
+**Default Ledger**
+  New projects use the SQLite database ledger rather than the YAML ledger. Use
+  ``asimov migrate-ledger`` to convert between them.
 
 **PSD Resolution**
   An event-level ``psds:`` block no longer overrides the PSDs provided by an analysis's
@@ -106,7 +186,47 @@ Breaking Changes
 GitHub Pull Requests
 --------------------
 
++ `github#66 <https://github.com/etive-io/asimov/pull/66>`_: Add restful api
++ `github#87 <https://github.com/etive-io/asimov/pull/87>`_: Add labeller plugin system with arbitrary labels and dependency integration
++ `github#89 <https://github.com/etive-io/asimov/pull/89>`_: Capture and store software environment for analysis reproducibility
++ `github#99 <https://github.com/etive-io/asimov/pull/99>`_: Implement SQLAlchemy database backend for asimov ledger with ACID transactions
++ `github#108 <https://github.com/etive-io/asimov/pull/108>`_: Fix condor history logging and expose CPU/GPU usage in report UI
++ `github#110 <https://github.com/etive-io/asimov/pull/110>`_: Add LocalProcessScheduler for lightweight short-running jobs
++ `github#136 <https://github.com/etive-io/asimov/pull/136>`_: Default to the SQLite ledger backend, fix the object-identity bugs it exposed
++ `github#137 <https://github.com/etive-io/asimov/pull/137>`_: Add scheduler-independent log access for analyses
++ `github#138 <https://github.com/etive-io/asimov/pull/138>`_: Add analysis telemetry: structured events, local sink, pluggable external sinks
++ `github#139 <https://github.com/etive-io/asimov/pull/139>`_: Add a runnable Prometheus/Grafana demo for analysis telemetry
++ `github#140 <https://github.com/etive-io/asimov/pull/140>`_: Add a pipeline migration guide for 0.8 to pipelines-dev.rst
++ `github#141 <https://github.com/etive-io/asimov/pull/141>`_: Fix DatabaseLedger.data: kind: configuration blueprints were silently discarded
++ `github#147 <https://github.com/etive-io/asimov/pull/147>`_: DatabaseLedger config: address review findings + fix concurrent-save data loss
++ `github#158 <https://github.com/etive-io/asimov/pull/158>`_: Add LDG-parity HTCondor E2E test suite
++ `github#168 <https://github.com/etive-io/asimov/pull/168>`_: Fix validate_needs() for ProjectAnalysis/SubjectAnalysis and wire it into build
++ `github#169 <https://github.com/etive-io/asimov/pull/169>`_: Port v0.7.1 fixes and features to v0.8-preview
++ `github#170 <https://github.com/etive-io/asimov/pull/170>`_: Add provenance/RO-Crate export for analyses
++ `github#172 <https://github.com/etive-io/asimov/pull/172>`_: Add tests for API key auth and the provenance/package CLI commands
++ `github#175 <https://github.com/etive-io/asimov/pull/175>`_: Add a machine-readable ledger vocabulary
++ `github#177 <https://github.com/etive-io/asimov/pull/177>`_: Add likelihood.components vocabulary and reconstruction assets
 + `github#188 <https://github.com/etive-io/asimov/pull/188>`_: Fix PSD resolution for multiple PSDs per event
++ `github#190 <https://github.com/etive-io/asimov/pull/190>`_: Bring the 0.5 and 0.6 release-line changelogs into the main line, and credit Disha Hegde
++ `github#201 <https://github.com/etive-io/asimov/pull/201>`_: Fix `asimov apply` for existing events on the database ledger
++ `github#202 <https://github.com/etive-io/asimov/pull/202>`_: Persist `asimov production set/create` on the database ledger
++ `github#205 <https://github.com/etive-io/asimov/pull/205>`_: Fix analysis nodes in the HTML report not opening the modal
++ `github#206 <https://github.com/etive-io/asimov/pull/206>`_: Escape backslash in report JS regex
++ `github#207 <https://github.com/etive-io/asimov/pull/207>`_: Shorten project-analysis directory names that would exceed filename limits
++ `github#209 <https://github.com/etive-io/asimov/pull/209>`_: Let pipelines supply result page links for the report modal
++ `github#210 <https://github.com/etive-io/asimov/pull/210>`_: Fix manage submit and review add for project analyses
++ `github#211 <https://github.com/etive-io/asimov/pull/211>`_: Document Pipeline.result_pages in the 0.8 pipeline migration guide
++ `github#213 <https://github.com/etive-io/asimov/pull/213>`_: Testing pipelines: ledger dumps, multi-event e2e scenario, and output artifacts
++ `github#214 <https://github.com/etive-io/asimov/pull/214>`_: Add apply --update-unstarted so pending analyses inherit event updates
++ `github#215 <https://github.com/etive-io/asimov/pull/215>`_: Apply project-level defaults to events on the database ledger
++ `github#216 <https://github.com/etive-io/asimov/pull/216>`_: Add `asimov migrate-ledger` to convert between YAML and SQL ledgers
++ `github#217 <https://github.com/etive-io/asimov/pull/217>`_: Refuse to re-apply an existing analysis on the database ledger
++ `github#218 <https://github.com/etive-io/asimov/pull/218>`_: Throttle submissions and lighten event git repositories
++ `github#220 <https://github.com/etive-io/asimov/pull/220>`_: Draw report graphs lazily so large reports stay responsive
++ `github#221 <https://github.com/etive-io/asimov/pull/221>`_: Fix slow build/monitor on large projects and keep monitor --chain submitting
++ `github#222 <https://github.com/etive-io/asimov/pull/222>`_: Remove quadratic costs when loading events and writing the report
++ `github#223 <https://github.com/etive-io/asimov/pull/223>`_: Make project-init output assertions robust to stderr warnings
++ `github#225 <https://github.com/etive-io/asimov/pull/225>`_: Bring the 0.8.0 changelog up to date
 
 0.7.1
 =====
