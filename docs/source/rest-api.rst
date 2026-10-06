@@ -667,6 +667,7 @@ Python API Reference
 .. automodule:: asimov.api.auth
    :members:
    :undoc-members:
+   :exclude-members: g, request
 
 .. automodule:: asimov.api.models
    :members:
@@ -676,6 +677,7 @@ Python API Reference
 .. automodule:: asimov.api.utils
    :members:
    :undoc-members:
+   :exclude-members: g
 
 .. automodule:: asimov.api.errors
    :members:

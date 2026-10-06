@@ -66,6 +66,8 @@ docs = [
 	"sphinx-jsonschema",
 	"sphinx-multiversion",
 	"autodoc-pydantic",
+	# conf.py loads it directly; it is no longer pulled in by the theme.
+	"sphinxcontrib-jquery",
 ]
 lvkgw = [
 	"bilby_pipe",
