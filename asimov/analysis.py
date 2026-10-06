@@ -396,70 +396,104 @@ class Analysis:
         
         return required_specs
     
+    def _requirement_matches(self, requirement):
+        """
+        Return the analyses in this subject which match one parsed requirement.
+
+        Parameters
+        ----------
+        requirement : tuple or list
+            A single parsed ``needs`` item: either one
+            ``(attribute, match, negate[, optional])`` tuple, or a list of
+            them (an AND group).
+
+        Returns
+        -------
+        list
+            The matching analyses.
+        """
+        conditions = requirement if isinstance(requirement, list) else [requirement]
+        matches = list(self.event.analyses)
+        for parsed_dep in conditions:
+            attribute, match, negate = parsed_dep[:3]
+            matches = [
+                analysis
+                for analysis in matches
+                if analysis.matches_filter(attribute, match, negate)
+            ]
+        return matches
+
+    @staticmethod
+    def _describe_requirement(requirement):
+        """
+        Describe a parsed ``needs`` item which matched nothing.
+
+        A plain name which does not exist is reported differently from a
+        property filter which matches nothing, because the second is a normal
+        state ("nothing matches yet") while the first is usually a typo.
+        """
+        conditions = requirement if isinstance(requirement, list) else [requirement]
+        parts = []
+        for parsed_dep in conditions:
+            attribute, match, negate = parsed_dep[:3]
+            parts.append(f"{'.'.join(attribute)} {'!=' if negate else '='} {match}")
+        if len(conditions) == 1 and conditions[0][0] == ["name"] and not conditions[0][2]:
+            return f"no analysis is named '{conditions[0][1]}'"
+        return "no analysis matches " + " and ".join(parts)
+
+    @property
+    def unresolved_needs(self):
+        """
+        Describe each required ``needs`` entry which currently matches no analysis.
+
+        An entry which matches nothing contributes no dependency, so without
+        this check the analysis would be treated as having no dependency on
+        it, and would be eligible to run immediately.  Optional entries are
+        not reported.
+
+        Returns
+        -------
+        list of str
+            One description per unresolved entry, e.g. ``"no analysis is
+            named 'fit-r001'"``; empty if every required entry resolves.
+        """
+        if getattr(self, "event", None) is None:
+            # Project analyses have no parent subject to resolve names in.
+            return []
+        return [
+            self._describe_requirement(requirement)
+            for requirement in self.required_dependencies
+            if len(self._requirement_matches(requirement)) == 0
+        ]
+
+    @property
+    def strict_needs(self):
+        """
+        Whether an unresolved ``needs`` entry should hold this analysis back.
+
+        Set ``strict needs: true`` on an analysis to make it wait, and be
+        reported, while any required entry matches no analysis.  The default
+        is False, which leaves existing ledgers behaving as before apart from
+        a warning.
+        """
+        return bool(self.meta.get("strict needs", False))
+
     @property
     def has_required_dependencies_satisfied(self):
         """
         Check if all required dependencies are satisfied.
-        
+
         A required dependency is satisfied if at least one analysis in the ledger
         matches its specification. Optional dependencies don't affect this check.
-        
+
         Returns
         -------
         bool
             True if all required dependencies are satisfied (or there are no required deps),
             False if any required dependency has no matches
         """
-        required_specs = self.required_dependencies
-        
-        if len(required_specs) == 0:
-            # No required dependencies, so they're all satisfied
-            return True
-        
-        for requirement in required_specs:
-            if isinstance(requirement, list):
-                # This is an AND group - all conditions must match at least one analysis
-                and_matches = set(self.event.analyses)
-                for parsed_dep in requirement:
-                    if len(parsed_dep) == 4:
-                        attribute, match, negate, optional = parsed_dep
-                    else:
-                        attribute, match, negate = parsed_dep
-                        optional = False
-                    
-                    filtered_analyses = list(
-                        filter(
-                            lambda x: x.matches_filter(attribute, match, negate),
-                            and_matches,
-                        )
-                    )
-                    and_matches = set(filtered_analyses)
-                
-                # If no analyses match this AND group, requirement not satisfied
-                if len(and_matches) == 0:
-                    return False
-            else:
-                # Single condition
-                if len(requirement) == 4:
-                    attribute, match, negate, optional = requirement
-                else:
-                    attribute, match, negate = requirement
-                    optional = False
-                
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x.matches_filter(attribute, match, negate),
-                        self.event.analyses,
-                    )
-                )
-                
-                # If no analyses match this requirement, it's not satisfied
-                if len(filtered_analyses) == 0:
-                    return False
-        
-        # All required dependencies have at least one match
-        return True
-    
+        return len(self.unresolved_needs) == 0
+
     @property
     def resolved_dependencies(self):
         """
