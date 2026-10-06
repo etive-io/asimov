@@ -846,8 +846,7 @@ class DatabaseLedger(Ledger):
         # already exists is silently inserted a second time: the load-time
         # de-duplication then hides the new row, and the apply reports success.
         if isinstance(analysis, ProjectAnalysis):
-            existing = [row["name"] for row in self.db.query("project_analysis")]
-            if analysis.name in existing:
+            if self.db.name_exists("project_analysis", analysis.name):
                 raise ValueError(
                     "An analysis with that name already exists in the ledger."
                 )
@@ -856,10 +855,7 @@ class DatabaseLedger(Ledger):
             # It's a Production
             if event is None:
                 raise ValueError("Event is required for Production analyses")
-            existing = [
-                row["name"] for row in self.db.query("production", "event_name", event.name)
-            ]
-            if analysis.name in existing:
+            if self.db.name_exists("production", analysis.name, event_name=event.name):
                 raise ValueError(
                     f"A production with this name already exists for {event.name}. "
                     "New productions must have unique names."
