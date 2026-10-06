@@ -193,22 +193,34 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
         data
     )  # Load as a dictionary so we can identify the object type it contains
 
+    # Events loaded for applying analyses, by name. Loading an event builds every
+    # analysis in it, so doing that once per analysis made applying a large
+    # blueprint quadratic in the number of analyses. Each analysis which is added
+    # is also added to its cached event, so the next one is built against the same
+    # state a reload would give. Any other kind of document may change an event,
+    # so it empties the cache.
+    loaded_events = {}
+
     for document in quick_parse:
+        if document["kind"] != "analysis":
+            loaded_events.clear()
         if document["kind"] in ("event", "subject"):
             logger.info("Found an event")
             document.pop("kind")
             event_obj = asimov.event.Event.from_yaml(yaml.dump(document))
 
-            # Check if the event is in the ledger already
-            # ledger.events is a dict for the YAML ledger, but a list of
-            # Event objects for the database ledger.
-            events = ledger.events
-            if isinstance(events, dict):
-                event_exists = event_obj.name in events
+            # Check if the event is in the ledger already. ledger.events is a
+            # plain dict for the YAML ledger, so that is cheap. For the database
+            # ledger it builds every event, and every analysis in them, so ask
+            # for just this event's row instead: doing the former for each event
+            # in a blueprint made applying many subjects quadratic.
+            database = getattr(ledger, "db", None)
+            if database is None:
+                event_exists = event_obj.name in ledger.events
             else:
-                event_exists = event_obj.name in [e.name for e in events]
+                event_exists = len(database.query("event", "name", event_obj.name)) > 0
 
-            if event_exists and update_page is True and not isinstance(events, dict):
+            if event_exists and update_page is True and database is not None:
                 _update_event_in_database_ledger(ledger, event_obj, update_unstarted=update_unstarted)
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
@@ -318,7 +330,9 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     existing_names.add(expanded_doc["name"])
 
                 try:
-                    event_obj = ledger.get_event(event_s)[0]
+                    if event_s not in loaded_events:
+                        loaded_events[event_s] = ledger.get_event(event_s)[0]
+                    event_obj = loaded_events[event_s]
                 except KeyError as e:
                     click.echo(
                         click.style("●", fg="red")
@@ -331,6 +345,10 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 )
                 try:
                     ledger.add_analysis(production, event=event_obj)
+                    # The YAML ledger adds it to the event itself; the database
+                    # ledger only stores it.
+                    if not event_obj.productions or event_obj.productions[-1] is not production:
+                        event_obj.add_production(production)
                     click.echo(
                         click.style("●", fg="green")
                         + f" Successfully applied {production.name} to {event_obj.name}"
