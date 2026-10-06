@@ -93,8 +93,88 @@ New Features
   at a time, instead of drawing every event's graph when the page loads and again on every filter click.
   Opening a report, and changing its filters, no longer freezes the page for as long as there are events.
 
+**Updating Pending Analyses with the Event**
+  ``asimov apply --update-unstarted`` updates an event and lets analyses which have not started
+  (``ready`` and waiting states) inherit the new settings, while started or finished analyses keep the
+  settings they ran with. Plain ``--update`` still pins every existing analysis to the old settings.
+
+**SQL Database Ledger**
+  A SQLAlchemy-backed ledger provides ACID transactions and supports SQLite, PostgreSQL and MySQL. It is now
+  the default for new projects, using a local SQLite file; existing projects keep the ledger engine their
+  ``asimov.conf`` specifies. The Python API (``Project``) now honours the configured ledger backend.
+
+**REST API**
+  A REST API with API-key authentication provides create, read, update and delete access to events and
+  analyses, and ``GET /analyses/<event>/<analysis>/logs`` returns an analysis's logs.
+
+**Python API**
+  ``Project`` provides project creation and management from Python, usable as a context manager.
+
+**Schedulers**
+  A ``LocalProcessScheduler`` runs lightweight, short jobs on the local machine without a cluster. Slurm
+  support is extended, and schedulers expose job history (``collect_history``), so CPU and GPU usage is
+  recorded and shown in the report.
+
+**Logs and Telemetry**
+  ``Pipeline.collect_logs()`` now collects an analysis's ``*.out``, ``*.err`` and ``*.log`` files independently of
+  the scheduler, and they are shown in the report's analysis modal. The monitor also emits structured
+  telemetry events (status changes and resource snapshots), always written to ``telemetry.jsonl`` in the
+  run directory, with pluggable external sinks via the ``asimov.hooks.telemetry`` entry point group. A
+  Prometheus Pushgateway sink is included, and ``examples/`` contains a runnable Prometheus/Grafana demo.
+
+**Labeller Plugins**
+  Plugins can attach arbitrary labels to analyses, which can be used as dependencies and are shown as
+  badges in the report. Labellers are discovered through an entry point group and configured in the
+  project's blueprints.
+
+**Environment Capture and Provenance**
+  The software environment (conda or pip) is captured when an analysis is built and stored with its
+  results. ``asimov provenance`` and ``asimov package`` export a W3C PROV-O graph of an analysis, with its
+  configuration, environment, dependencies and outputs, as an RO-Crate. The results store's
+  ``fetch_file`` and ``fetch_uuid`` previously failed for files stored with ``add_file``, and are fixed.
+
+**Ledger Vocabulary**
+  ``asimov/vocabulary.yaml`` defines every standard ledger key, and the ``asimov vocabulary`` command
+  (``list``, ``show``, ``check``, ``export``, ``lint``) checks documents for unknown, aliased or deprecated
+  keys. Plugins add terms through the ``asimov.vocabulary`` entry point group. The new
+  ``likelihood.components`` terms (``signal``, ``glitch``, ``noise.psd``, ``noise.lines``) describe which
+  components an analysis fits, with standard asset names for reconstructions, Bayes factors and skymaps.
+
+**Pipeline Result Pages**
+  ``Pipeline.result_pages()`` lets pipelines, including plugins, provide the result page links shown in
+  the report modal. See the 0.8 pipeline migration guide in :ref:`pipeline-dev`.
+
+**Dependency Validation**
+  ``Analysis.validate_needs()`` checks an analysis's dependencies, including those of subject and project
+  analyses, and ``asimov manage build`` calls it.
+
+**Testing Pipelines and CI**
+  The bundled testing pipelines write ``ledger_dump.json`` into their run directories, and there is a
+  multi-event end-to-end scenario. End-to-end test suites run against HTCondor (including a pool
+  configured with LIGO Data Grid submission policy), Slurm and the local scheduler.
+
+Other Fixes
+-----------
+
++ ``asimov apply`` of an existing event on the database ledger no longer silently overwrites it, and
+  ``--update`` now finds the existing record (#201).
++ ``asimov production set`` and ``create`` now persist on the database ledger, where the change was
+  previously reported but discarded (#202).
++ Blueprints of ``kind: configuration`` were silently discarded by the database ledger.
++ Concurrent saves on the database ledger no longer lose data.
++ Analysis nodes in the HTML report now open the modal (#205), and a backslash in the report's JavaScript
+  regular expression is escaped (#206).
++ Project-analysis directory names which would exceed filename limits are shortened (#207).
++ Slow ``build`` and ``monitor`` runs, and quadratic costs when loading events and writing the report,
+  on large projects were removed (#221, #222).
++ Event repositories are opened lazily, and bilby priors, including ``UniformSourceFrame``, were fixed.
+
 Breaking Changes
 ----------------
+
+**Default Ledger**
+  New projects use the SQLite database ledger rather than the YAML ledger. Use
+  ``asimov migrate-ledger`` to convert between them.
 
 **PSD Resolution**
   An event-level ``psds:`` block no longer overrides the PSDs provided by an analysis's
