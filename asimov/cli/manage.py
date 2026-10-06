@@ -50,6 +50,38 @@ def check_dependencies_satisfied(analysis, logger):
         logger.warning(f"Could not validate dependencies for {analysis.name}: {e}")
 
 
+def report_unresolved_needs(analysis, logger):
+    """
+    Warn about required ``needs`` entries which match no analysis.
+
+    Such an entry contributes no dependency, so the analysis would otherwise
+    be treated as having no dependency on it and be eligible to run at once.
+    The warning is always given. An analysis with ``strict needs: true`` is
+    also held back until every entry resolves.
+
+    Args:
+    analysis: the analysis to check
+    logger: the logger to record the problem to
+
+    Returns True if the analysis should be held back, otherwise False.
+    """
+    try:
+        unresolved = analysis.unresolved_needs
+    except Exception as e:
+        logger.warning(f"Could not check the needs of {analysis.name}: {e}")
+        return False
+    if not unresolved:
+        return False
+    hold = analysis.strict_needs
+    for problem in unresolved:
+        message = f"{analysis.name} has an unresolved need: {problem}"
+        if hold:
+            message += " (strict needs: not ready)"
+        click.echo(click.style("●", fg="yellow") + f" {message}")
+        logger.warning(message)
+    return hold
+
+
 def check_psds_available(analysis, logger):
     """
     Raise a build-blocking error when this analysis's PSDs can't be
@@ -219,6 +251,8 @@ def build(event, dryrun):
                                 + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
                             )
                         continue  # I think this test might be unused
+                    if report_unresolved_needs(production, logger):
+                        continue
                     try:
                         ini_loc = production.event.repository.find_prods(
                             production.name, production.category
@@ -613,6 +647,9 @@ def submit(event, update, dryrun, max_submit):
                             + f" {production.name} is waiting on source analyses to finish"
                         )
                     continue
+
+            if report_unresolved_needs(production, logger):
+                continue
 
             if not throttle.can_submit():
                 throttle.defer(f"{event.name}/{production.name}")

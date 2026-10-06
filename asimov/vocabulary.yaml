@@ -132,6 +132,14 @@ terms:
       ``Analysis._previous_assets()`` and are used, for example, to supply
       PSDs via ``Analysis._collect_psds()``.
     used by: [asimov.analysis.Analysis.dependencies, asimov.analysis.Analysis._previous_assets]
+  strict needs:
+    type: boolean
+    description: >-
+      Hold the analysis back, and report why, while any required ``needs``
+      entry matches no analysis. By default an entry which matches nothing is
+      only reported as a warning, and the analysis is treated as having no
+      dependency on it.
+    used by: [asimov.analysis.Analysis.strict_needs, asimov.analysis.Analysis.unresolved_needs]
   needs settings:
     description: Settings controlling how ``needs`` are resolved.
     children:
