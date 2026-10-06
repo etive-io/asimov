@@ -93,7 +93,37 @@ class EventTests(AsimovTestCase):
         self.assertEqual(event['priors']['luminosity distance']['maximum'], 1000)
         self.assertEqual(event['priors']['mass ratio']['maximum'], 1.0)
 
-        
+    def _apply_with_status(self, status):
+        apply_page(f"{self.cwd}/tests/test_data/test_event.yaml", event="S000000", ledger=self.ledger)
+        apply_page(f"{self.cwd}/tests/test_data/test_analysis_S000000.yaml", event="S000000", ledger=self.ledger)
+        prod = self.ledger.events["S000000"]["productions"][0]
+        next(iter(prod.values()))["status"] = status
+        apply_page(
+            f"{self.cwd}/tests/test_data/test_event_update.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            update_unstarted=True,
+        )
+        return self.ledger.events["S000000"]
+
+    def test_event_update_unstarted_inherits_new_settings(self):
+        event = self._apply_with_status("ready")
+        self.assertEqual(event["event time"], 909)
+        self.assertFalse("event time" in next(iter(event["productions"][0].values())))
+        analysis = self.ledger.get_event("S000000")[0].productions[0]
+        self.assertEqual(analysis.meta["event time"], 909)
+        self.assertTrue("version-1" in self.ledger.data["history"]["S000000"])
+
+    def test_event_update_unstarted_pins_started_analyses(self):
+        for status in ["running", "finished", "uploaded", "processing"]:
+            with self.subTest(status=status):
+                self.tearDown()
+                self.setUp()
+                event = self._apply_with_status(status)
+                self.assertEqual(event["event time"], 909)
+                self.assertEqual(next(iter(event["productions"][0].values()))["event time"], 900)
+
+
 class DetcharTests(AsimovTestCase):
     """Tests to ensure that various detector characterisation related
     data are handled correctly.
@@ -405,3 +435,100 @@ class NameIterateTests(AsimovTestCase):
         self.assertIn("bilby-IMRPhenomXPHM-2", analysis_names)
         self.assertIn("bilby-SEOBNRv4PHM-2", analysis_names)
         self.assertIn("bilby-IMRPhenomD-2", analysis_names)
+
+
+class DatabaseLedgerEventTests(unittest.TestCase):
+    """Re-applying an existing event must never lose its analyses."""
+
+    def setUp(self):
+        import tempfile
+        from unittest.mock import patch
+        from asimov.ledger import DatabaseLedger
+
+        self.cwd = os.getcwd()
+        self.test_dir = tempfile.mkdtemp()
+        db_path = os.path.join(self.test_dir, "ledger.db")
+        self.config_patcher = patch("asimov.database.config")
+        mock_config = self.config_patcher.start()
+        mock_config.get.side_effect = lambda section, key, fallback=None: {
+            ("ledger", "engine"): "sqlalchemy",
+            ("ledger", "location"): db_path,
+        }.get((section, key), fallback or db_path)
+        self.ledger = DatabaseLedger(engine="sqlalchemy")
+        self.ledger.db.create_tables()
+        self.data = f"{self.cwd}/tests/test_data"
+        apply_page(f"{self.data}/test_event.yaml", event="S000000", ledger=self.ledger)
+        apply_page(
+            f"{self.data}/test_analysis_S000000.yaml", event="S000000", ledger=self.ledger
+        )
+
+    def tearDown(self):
+        self.config_patcher.stop()
+        shutil.rmtree(self.test_dir)
+
+    def _analyses(self):
+        return sorted(p.name for p in self.ledger.get_event("S000000")[0].productions)
+
+    def test_reapply_without_update_does_not_overwrite(self):
+        before = self._analyses()
+        self.assertTrue(before)
+        apply_page(
+            f"{self.data}/test_event_update.yaml", event="S000000", ledger=self.ledger
+        )
+        event = self.ledger.get_event("S000000")[0]
+        self.assertNotEqual(event.meta.get("event time"), 909)
+        self.assertEqual(self._analyses(), before)
+
+    def test_update_keeps_analyses_and_applies_changes(self):
+        before = self._analyses()
+        apply_page(
+            f"{self.data}/test_event_update.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            update_page=True,
+        )
+        event = self.ledger.get_event("S000000")[0]
+        self.assertEqual(event.meta["event time"], 909)
+        self.assertEqual(self._analyses(), before)
+        self.assertIn("version-1", self.ledger.data["history"]["S000000"])
+
+    def _update_unstarted(self, status):
+        prod = self.ledger.get_event("S000000")[0].productions[0]
+        prod.status = status
+        self.ledger.update_event(prod.event)
+        apply_page(
+            f"{self.data}/test_event_update.yaml",
+            event="S000000",
+            ledger=self.ledger,
+            update_unstarted=True,
+        )
+        return self.ledger.get_event("S000000")[0].productions[0]
+
+    def test_update_unstarted_lets_ready_analysis_inherit(self):
+        prod = self._update_unstarted("ready")
+        self.assertEqual(prod.meta["event time"], 909)
+
+    def test_update_unstarted_pins_finished_analysis(self):
+        prod = self._update_unstarted("finished")
+        self.assertEqual(prod.meta["event time"], 900)
+
+
+class DatabaseLedgerProductionSetTests(DatabaseLedgerEventTests):
+    """`asimov production set` must persist on the database ledger."""
+
+    def test_set_status_is_persisted(self):
+        from click.testing import CliRunner
+        from unittest.mock import patch
+        import asimov.cli.production as production_cli
+
+        name = self._analyses()[0]
+        with patch.object(production_cli, "ledger", self.ledger), patch.object(
+            production_cli.config, "get", return_value="sqlalchemy"
+        ):
+            result = CliRunner().invoke(
+                production_cli.production, ["set", "S000000", name, "-s", "stuck"]
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        event = self.ledger.get_event("S000000")[0]
+        status = {p.name: p.status for p in event.productions}[name]
+        self.assertEqual(status, "stuck")

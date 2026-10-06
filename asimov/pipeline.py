@@ -2,6 +2,7 @@
 
 import configparser
 
+import glob
 import os
 import subprocess
 import time
@@ -9,7 +10,7 @@ import time
 import asimov.analysis
 
 from asimov import utils  # NoQA
-from asimov import config, logger, logging, LOGGER_LEVEL  # NoQA
+from asimov import config, logger, logging, LOGGER_LEVEL, set_logger_level  # NoQA
 
 import otter  # NoQA
 from .storage import Store  # NoQA
@@ -79,6 +80,12 @@ class Pipeline:
 
     name = "Asimov Pipeline"
 
+    available_outputs = []
+    """Data products this pipeline can produce (e.g. ``["posterior_samples", "psd"]``)."""
+
+    required_inputs = []
+    """Data products this pipeline needs to run (e.g. ``["psd", "calibration"]``)."""
+
     def __init__(self, production, category=None):
         self.production = production
 
@@ -93,7 +100,7 @@ class Pipeline:
             full_name = f"analysis.{production.event.name}/{production.name}"
 
         self.logger = logger.getChild(full_name)
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
         
         # Initialize scheduler instance (lazy-loaded via property)
         self._scheduler = None
@@ -131,8 +138,76 @@ class Pipeline:
     def before_config(self, dryrun=False):
         """
         Define a hook to run before the config file for the pipeline is generated.
+        
+        This captures the current software environment for reproducibility.
         """
-        pass
+        if not dryrun:
+            self._capture_environment()
+    
+    def _capture_environment(self):
+        """
+        Capture the current software environment and save it to the working directory.
+        
+        This method captures the software environment (conda/pip packages) and saves
+        the information to the analysis working directory for reproducibility.
+        """
+        from .environment import capture_and_save_environment
+        
+        # Get the working directory for this analysis
+        rundir = self.production.rundir
+        
+        if rundir:
+            try:
+                # Capture and save the environment
+                created_files = capture_and_save_environment(rundir)
+                
+                # Store the paths to environment files in the production metadata
+                if 'environment' not in self.production.meta:
+                    self.production.meta['environment'] = {}
+                
+                self.production.meta['environment']['files'] = created_files
+                self.production.meta['environment']['captured_at'] = True
+                
+                self.logger.info(
+                    f"Captured environment for {self.production.name}: {list(created_files.keys())}"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to capture environment for {self.production.name}: {e}"
+                )
+    
+    def _store_environment_files(self):
+        """
+        Store the captured environment files in the results store.
+        
+        This method stores the environment specification files that were captured
+        during the build process into the results store for long-term preservation.
+        """
+        if 'environment' not in self.production.meta:
+            return
+        
+        if 'files' not in self.production.meta['environment']:
+            return
+        
+        env_files = self.production.meta['environment']['files']
+        
+        for file_type, filepath in env_files.items():
+            if os.path.exists(filepath):
+                try:
+                    store = Store(root=config.get("storage", "directory"))
+                    filename = os.path.basename(filepath)
+                    store.add_file(
+                        self.production.event.name, 
+                        self.production.name, 
+                        file=filepath,
+                        new_name=filename
+                    )
+                    self.logger.info(f"Stored environment file: {filename}")
+                except (OSError, IOError) as e:
+                    self.logger.warning(f"Failed to store environment file {filepath}: {e}")
+                except Exception as e:
+                    # Handle case where file might already be in store
+                    self.logger.debug(f"Environment file {filepath} already in store or error: {e}")
 
     def before_build(self, dryrun=False):
         """
@@ -173,8 +248,59 @@ class Pipeline:
         for asset in self.assets:
             repo.add_file(asset[0], asset[1])
 
+    log_patterns = ["*.out", "*.err", "*.log"]
+    """Glob patterns (relative to the run directory) used by the default
+    :meth:`collect_logs` to find log files. Every scheduler this project
+    supports (HTCondor, Slurm, the local process scheduler) writes its
+    stdout/stderr/scheduler log into the run directory using one of these
+    extensions, so this default works without a pipeline needing to know
+    which scheduler actually ran it. Override on a subclass to add
+    pipeline-specific log files.
+    """
+
+    _LOG_TAIL_BYTES = 1_000_000
+
     def collect_logs(self):
-        return {}
+        """
+        Collect log file contents from the run directory.
+
+        Reads every file matching :attr:`log_patterns` in the production's
+        run directory. Files are capped to the last
+        :attr:`_LOG_TAIL_BYTES` bytes so a runaway job can't pull an
+        unbounded amount of data into memory - long-running analyses are
+        the normal case here, not an edge case.
+
+        Returns
+        -------
+        dict
+            Maps each log file's basename to its (possibly tail-truncated)
+            text content.
+        """
+        rundir = self.production.rundir
+        if not rundir or not os.path.isdir(rundir):
+            return {}
+
+        logs = {}
+        for pattern in self.log_patterns:
+            for path in sorted(glob.glob(os.path.join(rundir, pattern))):
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    size = os.path.getsize(path)
+                    with open(path, "rb") as f:
+                        if size > self._LOG_TAIL_BYTES:
+                            f.seek(-self._LOG_TAIL_BYTES, os.SEEK_END)
+                            prefix = (
+                                f"[... truncated, showing last "
+                                f"{self._LOG_TAIL_BYTES} of {size} bytes ...]\n"
+                            )
+                        else:
+                            prefix = ""
+                        content = prefix + f.read().decode("utf-8", errors="replace")
+                except OSError as e:
+                    content = f"[Could not read log file: {e}]"
+                logs[os.path.basename(path)] = content
+        return logs
 
     def store_results(self):
         """
@@ -210,6 +336,9 @@ class Pipeline:
                     self.logger.warning("Failed to store result %s: %s", results, e)
             else:
                 self.logger.debug("Result not found, skipping: %s", results)
+        
+        # Also store environment files if they were captured
+        self._store_environment_files()
 
     def detect_completion_processing(self):
         """
@@ -311,6 +440,44 @@ class Pipeline:
             priors = self.production.priors
             self._prior_interface = PriorInterface(priors)
         return self._prior_interface
+
+    def get_actual_outputs(self, production):
+        """
+        Return the list of data products this specific production will generate.
+
+        By default returns :attr:`available_outputs`.  Override in a subclass
+        to add conditional outputs that depend on the production configuration.
+
+        Parameters
+        ----------
+        production : :class:`asimov.analysis.Analysis`
+            The analysis for which outputs are being queried.
+
+        Returns
+        -------
+        list of str
+            Names of data products produced by this production.
+        """
+        return list(self.available_outputs)
+
+    def get_actual_inputs(self, production):
+        """
+        Return the list of data products required by this specific production.
+
+        By default returns :attr:`required_inputs`.  Override in a subclass
+        to add conditional inputs that depend on the production configuration.
+
+        Parameters
+        ----------
+        production : :class:`asimov.analysis.Analysis`
+            The analysis for which inputs are being queried.
+
+        Returns
+        -------
+        list of str
+            Names of data products required by this production.
+        """
+        return list(self.required_inputs)
 
     def eject_job(self):
         """
@@ -439,6 +606,17 @@ class Pipeline:
 
     def collect_pages(self):
         pass
+
+    def result_pages(self):
+        """
+        Return links to this pipeline's result pages, for the report modal.
+
+        Returns
+        -------
+        list of (str, str)
+            ``(label, url)`` pairs, with urls relative to the report root.
+        """
+        return []
 
     def build(self):
         pass

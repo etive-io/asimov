@@ -132,3 +132,101 @@ class TestHTMLReporting(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestReportGraphClicks(unittest.TestCase):
+    """Mermaid ignores `click` directives unless securityLevel is 'loose'."""
+
+    def setUp(self):
+        import inspect
+        import asimov.cli.report as report
+
+        self.source = inspect.getsource(report)
+
+    def test_click_handlers_are_bound_to_rendered_nodes(self):
+        if "securityLevel: 'loose'" not in self.source:
+            self.assertNotIn("'    click ' + n.id", self.source)
+        self.assertIn("bindNodeClicks(container)", self.source)
+
+
+class TestReportLazyGraphRendering(unittest.TestCase):
+    """
+    Rendering every event's Mermaid graph up front blocks the page for as
+    long as there are events, so graphs are drawn lazily instead.
+    """
+
+    def setUp(self):
+        import inspect
+        import asimov.cli.report as report
+
+        self.source = inspect.getsource(report)
+
+    def test_graphs_are_drawn_when_events_come_into_view(self):
+        self.assertIn("new IntersectionObserver", self.source)
+        self.assertIn("initGraphRendering();", self.source)
+
+    def test_filter_changes_do_not_redraw_every_graph(self):
+        start = self.source.index("function rerenderAllGraphs()")
+        body = self.source[start:self.source.index("}\n", start)]
+        self.assertNotIn("mermaid.render", body)
+        self.assertIn("asimovRenderGeneration++", body)
+
+    def test_queued_graphs_that_left_the_viewport_are_skipped(self):
+        start = self.source.index("async function drainRenderQueue()")
+        body = self.source[start:self.source.index("function scheduleGraphRender", start)]
+        self.assertIn("asimovNearViewport.has(eventName)", body)
+        self.assertLess(
+            body.index("asimovNearViewport.has(eventName)"),
+            body.index("await renderEventGraph"),
+        )
+
+    def test_graphs_are_rendered_one_at_a_time_yielding_between(self):
+        self.assertIn("asimovRenderRunning", self.source)
+        self.assertIn("setTimeout(resolve, 0)", self.source)
+
+
+class TestPipelineResultPages(unittest.TestCase):
+    """Pipelines can supply the result links shown in the analysis modal."""
+
+    def _event_html(self, status, pages):
+        import networkx as nx
+        from asimov.event import Event
+
+        node = Mock()
+        node.name = "generate-psd"
+        node.status = status
+        node.comment = None
+        node.rundir = "/proj/working/GW1/generate-psd"
+        node.meta = {}
+        node.dependencies = []
+        node.review = []
+        node.category = "analyses"
+        node.pipeline = Mock()
+        node.pipeline.name = "BayesWave"
+        node.pipeline.result_pages = Mock(return_value=pages)
+        node.event = Mock(webdir=None)
+
+        graph = nx.DiGraph()
+        graph.add_node(node)
+
+        event = Mock(spec=Event)
+        event.name = "GW1"
+        event.productions = []
+        event.meta = {"gps": 1.0}
+        event.graph = graph
+        return Event.html(event)
+
+    def test_pipeline_result_pages_appear_in_modal_data(self):
+        html = self._event_html(
+            "uploaded", [("Full Megaplot output", "GW1/generate-psd/index.html")]
+        )
+        self.assertIn(
+            'data-result-pages="GW1/generate-psd/index.html|Full Megaplot output"',
+            html,
+        )
+
+    def test_unfinished_analysis_has_no_result_pages(self):
+        html = self._event_html(
+            "running", [("Full Megaplot output", "GW1/generate-psd/index.html")]
+        )
+        self.assertIn('data-result-pages=""', html)

@@ -144,6 +144,7 @@ Users' guide
    :caption: The Ledger
 
    ledger
+   vocabulary
       
    
 .. toctree::
@@ -167,10 +168,13 @@ Advanced topics
    analyses
    blueprints
    priors
+   environment-reproducibility
+   provenance
    build-process
    scheduler-integration
    dag-translation-examples
    monitor-state-machine
+   labeller-plugins
    monitor-api
    configuration
    test-interface
@@ -206,6 +210,15 @@ Tutorials
    tutorials/adding-a-pipeline
    tutorials/remixing-analyses
 
+
+REST API
+--------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: REST API
+
+   rest-api
 
 Python API
 ----------

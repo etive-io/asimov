@@ -80,8 +80,12 @@ class Manifest:
         for e_name, event in self.data["events"].items():
             for p_name, production in event.items():
                 for r_name, resource in production.items():
+                    # Files are stored on disk under their own name (see
+                    # Store.add_file), not renamed to their UUID, so the
+                    # path must be built from `r_name`, not from
+                    # `resource["uuid"]`.
                     data[resource["uuid"]] = os.path.join(
-                        self.root, e_name, p_name, resource["uuid"]
+                        self.root, e_name, p_name, r_name
                     )
         return data
 
@@ -299,7 +303,11 @@ class Store:
 
         self.manifest.update()
 
-        return {"file": name, "hash": self._hash(destination), "uuid": this_uuid.urn}
+        # `.hex`, not `.urn`: the manifest itself records `resource_uuid.hex`
+        # (see Manifest.add_record), so returning `.urn` here made the
+        # returned uuid useless for a subsequent `fetch_uuid()`/`get_hash()`
+        # call - it would never match what's actually stored.
+        return {"file": name, "hash": self._hash(destination), "uuid": this_uuid.hex}
 
     def fetch_file(self, event, production, file, hash=None):
         """

@@ -2,8 +2,10 @@
 Olivaw management commands
 """
 
+from asimov.analysis import subjects_dirname
 import os
 import pathlib
+import warnings
 
 import click
 
@@ -14,6 +16,81 @@ from asimov import LOGGER_LEVEL
 from asimov.event import DescriptionException
 from asimov.pipeline import PipelineException
 from asimov.git import EventRepo
+from asimov.throttle import (
+    SubmissionThrottle,
+    is_transient_submit_error,
+)
+
+def check_dependencies_satisfied(analysis, logger):
+    """
+    Run validate_needs() for an analysis ahead of building its configuration.
+
+    validate_needs() issues a UserWarning for each required data product
+    that no dependency advertises producing; this is surfaced to the CLI
+    user as well as the log, but never blocks the build, since pipelines
+    which don't declare available_outputs/required_inputs (the majority,
+    at least until every pipeline has adopted the new metadata) will
+    always pass trivially, and a bug in a third-party pipeline's metadata
+    should not prevent an otherwise-ready job from being built.
+
+    Args:
+    analysis: the analysis (production or project analysis) to check
+    logger: the logger to record any problems to
+    """
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            analysis.validate_needs()
+        for warning in caught:
+            click.echo(
+                click.style("●", fg="yellow") + f" {warning.message}"
+            )
+            logger.warning(str(warning.message))
+    except Exception as e:
+        logger.warning(f"Could not validate dependencies for {analysis.name}: {e}")
+
+
+def check_psds_available(analysis, logger):
+    """
+    Raise a build-blocking error when this analysis's PSDs can't be
+    trusted, ahead of building its configuration.
+
+    Unlike ``check_dependencies_satisfied``, this *does* raise, because a
+    silently-wrong PSD would produce a run configuration that's quietly
+    using the wrong noise curve, or none at all. The problems themselves
+    are found by
+    :meth:`asimov.analysis.GravitationalWaveTransient._collect_psds` when
+    the analysis is loaded, and recorded on ``analysis._psd_errors``:
+
+    - more than one ``needs:`` dependency provides PSDs of the same format,
+      so which one to use is ambiguous (asimov#153); or
+    - a ``needs:`` dependency which is expected to provide PSDs hasn't
+      produced any yet, for example because it's still running.
+
+    Analyses which have nothing to do with PSDs never record any problems,
+    so they pass this check untouched.
+
+    Args:
+    analysis: the analysis (production) to check
+    logger: the logger to record any problems to
+
+    Raises:
+    DescriptionException: if the analysis's PSDs can't be trusted.
+    """
+    # The same problem can be recorded for both formats (e.g. a pending
+    # dependency provides neither), so report each distinct one once.
+    problems = list(
+        dict.fromkeys((getattr(analysis, "_psd_errors", None) or {}).values())
+    )
+
+    if problems:
+        message = (
+            f"PSDs for analysis '{analysis.name}' could not be resolved: "
+            + "; ".join(problems)
+        )
+        logger.error(message)
+        raise DescriptionException(message, production=analysis.name)
+
 
 def check_priority_method(production):
     """         
@@ -63,106 +140,143 @@ def build(event, dryrun):
     logger = asimov.logger.getChild("cli").getChild("manage.build")
     logger.setLevel(LOGGER_LEVEL)
 
-    for analysis in ledger.project_analyses:
-        # MW disabling hanabi and golum_joint unless explicity re-enabled in submit
-        if "hanabi" in analysis.name or "golum_joint" in analysis.name:
-            if analysis.status in {"ready"}:
-                analysis.status = "unready"
-                ledger.update_analysis_in_project_analysis(analysis)
-            elif analysis.status in {"analysis-ready"}:
-                analysis.status = "ready"
-                ledger.update_analysis_in_project_analysis(analysis)
-
-        if analysis.status in {"ready"}:
-            # Need to ensure a directory exists for these!
-            subj_string = "_".join([f"{subject}" for subject in analysis._subjects])
-            project_analysis_dir = os.path.join(
-                "checkouts", "project-analyses", subj_string
-            )
-            if not os.path.exists(project_analysis_dir):
-                os.makedirs(project_analysis_dir)
-            click.echo(
-                click.style("●", fg="green")
-                + f" Building project analysis {analysis.name}"
-            )
-
-            analysis.pipeline.before_config()
-
-            analysis.make_config(
-                filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
-                dryrun=dryrun,
-            )
-            click.echo(
-                click.style("●", fg="green")
-                + f" Created configuration for {analysis.name}"
-            )
-
-    for event in ledger.get_event(event):
-
-        click.echo(f"● Working on {event.name}")
-        ready_productions = event.get_all_latest()
-        for production in ready_productions:
-            logger.info(f"{event.name}/{production.name}")
-            click.echo(f"\tWorking on production {production.name}")
-            if production.status in {
-                "running",
-                "stuck",
-                "wait",
-                "finished",
-                "uploaded",
-                "cancelled",
-                "stopped",
-            }:
-                if dryrun:
-                    click.echo(
-                        click.style("●", fg="yellow")
-                        + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
-                    )
-                continue  # I think this test might be unused
+    click.echo("Loading events...")
+    events = ledger.get_event(event)
+    click.echo(f"Building {len(events)} event(s)")
+    # Coalesce ledger writes: each one rewrites the whole ledger.
+    with ledger.batch_saves():
+        for analysis in ledger.project_analyses:
             try:
-                ini_loc = production.event.repository.find_prods(
-                    production.name, production.category
-                )[0]
-                if not os.path.exists(ini_loc):
-                    raise KeyError
-            except KeyError:
+                # MW disabling hanabi and golum_joint unless explicity re-enabled in submit
+                if "hanabi" in analysis.name or "golum_joint" in analysis.name:
+                    if analysis.status in {"ready"}:
+                        analysis.status = "unready"
+                        ledger.update_analysis_in_project_analysis(analysis)
+                    elif analysis.status in {"analysis-ready"}:
+                        analysis.status = "ready"
+                        ledger.update_analysis_in_project_analysis(analysis)
+
+                if analysis.status in {"ready"}:
+                    # Need to ensure a directory exists for these!
+                    subj_string = subjects_dirname(analysis._subjects)
+                    project_analysis_dir = os.path.join(
+                        "checkouts", "project-analyses", subj_string
+                    )
+                    if not os.path.exists(project_analysis_dir):
+                        os.makedirs(project_analysis_dir)
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Building project analysis {analysis.name}"
+                    )
+
+                    analysis.pipeline.before_config()
+
+                    check_dependencies_satisfied(analysis, logger)
+                    try:
+                        check_psds_available(analysis, logger)
+                    except DescriptionException as e:
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Not building {analysis.name}: {e.message}"
+                        )
+                        continue
+
+                    analysis.make_config(
+                        filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
+                        dryrun=dryrun,
+                    )
+                    click.echo(
+                        click.style("●", fg="green")
+                        + f" Created configuration for {analysis.name}"
+                    )
+            except Exception as e:
+                logger.exception(e)
+                click.echo(
+                    click.style("●", fg="red")
+                    + f" Failed to build project analysis {analysis.name}: {e}"
+                )
+
+        for event in ledger.get_event(event):
+
+            click.echo(f"● Working on {event.name}")
+            ready_productions = event.get_all_latest()
+            for production in ready_productions:
                 try:
-
-                    # if production.rundir:
-                    #     path = pathlib.Path(production.rundir)
-                    # else:
-                    #     path = pathlib.Path(config.get("general", "rundir_default"))
-
-                    if dryrun:
-                        print(f"Will create {production.name}.ini")
-                    else:
-                        # path.mkdir(parents=True, exist_ok=True)
-                        config_loc = os.path.join(f"{production.name}.ini")
-                        production.pipeline.before_config()
-                        production.make_config(config_loc, dryrun=dryrun)
-                        click.echo(f"Production config {production.name} created.")
+                    logger.info(f"{event.name}/{production.name}")
+                    click.echo(f"\tWorking on production {production.name}")
+                    if production.status in {
+                        "running",
+                        "stuck",
+                        "wait",
+                        "finished",
+                        "uploaded",
+                        "cancelled",
+                        "stopped",
+                    }:
+                        if dryrun:
+                            click.echo(
+                                click.style("●", fg="yellow")
+                                + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
+                            )
+                        continue  # I think this test might be unused
+                    try:
+                        ini_loc = production.event.repository.find_prods(
+                            production.name, production.category
+                        )[0]
+                        if not os.path.exists(ini_loc):
+                            # Only pull if it isn't here: it may exist upstream.
+                            ini_loc = production.event.repository.find_prods(
+                                production.name, production.category, update=True
+                            )[0]
+                        if not os.path.exists(ini_loc):
+                            raise KeyError
+                    except KeyError:
                         try:
-                            event.repository.add_file(
-                                config_loc,
-                                os.path.join(
-                                    f"{production.category}", f"{production.name}.ini"
-                                ),
-                            )
-                            logger.info(
-                                "Configuration committed to event repository.",
-                            )
-                            ledger.update_event(event)
 
-                        except Exception as e:
-                            logger.error(
-                                f"Configuration could not be committed to repository.\n{e}",
-                            )
+                            # if production.rundir:
+                            #     path = pathlib.Path(production.rundir)
+                            # else:
+                            #     path = pathlib.Path(config.get("general", "rundir_default"))
+
+                            check_dependencies_satisfied(production, logger)
+                            check_psds_available(production, logger)
+
+                            if dryrun:
+                                print(f"Will create {production.name}.ini")
+                            else:
+                                # path.mkdir(parents=True, exist_ok=True)
+                                config_loc = os.path.join(f"{production.name}.ini")
+                                production.pipeline.before_config()
+                                production.make_config(config_loc, dryrun=dryrun)
+                                click.echo(f"Production config {production.name} created.")
+                                try:
+                                    event.repository.add_file(
+                                        config_loc,
+                                        os.path.join(
+                                            f"{production.category}", f"{production.name}.ini"
+                                        ),
+                                    )
+                                    logger.info(
+                                        "Configuration committed to event repository.",
+                                    )
+                                    ledger.update_event(event)
+
+                                except Exception as e:
+                                    logger.error(
+                                        f"Configuration could not be committed to repository.\n{e}",
+                                    )
+                                    logger.exception(e)
+                                os.remove(config_loc)
+
+                        except DescriptionException as e:
+                            logger.error("Run configuration failed")
                             logger.exception(e)
-                        os.remove(config_loc)
-
-                except DescriptionException as e:
-                    logger.error("Run configuration failed")
+                except Exception as e:
                     logger.exception(e)
+                    click.echo(
+                        click.style("●", fg="red")
+                        + f" Failed to build {production.name}: {e}"
+                    )
 
 
 @click.option(
@@ -185,21 +299,38 @@ def build(event, dryrun):
     default=False,
     help="Print all commands which will be executed without running them",
 )
+@click.option(
+    "--max-submit",
+    "max_submit",
+    type=int,
+    default=None,
+    help="Submit at most this many analyses in this pass "
+    "(overrides [scheduler] max_submit_per_pass).",
+)
 @manage.command()
-def submit(event, update, dryrun):
+def submit(event, update, dryrun, max_submit):
     """
     Submit the run configuration files for a given event for jobs which are ready to run.
     If no event is specified then all of the events will be processed.
+
+    Submissions are throttled by the [scheduler] max_queued,
+    max_submit_per_pass and submit_interval settings: analyses which don't
+    fit in the budget are left ready and picked up by a later pass.
     """
     asimov.setup_file_logging()
     logger = asimov.logger.getChild("cli").getChild("manage.submit")
     logger.setLevel(LOGGER_LEVEL)
 
+    throttle = SubmissionThrottle.from_config(ledger, max_per_pass=max_submit)
+    if dryrun:
+        throttle.interval = 0
+    submitted_any = False
+
     # check the interest dictionary if needed
     # keep only the highest production number for the analyses
     interest_dict_project_analyses = {}
     for analysis in ledger.project_analyses:
-        subj_string = "_".join([f"{subj}" for subj in analysis._subjects])
+        subj_string = subjects_dirname(analysis._subjects)
         if analysis.pipeline.name not in interest_dict_project_analyses.keys():
             interest_dict_project_analyses[analysis.pipeline.name] = {}
         if subj_string not in interest_dict_project_analyses[analysis.pipeline.name].keys():
@@ -218,7 +349,7 @@ def submit(event, update, dryrun):
     
     for analysis in ledger.project_analyses:
         # see which events are being analyzed
-        subj_string = "_".join([f"{subj}" for subj in analysis._subjects])
+        subj_string = subjects_dirname(analysis._subjects)
         # need to change the logic of analysis set up as to account for
         # dependencies
         to_analyse = True
@@ -253,6 +384,13 @@ def submit(event, update, dryrun):
                     if subj_string in interest_dict_project_analyses[extra_prio_pipeline].keys():
                         extra_prio = interest_dict_project_analyses[extra_prio_pipeline][subj_string]["interest status"]
 
+        # Smart dependencies (``analyses:``): wait until the analyses this one
+        # depends on exist and have finished, rather than building it now and
+        # letting the pipeline mark it "stuck" permanently. It is reported as
+        # "not ready to submit" below and re-checked on the next pass.
+        if to_analyse and not analysis.source_analyses_ready():
+            to_analyse = False
+
         running_and_requiring_priority_check = False
         if analysis.status in {"running"} and analysis.meta['needs']:
             if "needs settings" in analysis.meta.keys():
@@ -276,6 +414,14 @@ def submit(event, update, dryrun):
                 click.echo(
                     click.style("●", fg="yellow")
                     + f"Project analysis {analysis.name} set to analysis-ready will be subitted on next pass"
+                )
+                continue
+
+            if not throttle.can_submit():
+                throttle.defer(analysis.name)
+                click.echo(
+                    click.style("●", fg="yellow")
+                    + f" Deferring project analysis {analysis.name}: submission limit reached"
                 )
                 continue
 
@@ -325,8 +471,11 @@ def submit(event, update, dryrun):
                 )
                 click.echo("Try running `asimov manage build` first.")
             try:
+                throttle.pace()
                 cluster_id = pipe.submit_dag(dryrun=dryrun)
+                throttle.record_submission()
                 if not dryrun:
+                    submitted_any = True
                     analysis.job_id = int(cluster_id)
                     click.echo(
                         click.style("●", fg="green") + f" Submitted {analysis.name}"
@@ -340,23 +489,31 @@ def submit(event, update, dryrun):
                         extra_prio = 20
                         condor.change_job_priority(job_id, extra_prio, use_old=False)
 
-            except PipelineException as e:
-                analysis.status = "stuck"
-                click.echo(
-                    click.style("●", fg="red") + f" Unable to submit {analysis.name}"
-                )
-                logger.exception(e)
-                ledger.update_analysis_in_project_analysis(analysis)
-                ledger.save()
-                logger.error(
-                    f"The pipeline failed to submit the DAG file to the cluster. {e}",
-                )
+            except Exception as e:
+                if is_transient_submit_error(e):
+                    # The scheduler is busy: leave this analysis ready, and
+                    # stop submitting for this pass rather than marking it stuck.
+                    throttle.halt()
+                    throttle.defer(analysis.name)
+                    click.echo(
+                        click.style("●", fg="yellow")
+                        + f" Scheduler busy, deferring {analysis.name}"
+                    )
+                    logger.warning(f"Deferred {analysis.name}: {e}")
+                elif isinstance(e, PipelineException):
+                    analysis.status = "stuck"
+                    click.echo(
+                        click.style("●", fg="red") + f" Unable to submit {analysis.name}"
+                    )
+                    logger.exception(e)
+                    ledger.update_analysis_in_project_analysis(analysis)
+                    ledger.save()
+                    logger.error(
+                        f"The pipeline failed to submit the DAG file to the cluster. {e}",
+                    )
+                else:
+                    raise
             if not dryrun:
-                # Refresh the condor job list (only when using HTCondor)
-                from asimov import config as _cfg
-                if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
-                    job_list = condor.CondorJobList()
-                    job_list.refresh()
                 # Update the ledger
                 ledger.save()
 
@@ -445,7 +602,7 @@ def submit(event, update, dryrun):
                         + f" {production.name} is marked as {production.status.lower()} so no action will be performed"
                     )
                 continue
-            
+
             # For SubjectAnalysis, check if all source analyses are finished
             from asimov.analysis import SubjectAnalysis
             if isinstance(production, SubjectAnalysis):
@@ -456,7 +613,15 @@ def submit(event, update, dryrun):
                             + f" {production.name} is waiting on source analyses to finish"
                         )
                     continue
-            
+
+            if not throttle.can_submit():
+                throttle.defer(f"{event.name}/{production.name}")
+                click.echo(
+                    click.style("●", fg="yellow")
+                    + f" Deferring {event.name}/{production.name}: submission limit reached"
+                )
+                continue
+
             if production.status.lower() == "restart":
                 pipe = production.pipeline
                 try:
@@ -464,15 +629,34 @@ def submit(event, update, dryrun):
                 except PipelineException as e:
                     logger.error("The pipeline failed to clean up after itself.")
                     logger.exception(e)
-                pipe.submit_dag(dryrun=dryrun)
+                try:
+                    throttle.pace()
+                    pipe.submit_dag(dryrun=dryrun)
+                except Exception as e:
+                    if not is_transient_submit_error(e):
+                        raise
+                    # The scheduler is busy: leave the analysis to restart
+                    # on a later pass and stop submitting for this pass.
+                    throttle.halt()
+                    throttle.defer(f"{event.name}/{production.name}")
+                    click.echo(
+                        click.style("●", fg="yellow")
+                        + f" Scheduler busy, deferring {event.name}/{production.name}"
+                    )
+                    logger.warning(f"Deferred {production.name}: {e}")
+                    continue
+                throttle.record_submission()
+                submitted_any = submitted_any or not dryrun
                 click.echo(
                     click.style("●", fg="green")
                     + f" Resubmitted {production.event.name}/{production.name}"
                 )
                 production.status = "running"
+                if not dryrun:
+                    ledger.update_event(event)
             else:
                 pipe = production.pipeline
-                
+
                 dag_built = False
                 try:
                     pipe.build_dag(dryrun=dryrun)
@@ -496,8 +680,11 @@ def submit(event, update, dryrun):
                 if not dag_built:
                     continue
                 try:
+                    throttle.pace()
                     cluster_id = pipe.submit_dag(dryrun=dryrun)
+                    throttle.record_submission()
                     if not dryrun:
+                        submitted_any = True
                         # cluster_id may be a scalar or a sequence; normalize it
                         if isinstance(cluster_id, (list, tuple)):
                             job_id_value = cluster_id[0]
@@ -509,26 +696,44 @@ def submit(event, update, dryrun):
                             + f" Submitted {production.event.name}/{production.name}"
                         )
                         production.status = "running"
+                        # Persist straight away so a crash later in the
+                        # pass can't lose the job id of a submitted DAG.
+                        ledger.update_event(event)
 
-                except PipelineException as e:
-                    production.status = "stuck"
-                    click.echo(
-                        click.style("●", fg="red")
-                        + f" Unable to submit {production.name}"
-                    )
-                    logger.exception(e)
-                    ledger.update_event(event)
-                    logger.error(
-                        f"The pipeline failed to submit the DAG file to the cluster. {e}",
-                    )
-                if not dryrun:
-                    # Refresh the condor job list (only when using HTCondor)
-                    from asimov import config as _cfg
-                    if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
-                        job_list = condor.CondorJobList()
-                        job_list.refresh()
-                    # Update the ledger
-                    ledger.update_event(event)
+                except Exception as e:
+                    if is_transient_submit_error(e):
+                        # The scheduler is busy: leave the analysis ready
+                        # and stop submitting for this pass.
+                        throttle.halt()
+                        throttle.defer(f"{event.name}/{production.name}")
+                        click.echo(
+                            click.style("●", fg="yellow")
+                            + f" Scheduler busy, deferring {event.name}/{production.name}"
+                        )
+                        logger.warning(f"Deferred {production.name}: {e}")
+                    elif isinstance(e, PipelineException):
+                        production.status = "stuck"
+                        click.echo(
+                            click.style("●", fg="red")
+                            + f" Unable to submit {production.name}"
+                        )
+                        logger.exception(e)
+                        ledger.update_event(event)
+                        logger.error(
+                            f"The pipeline failed to submit the DAG file to the cluster. {e}",
+                        )
+                    else:
+                        raise
+
+    if not dryrun and submitted_any:
+        # Refresh the condor job list once per pass (only when using HTCondor),
+        # rather than querying the whole queue after every submission.
+        from asimov import config as _cfg
+        if _cfg.get("scheduler", "type", fallback="htcondor") == "htcondor":
+            condor.CondorJobList(force_refresh=True)
+
+    if throttle.limited or throttle.deferred:
+        click.echo(throttle.summary())
 
 @click.option(
     "--event",

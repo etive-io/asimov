@@ -1,0 +1,15 @@
+# Trimmed from ldas-grid.ligo.caltech.edu's 02-scheduler (2026-09-14):
+# only the accounting-tag defaults and advertising expressions are kept.
+# CIT-host-specific scheduling knobs (DAEMON_LIST additions, dedicated
+# NFS/MPI setup, history log rotation sizing, START=False for this being a
+# submit-only node) are deliberately left out -- this fixture targets
+# submission-policy parity, not this specific site's deployment topology.
+
+# Reasonable default values of the tags for accounting
+LigoSearchUser = "$ENV(USER)"
+LigoSearchTag = "None"
+SUBMIT_EXPRS = $(SUBMIT_EXPRS), LigoSearchUser, LigoSearchTag
+
+# Advertise class add for OSG ProjectName
+ProjectName = "LIGO"
+SUBMIT_EXPRS = $(SUBMIT_EXPRS), ProjectName

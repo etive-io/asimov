@@ -1,8 +1,29 @@
-# Asimov Dependency Management Examples
+# Asimov Examples
 
-This directory contains example blueprint files demonstrating the new flexible dependency management features.
+This directory contains example scripts and blueprint files demonstrating various asimov features.
 
-## Features Demonstrated
+## Labeller Examples
+
+### `labeller_examples.py`
+
+Demonstrates the labeller plugin system for automatically marking analyses as "interesting" during monitoring.
+
+**Run the examples:**
+```bash
+python examples/labeller_examples.py
+```
+
+**What you'll learn:**
+- Creating basic labellers
+- Using pipeline-based labellers
+- Labelling only finished analyses
+- Using conditional logic for labelling
+- Adding custom metadata beyond interest status
+- Using monitor context in labellers
+
+**See also:** `docs/source/labeller-plugins.rst` for complete documentation.
+
+## Dependency Management Examples
 
 ### dependency-examples.yaml
 

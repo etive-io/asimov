@@ -1,3 +1,233 @@
+0.8.0
+=====
+
+This release is intended for use in the IR1 run of the gravitational-wave detectors.
+
+With this release the 0.5 and 0.6 series reach end of life: each receives one final maintenance release (0.5.16 and 0.6.2) and no further updates. Most of the functionality specific to those series was retired or replaced in 0.7.
+
+Bug Fixes
+---------
+
+**Multiple PSDs per event**
+  Analyses of the same event can now reliably use different PSDs, for example to compare
+  parameter estimation results across PSD estimation methods within one project (#153).
+  PSDs are now resolved with a fixed precedence: PSDs set on the analysis itself, then PSDs
+  from a ``needs:`` dependency, then event-level PSDs. An analysis-level ``psds:`` block
+  replaces the event-level one rather than being merged with it per detector, and legacy
+  event-level PSDs keyed by sample rate (``psds: {1024: {H1: ...}}``) are resolved using
+  ``likelihood: sample rate``. ``xml psds`` follow the same rules.
+
+**Deterministic Dependency Order**
+  ``Analysis.dependencies`` is now returned sorted by name. Its order previously depended
+  on Python's string hash randomisation, so it could differ between runs.
+
+**Project-Level Defaults on the Database Ledger**
+  Project-level defaults (``data``, ``priors``, ``quality``, ``likelihood``, ``scheduler`` and
+  ``waveform``) are now applied to events read from a database ledger, as they already were
+  for the YAML ledger. Previously they were stored but never merged, so an event that set only
+  some priors silently lost the rest of the project's priors, for example the spin priors, and
+  the pipeline was given an incomplete prior. Event-level values still take precedence, and the
+  two are merged recursively.
+
+**Project Analyses**
+  ``asimov manage submit`` now waits for a project analysis's ``analyses:`` dependencies
+  to exist and finish before submitting it. Previously it was built immediately, the
+  pipeline refused, and the analysis was marked ``stuck`` permanently (#197).
+  ``asimov review add`` can now review project analyses, with or without ``--other_subjects``,
+  and saves the review to the ledger (#198). Analyses over many subjects no longer fail with
+  ``File name too long`` (#199).
+
+**Re-applying an Existing Analysis on the Database Ledger**
+  ``asimov apply`` of an analysis whose name already exists was refused on the YAML ledger but
+  not on the database ledger (the default), which inserted a second row with the same name and
+  reported success. The duplicate was hidden when the event was loaded, so the new blueprint
+  silently had no effect. Both ledgers now refuse it, for analyses and project analyses
+  (the latter crashed with a database ``IntegrityError``), and updates always go to the oldest
+  row. ``asimov apply --iterate`` and ``--name`` also no longer crash on the database ledger.
+  Ledgers which already contain a duplicate row keep loading the original.
+
+**Analyses After an ``asimov apply --update``**
+  Adding an analysis to an event on the YAML ledger, after the event had been changed with
+  ``asimov apply --update``, changed the reference frequency of the event's *existing*
+  analyses to the new event-level value. An explicit ``waveform`` setting now takes
+  precedence over the deprecated ``likelihood: reference frequency`` (and top-level
+  ``approximant``) it is migrated from.
+
+**Subject Analyses on the Database Ledger**
+  An analysis with an ``analyses:`` filter was reloaded from the database ledger (the default)
+  as an ordinary analysis, so it lost its filter and combined nothing. It is now rebuilt as a
+  ``SubjectAnalysis``, as it is for the YAML ledger.
+
+**Project Analysis Subjects**
+  ``ProjectAnalysis.subjects`` could raise ``AttributeError`` on a second access for events
+  which already had analyses. The subjects are now fetched once and cached.
+
+The fixes and improvements from the 0.7.1 release are listed under 0.7.1 below.
+
+New Features
+------------
+
+**Ledger Migration**
+  ``asimov migrate-ledger --to sqlite`` (or ``--to yamlfile``) converts a project's ledger between the
+  YAML and SQL formats. It never runs automatically. The existing ledger is left in place, the new one is
+  read back and compared with it before the command reports success, and ``--dry-run`` does the whole
+  conversion into a temporary file without creating anything.
+
+**Submission Throttling**
+  ``asimov manage submit`` can now limit how many analyses it submits, since schedulers such as HTCondor
+  only cope with a limited number of queued DAGs. Set ``max_queued`` (the most analyses from the project
+  which may be active at once), ``max_submit_per_pass`` and ``submit_interval`` in the ``[scheduler]``
+  section, or use ``--max-submit``. Analyses which don't fit stay ready for a later pass, and a submission
+  rejected because the scheduler is busy stops the pass instead of marking the analysis as ``stuck``. The HTCondor job list
+  is now refreshed once per pass rather than after every submission. No limit is applied by default.
+
+**Lighter Event Repositories**
+  Event git repositories are now opened only for the duration of each operation, so large projects no
+  longer run out of file handles. A repository is initialised when first used rather than whenever an
+  event is loaded, ``find_prods`` pulls once per repository rather than once per analysis, and the fixed
+  15 second pause after each push has been removed. Set ``event_git = false`` in ``[general]`` to skip
+  creating and updating event repositories entirely.
+
+**Faster HTML Reports for Large Projects**
+  The workflow graphs in the HTML report are now drawn lazily, only for events near the viewport and one
+  at a time, instead of drawing every event's graph when the page loads and again on every filter click.
+  Opening a report, and changing its filters, no longer freezes the page for as long as there are events.
+
+**Updating Pending Analyses with the Event**
+  ``asimov apply --update-unstarted`` updates an event and lets analyses which have not started
+  (``ready`` and waiting states) inherit the new settings, while started or finished analyses keep the
+  settings they ran with. Plain ``--update`` still pins every existing analysis to the old settings.
+
+**SQL Database Ledger**
+  A SQLAlchemy-backed ledger provides ACID transactions and supports SQLite, PostgreSQL and MySQL. It is now
+  the default for new projects, using a local SQLite file; existing projects keep the ledger engine their
+  ``asimov.conf`` specifies. The Python API (``Project``) now honours the configured ledger backend.
+
+**REST API**
+  A REST API with API-key authentication provides create, read, update and delete access to events and
+  analyses, and ``GET /analyses/<event>/<analysis>/logs`` returns an analysis's logs.
+
+**Python API**
+  ``Project`` provides project creation and management from Python, usable as a context manager.
+
+**Schedulers**
+  A ``LocalProcessScheduler`` runs lightweight, short jobs on the local machine without a cluster. Slurm
+  support is extended, and schedulers expose job history (``collect_history``), so CPU and GPU usage is
+  recorded and shown in the report.
+
+**Logs and Telemetry**
+  ``Pipeline.collect_logs()`` now collects an analysis's ``*.out``, ``*.err`` and ``*.log`` files independently of
+  the scheduler, and they are shown in the report's analysis modal. The monitor also emits structured
+  telemetry events (status changes and resource snapshots), always written to ``telemetry.jsonl`` in the
+  run directory, with pluggable external sinks via the ``asimov.hooks.telemetry`` entry point group. A
+  Prometheus Pushgateway sink is included, and ``examples/`` contains a runnable Prometheus/Grafana demo.
+
+**Labeller Plugins**
+  Plugins can attach arbitrary labels to analyses, which can be used as dependencies and are shown as
+  badges in the report. Labellers are discovered through an entry point group and configured in the
+  project's blueprints.
+
+**Environment Capture and Provenance**
+  The software environment (conda or pip) is captured when an analysis is built and stored with its
+  results. ``asimov provenance`` and ``asimov package`` export a W3C PROV-O graph of an analysis, with its
+  configuration, environment, dependencies and outputs, as an RO-Crate. The results store's
+  ``fetch_file`` and ``fetch_uuid`` previously failed for files stored with ``add_file``, and are fixed.
+
+**Ledger Vocabulary**
+  ``asimov/vocabulary.yaml`` defines every standard ledger key, and the ``asimov vocabulary`` command
+  (``list``, ``show``, ``check``, ``export``, ``lint``) checks documents for unknown, aliased or deprecated
+  keys. Plugins add terms through the ``asimov.vocabulary`` entry point group. The new
+  ``likelihood.components`` terms (``signal``, ``glitch``, ``noise.psd``, ``noise.lines``) describe which
+  components an analysis fits, with standard asset names for reconstructions, Bayes factors and skymaps.
+
+**Pipeline Result Pages**
+  ``Pipeline.result_pages()`` lets pipelines, including plugins, provide the result page links shown in
+  the report modal. See the 0.8 pipeline migration guide in :ref:`pipeline-dev`.
+
+**Dependency Validation**
+  ``Analysis.validate_needs()`` checks an analysis's dependencies, including those of subject and project
+  analyses, and ``asimov manage build`` calls it.
+
+**Testing Pipelines and CI**
+  The bundled testing pipelines write ``ledger_dump.json`` into their run directories, and there is a
+  multi-event end-to-end scenario. End-to-end test suites run against HTCondor (including a pool
+  configured with LIGO Data Grid submission policy), Slurm and the local scheduler.
+
+Other Fixes
+-----------
+
++ ``asimov apply`` of an existing event on the database ledger no longer silently overwrites it, and
+  ``--update`` now finds the existing record (#201).
++ ``asimov production set`` and ``create`` now persist on the database ledger, where the change was
+  previously reported but discarded (#202).
++ Blueprints of ``kind: configuration`` were silently discarded by the database ledger.
++ Concurrent saves on the database ledger no longer lose data.
++ Analysis nodes in the HTML report now open the modal (#205), and a backslash in the report's JavaScript
+  regular expression is escaped (#206).
++ Project-analysis directory names which would exceed filename limits are shortened (#207).
++ Slow ``build`` and ``monitor`` runs, and quadratic costs when loading events and writing the report,
+  on large projects were removed (#221, #222).
++ Event repositories are opened lazily, and bilby priors, including ``UniformSourceFrame``, were fixed.
+
+Breaking Changes
+----------------
+
+**Default Ledger**
+  New projects use the SQLite database ledger rather than the YAML ledger. Use
+  ``asimov migrate-ledger`` to convert between them.
+
+**PSD Resolution**
+  An event-level ``psds:`` block no longer overrides the PSDs provided by an analysis's
+  ``needs:`` dependency. ``asimov manage build`` now refuses to build an analysis when more
+  than one ``needs:`` dependency provides PSDs, or when a PSD dependency has not yet
+  produced its PSDs; previously such analyses were built silently with the wrong PSDs, or
+  none.
+
+GitHub Pull Requests
+--------------------
+
++ `github#66 <https://github.com/etive-io/asimov/pull/66>`_: Add restful api
++ `github#87 <https://github.com/etive-io/asimov/pull/87>`_: Add labeller plugin system with arbitrary labels and dependency integration
++ `github#89 <https://github.com/etive-io/asimov/pull/89>`_: Capture and store software environment for analysis reproducibility
++ `github#99 <https://github.com/etive-io/asimov/pull/99>`_: Implement SQLAlchemy database backend for asimov ledger with ACID transactions
++ `github#108 <https://github.com/etive-io/asimov/pull/108>`_: Fix condor history logging and expose CPU/GPU usage in report UI
++ `github#110 <https://github.com/etive-io/asimov/pull/110>`_: Add LocalProcessScheduler for lightweight short-running jobs
++ `github#136 <https://github.com/etive-io/asimov/pull/136>`_: Default to the SQLite ledger backend, fix the object-identity bugs it exposed
++ `github#137 <https://github.com/etive-io/asimov/pull/137>`_: Add scheduler-independent log access for analyses
++ `github#138 <https://github.com/etive-io/asimov/pull/138>`_: Add analysis telemetry: structured events, local sink, pluggable external sinks
++ `github#139 <https://github.com/etive-io/asimov/pull/139>`_: Add a runnable Prometheus/Grafana demo for analysis telemetry
++ `github#140 <https://github.com/etive-io/asimov/pull/140>`_: Add a pipeline migration guide for 0.8 to pipelines-dev.rst
++ `github#141 <https://github.com/etive-io/asimov/pull/141>`_: Fix DatabaseLedger.data: kind: configuration blueprints were silently discarded
++ `github#147 <https://github.com/etive-io/asimov/pull/147>`_: DatabaseLedger config: address review findings + fix concurrent-save data loss
++ `github#158 <https://github.com/etive-io/asimov/pull/158>`_: Add LDG-parity HTCondor E2E test suite
++ `github#168 <https://github.com/etive-io/asimov/pull/168>`_: Fix validate_needs() for ProjectAnalysis/SubjectAnalysis and wire it into build
++ `github#169 <https://github.com/etive-io/asimov/pull/169>`_: Port v0.7.1 fixes and features to v0.8-preview
++ `github#170 <https://github.com/etive-io/asimov/pull/170>`_: Add provenance/RO-Crate export for analyses
++ `github#172 <https://github.com/etive-io/asimov/pull/172>`_: Add tests for API key auth and the provenance/package CLI commands
++ `github#175 <https://github.com/etive-io/asimov/pull/175>`_: Add a machine-readable ledger vocabulary
++ `github#177 <https://github.com/etive-io/asimov/pull/177>`_: Add likelihood.components vocabulary and reconstruction assets
++ `github#188 <https://github.com/etive-io/asimov/pull/188>`_: Fix PSD resolution for multiple PSDs per event
++ `github#190 <https://github.com/etive-io/asimov/pull/190>`_: Bring the 0.5 and 0.6 release-line changelogs into the main line, and credit Disha Hegde
++ `github#201 <https://github.com/etive-io/asimov/pull/201>`_: Fix `asimov apply` for existing events on the database ledger
++ `github#202 <https://github.com/etive-io/asimov/pull/202>`_: Persist `asimov production set/create` on the database ledger
++ `github#205 <https://github.com/etive-io/asimov/pull/205>`_: Fix analysis nodes in the HTML report not opening the modal
++ `github#206 <https://github.com/etive-io/asimov/pull/206>`_: Escape backslash in report JS regex
++ `github#207 <https://github.com/etive-io/asimov/pull/207>`_: Shorten project-analysis directory names that would exceed filename limits
++ `github#209 <https://github.com/etive-io/asimov/pull/209>`_: Let pipelines supply result page links for the report modal
++ `github#210 <https://github.com/etive-io/asimov/pull/210>`_: Fix manage submit and review add for project analyses
++ `github#211 <https://github.com/etive-io/asimov/pull/211>`_: Document Pipeline.result_pages in the 0.8 pipeline migration guide
++ `github#213 <https://github.com/etive-io/asimov/pull/213>`_: Testing pipelines: ledger dumps, multi-event e2e scenario, and output artifacts
++ `github#214 <https://github.com/etive-io/asimov/pull/214>`_: Add apply --update-unstarted so pending analyses inherit event updates
++ `github#215 <https://github.com/etive-io/asimov/pull/215>`_: Apply project-level defaults to events on the database ledger
++ `github#216 <https://github.com/etive-io/asimov/pull/216>`_: Add `asimov migrate-ledger` to convert between YAML and SQL ledgers
++ `github#217 <https://github.com/etive-io/asimov/pull/217>`_: Refuse to re-apply an existing analysis on the database ledger
++ `github#218 <https://github.com/etive-io/asimov/pull/218>`_: Throttle submissions and lighten event git repositories
++ `github#220 <https://github.com/etive-io/asimov/pull/220>`_: Draw report graphs lazily so large reports stay responsive
++ `github#221 <https://github.com/etive-io/asimov/pull/221>`_: Fix slow build/monitor on large projects and keep monitor --chain submitting
++ `github#222 <https://github.com/etive-io/asimov/pull/222>`_: Remove quadratic costs when loading events and writing the report
++ `github#223 <https://github.com/etive-io/asimov/pull/223>`_: Make project-init output assertions robust to stderr warnings
++ `github#225 <https://github.com/etive-io/asimov/pull/225>`_: Bring the 0.8.0 changelog up to date
+
 0.7.1
 =====
 
@@ -278,6 +508,33 @@ GitHub Pull Requests
 + `github#131 <https://github.com/etive-io/asimov/pull/131>`_: Remove built-in bayeswave, lalinference, and pesummary pipelines
 + `github#133 <https://github.com/etive-io/asimov/pull/133>`_: Fix CI: pin sphinx<9 for docs build, update cbcflow test fixture for v3 schema
 
+0.6.2
+=====
+
+This is the final release of the 0.6 series, which is now end of life. It is a bug-fix release, and does not introduce any new backwards-incompatible features.
+
+Most of the functionality specific to the 0.6 series was retired or replaced in 0.7, and 0.6 will receive no further updates. Please upgrade to asimov 0.7 or later.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `#104 <https://github.com/etive-io/asimov/pull/104>`_: Removes the LensingFlow-specific submission-priority logic from ``asimov manage build`` and ``asimov manage submit``, which LensingFlow now handles itself, and restores the 0.6.1 submission behaviour for project analyses (using ``analysis._subjects``). Thanks to Disha Hegde.
++ Fixes a ``SyntaxError`` in ``asimov/cli/review.py`` introduced when merging the 0.5 backports, which prevented the review commands from loading.
++ `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (forward-ported from the 0.5 series).
++ Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
++ Includes backports from the 0.5 series: coinc.xml retrieval, updating events from blueprints, the review CLI, bilby configuration and PESummary fixes, and updated GWOSC configuration.
+
+New contributors
+----------------
+
++ **Disha Hegde** (`@disharh <https://github.com/disharh>`_) made their first contribution in `#104 <https://github.com/etive-io/asimov/pull/104>`_, removing the LensingFlow-specific submission logic and fixing the review CLI. The change is included in this release via `#189 <https://github.com/etive-io/asimov/pull/189>`_.
++ **Justin Janquart** made their first contribution to a release: the correction to ``ProjectAnalysis.dependencies`` from their LensingFlow work (``318ea72``) is included in this release.
+
 0.6.1
 =====
 
@@ -328,10 +585,12 @@ Merges and fixes
 + `ligo!128 <https://git.ligo.org/asimov/asimov/-/merge_requests/128>`_: Updates to the README
 + `ligo!157 <https://git.ligo.org/asimov/asimov/-/merge_requests/157>`_: Fixes to the interface between asimov and lensingflow
 
-0.5.12
+0.5.16
 ======
 
-This is a bug-fix and backport release for the v0.5 maintenance branch.
+This is the final release of the 0.5 series, which is now end of life. It is a maintenance release, and does not introduce any new backwards-incompatible features.
+
+Most of the functionality specific to the 0.5 series was retired or replaced in 0.7, and 0.5 will receive no further updates. Please upgrade to asimov 0.7 or later.
 
 Breaking changes
 ----------------
@@ -341,14 +600,71 @@ This release is not believed to introduce any backwards-incompatible changes.
 Merges
 ------
 
-+ `ligo!179 <https://git.ligo.org/asimov/asimov/-/merge_requests/179>`_: Backport ledger updates and post-monitor hooks from the v0.7 development series.
-+ Update HTCondor test configuration.
-+ Update GWOSC YAML configuration for gravitational wave event analysis.
++ `#113 <https://github.com/etive-io/asimov/issues/113>`_: Pins ``setuptools<81`` to avoid the ``pkg_resources`` deprecation warning (`#114 <https://github.com/etive-io/asimov/pull/114>`_).
++ Removes a stray merge-conflict marker from ``scripts/find_calibration.py``.
+
+0.5.15
+======
+
+This release refactors PSD collection, suppression, and storage in the BayesWave pipeline, and adds support for running BayesWave from within a container.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!183 <https://git.ligo.org/asimov/asimov/-/merge_requests/183>`_: Refactors PSD collection and suppression in the BayesWave pipeline to operate on the raw pipeline output PSDs directly, using ``gwpy.FrequencySeries`` in place of manual ``numpy`` text I/O. Fixes a bug where completion detection and asset collection read PSDs from mismatched locations, and adds handling for the case where a PSD has already been committed to the event repository.
++ `ligo!184 <https://git.ligo.org/asimov/asimov/-/merge_requests/184>`_: Adds support for running the BayesWave pipeline from within a container.
+
+0.5.14
+======
+
+This release adds support for suppressing multiple frequency bands in the BayesWave PSD output, while remaining fully backwards compatible with the existing single-range configuration format.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!182 <https://git.ligo.org/asimov/asimov/-/merge_requests/182>`_: Adds support for specifying multiple PSD suppression notches per interferometer in the BayesWave pipeline. The ``quality.supress`` ledger key now accepts either a single ``{lower, upper}`` mapping (existing format, unchanged) or a list of such mappings for multi-notch suppression. All notches are applied in a single read/write/commit cycle, so the number of git commits is unchanged. Documentation updated for both the pipeline reference and the cookbook.
+
+0.5.13
+======
+
+This is a maintenance release with no functional changes. It reverts an experimental multi-range PSD suppression enhancement that was merged in error; the feature was reinstated properly in 0.5.14.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+0.5.12
+======
+
+This is a bug-fix release, back-porting fixes from v0.7, which does not introduce any new backwards-incompatible features.
+It fixes a bug where the ledger could be written to the wrong location when the working directory changed during a monitor run, ensures that failures in post-monitor hooks are logged rather than silently swallowed, and corrects ``asimov apply --update`` to robustly handle productions stored with null or variably-structured metadata.
+
+Breaking changes
+----------------
+
+This release is not believed to introduce any backwards-incompatible changes.
+
+Merges
+------
+
++ `ligo!179 <https://git.ligo.org/asimov/asimov/-/merge_requests/179>`_: Back-ports fixes from v0.7 to stabilise ledger path handling, improve post-monitor hook error reporting, and fix ``asimov apply --update`` for productions with null or variable metadata structures.
 
 0.5.11
 ======
 
-This is a bug-fix release for the v0.5 maintenance branch.
+This is a bug-fix release which does not introduce any new backwards-incompatible features.
+It fixes several issues with the PESummary post-processing pipeline, improves the robustness of bilby executable discovery, and fixes a crash in the review CLI when adding notes without a status.
 
 Breaking changes
 ----------------
@@ -358,10 +674,10 @@ This release is not believed to introduce any backwards-incompatible changes.
 Merges
 ------
 
-+ `ligo!172 <https://git.ligo.org/asimov/asimov/-/merge_requests/172>`_: PESummary fixes correcting configuration errors in post-processing.
-+ Backport bilby configuration changes from more recent releases.
-+ Fix the ``asimov review`` CLI.
-+ Add security testing to the CI build.
++ `ligo!172 <https://git.ligo.org/asimov/asimov/-/merge_requests/172>`_: Fixes several bugs in the PESummary pipeline: corrects iteration over keyword arguments (was unpacking tuples instead of calling ``.items()``), adds support for user-defined ``environment variables`` in the submit description, adds ``HOME`` to the ``getenv`` list, and adds the missing ``Queue`` statement to the generated submit file.
++ `ligo!167 <https://git.ligo.org/asimov/asimov/-/merge_requests/167>`_: Backports bilby configuration improvements: executable discovery now falls back gracefully from the configured environment path to ``shutil.which("bilby_pipe")`` before raising a clear error; normalises the pipeline ``name`` attribute to lowercase ``"bilby"``.
++ `ligo!170 <https://git.ligo.org/asimov/asimov/-/merge_requests/170>`_: Fixes a crash in ``asimov review add`` when no status is provided, and allows status-free notes to be added to an analysis.
++ `ligo!168 <https://git.ligo.org/asimov/asimov/-/merge_requests/168>`_: Adds SAST, dependency scanning, and secret detection CI templates to the GitLab CI configuration.
 
 0.5.10
 ======
@@ -420,6 +736,7 @@ Merges
 
 + `ligo!140 <https://git.ligo.org/asimov/asimov/-/merge_requests/140>`_: Change CLI outputs to list events in alphanumeric order.
 + `ligo!145 <https://git.ligo.org/asimov/asimov/-/merge_requests/145>`_: Adds an error message if an unavailable pipeline is requested by an analysis.
++ `ligo!148 <https://git.ligo.org/asimov/asimov/-/merge_requests/148>`_: Fixes degraded performance when repeatedly querying the asimov ledger by caching the list of events rather than reconstructing it on every access.
 + `ligo!149 <https://git.ligo.org/asimov/asimov/-/merge_requests/149>`_: Fixes errors with various parts of the analysis review CLI, and improves error and information messages.
 + `ligo!151 <https://git.ligo.org/asimov/asimov/-/merge_requests/151>`_: Adds a confirmation message when a plugin is used to apply a new event to a project.
 + `ligo!152 <https://git.ligo.org/asimov/asimov/-/merge_requests/152>`_: Allows keyword arguments to be specified for summarypages jobs via a blueprint.
@@ -441,7 +758,7 @@ Merges
 + `ligo!133 <https://git.ligo.org/asimov/asimov/-/merge_requests/133>`_: Fix a bug with template discovery for pipeline plugins.
 + `ligo!144 <https://git.ligo.org/asimov/asimov/-/merge_requests/144>`_: Allow the PSD roll-off factor to be specified rather than hardcoded.
 
-
+  
 0.5.6
 =====
 
@@ -456,6 +773,7 @@ Merges
 ------
 
 + `ligo!124 <https://git.ligo.org/asimov/asimov/-/merge_requests/124>`_: Fixes a bug in the disk request for bayeswave_post in bayeswave_pipe.
+
 
 0.5.5
 =====
@@ -472,6 +790,7 @@ Merges
 
 + `ligo!115 <https://git.ligo.org/asimov/asimov/-/merge_requests/121>`_: Fixes a bug with bilby_pipe configurations when frame files are passed
 + `ligo!116 <https://git.ligo.org/asimov/asimov/-/merge_requests/116>`_: Allows configuration of a handful of bilby parameters and updates defaults to align with current bilby_pipe releases.
++ `ligo!118 <https://git.ligo.org/asimov/asimov/-/merge_requests/118>`_: Fixes the lower frequency cut-off (``flow``) not being passed to BayesWave correctly for PSD generation, so that the lowest interferometer minimum frequency is used.
 + `ligo!121 <https://git.ligo.org/asimov/asimov/-/merge_requests/121>`_: Fixes a bug with bilby_pipe when frame files as specified in a frame_dict.
 + `ligo!122 <https://git.ligo.org/asimov/asimov/-/merge_requests/122>`_: Adds a bayeswave_post disk request to the bayeswave config template.
 + `ligo!123 <https://git.ligo.org/asimov/asimov/-/merge_requests/123>`_: Fixes a bug related to filepaths and frame type specifications when bilby is using OSDF data retrieval.
@@ -513,6 +832,7 @@ Merges
 
 + `ligo!105 <https://git.ligo.org/asimov/asimov/-/merge_requests/105>`_: Fixes an issue with accounting tags for the ``asimov start`` command.
 + `ligo!104 <https://git.ligo.org/asimov/asimov/-/merge_requests/104>`_: Restores ability to calculate the precessing SNR in a PESummary post-processing pipeline.
++ `ligo!106 <https://git.ligo.org/asimov/asimov/-/merge_requests/106>`_: Fixes a bug where the accounting group for PESummary jobs was submitted as a tuple rather than a string, which could prevent jobs from being accepted by some clusters.
 
 0.5.2
 =====
@@ -636,7 +956,6 @@ What's next?
 ------------
 
 You can find the most up to date O4 development roadmap `on the project wiki<https://git.ligo.org/asimov/asimov/-/wikis/o4-roadmap>`.
-
 
 0.4.1
 =====

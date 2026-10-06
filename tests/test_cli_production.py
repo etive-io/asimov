@@ -37,7 +37,14 @@ class TestProductionSet(unittest.TestCase):
         os.chdir(f"{self.cwd}/tests/tmp/project")
         runner = CliRunner()
         result = runner.invoke(
-            project.init, ["Test Project", "--root", f"{self.cwd}/tests/tmp/project"]
+            project.init,
+            [
+                "Test Project",
+                "--root",
+                f"{self.cwd}/tests/tmp/project",
+                "--engine",
+                "yamlfile",
+            ],
         )
         assert result.exit_code == 0
         self.ledger = YAMLLedger(".asimov/ledger.yml")

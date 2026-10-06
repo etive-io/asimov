@@ -23,6 +23,7 @@ Listed alphabetically by last name:
 
 - **James Alexander Clark** - Code contributions
 - **Alexandre Goettel** - Code contributions
+- **Disha Hegde** ([@disharh](https://github.com/disharh)) - Code contributions, including LensingFlow submission fixes for 0.6
 - **Ka-Lok Lo (Rico Lo)** - Code contributions
 - **Duncan Macleod** - Code contributions
 - **Richard O'Shaughnessy** - Code contributions

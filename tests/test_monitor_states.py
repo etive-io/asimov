@@ -459,6 +459,101 @@ class TestRunningState(unittest.TestCase):
         self.context.update_ledger.assert_called_once()
 
 
+class TestRunningStateProfilingPath(unittest.TestCase):
+    """Tests for _handle_no_condor_job — the completion + profiling code path."""
+
+    def setUp(self):
+        self.analysis = Mock()
+        self.analysis.name = "test_analysis"
+        self.analysis.status = "running"
+        self.analysis.meta = {}
+        self.analysis.pipeline = Mock()
+        self.analysis.pipeline.detect_completion = Mock(return_value=True)
+        self.analysis.pipeline.after_completion = Mock()
+
+        self.context = Mock(spec=MonitorContext)
+        self.context.analysis = self.analysis
+        self.context.job_id = "12345"
+        self.context.has_condor_job = Mock(return_value=False)
+        self.context.clear_job_id = Mock()
+        self.context.update_ledger = Mock()
+        self.context.refresh_job_list = Mock()
+
+        self.state = RunningState()
+
+    @patch('asimov.monitor_states.click.secho')
+    @patch('asimov.monitor_states.condor')
+    def test_profiling_collected_on_completion(self, mock_condor, mock_secho):
+        """Profiling data is written to analysis.meta when collect_history succeeds."""
+        profiling = {"end": "2024-01-15", "cpus": 4.0, "gpus": 0.0, "runtime": 3600.0}
+        mock_condor.collect_history.return_value = profiling
+
+        result = self.state.handle(self.context)
+
+        self.assertTrue(result)
+        mock_condor.collect_history.assert_called_once_with("12345")
+        self.assertEqual(self.analysis.meta["profiling"], profiling)
+        self.assertEqual(self.analysis.status, "finished")
+        self.analysis.pipeline.after_completion.assert_called_once()
+
+    @patch('asimov.monitor_states.click.secho')
+    @patch('asimov.monitor_states.condor')
+    def test_job_id_always_cleared_on_success(self, mock_condor, mock_secho):
+        """clear_job_id is called even when profiling data is collected successfully."""
+        mock_condor.collect_history.return_value = {"end": "2024-01-15", "cpus": 1.0, "gpus": 0.0, "runtime": 100.0}
+
+        self.state.handle(self.context)
+
+        self.context.clear_job_id.assert_called_once()
+
+    @patch('asimov.monitor_states.click.secho')
+    @patch('asimov.monitor_states.condor')
+    def test_job_id_cleared_on_value_error(self, mock_condor, mock_secho):
+        """clear_job_id is called even when collect_history raises ValueError."""
+        mock_condor.collect_history.side_effect = ValueError("no history")
+
+        result = self.state.handle(self.context)
+
+        self.assertTrue(result)
+        self.context.clear_job_id.assert_called_once()
+        self.assertEqual(self.analysis.status, "finished")
+
+    @patch('asimov.monitor_states.click.secho')
+    @patch('asimov.monitor_states.condor')
+    def test_job_id_cleared_on_unexpected_exception(self, mock_condor, mock_secho):
+        """clear_job_id is called even when collect_history raises an unexpected error."""
+        mock_condor.collect_history.side_effect = RuntimeError("daemon unreachable")
+
+        result = self.state.handle(self.context)
+
+        self.assertTrue(result)
+        self.context.clear_job_id.assert_called_once()
+        self.assertEqual(self.analysis.status, "finished")
+
+    @patch('asimov.monitor_states.click.secho')
+    @patch('asimov.monitor_states.condor')
+    def test_profiling_skipped_when_no_job_id(self, mock_condor, mock_secho):
+        """collect_history is not called when there is no job ID."""
+        self.context.job_id = None
+
+        result = self.state.handle(self.context)
+
+        self.assertTrue(result)
+        mock_condor.collect_history.assert_not_called()
+        self.context.clear_job_id.assert_not_called()
+        self.assertEqual(self.analysis.status, "finished")
+
+    @patch('asimov.monitor_states.click.secho')
+    @patch('asimov.monitor_states.condor')
+    def test_ledger_updated_twice_on_completion(self, mock_condor, mock_secho):
+        """update_ledger is called for the profiling write and then for the status change."""
+        mock_condor.collect_history.return_value = {"end": "2024-01-15", "cpus": 2.0, "gpus": 0.0, "runtime": 200.0}
+
+        self.state.handle(self.context)
+
+        self.assertEqual(self.context.update_ledger.call_count, 2)
+
+
 class TestFinishedState(unittest.TestCase):
     """Test the FinishedState handler."""
     
@@ -560,6 +655,91 @@ class TestStuckState(unittest.TestCase):
         result = self.state.handle(self.context)
         self.assertTrue(result)
         mock_echo.assert_called_once()
+
+
+class TestCollectHistoryDispatch(unittest.TestCase):
+    """Tests for _collect_history_for()'s scheduler dispatch."""
+
+    def test_dispatches_to_job_list_scheduler(self):
+        """When job_list carries a real scheduler, it should be used - not the legacy condor module."""
+        from asimov.monitor_states import _collect_history_for
+
+        scheduler = Mock()
+        scheduler.collect_history = Mock(return_value={"end": "2026-08-20", "cpus": 2.0, "gpus": 0.0, "runtime": 60.0})
+        context = Mock()
+        context.job_list = Mock()
+        context.job_list.scheduler = scheduler
+
+        result = _collect_history_for(context, "12345")
+
+        scheduler.collect_history.assert_called_once_with("12345")
+        self.assertEqual(result["cpus"], 2.0)
+
+    @patch('asimov.monitor_states.condor')
+    def test_falls_back_to_legacy_condor_without_job_list_scheduler(self, mock_condor):
+        """The legacy condor.CondorJobList has no .scheduler attribute - must still work."""
+        from asimov.monitor_states import _collect_history_for
+
+        mock_condor.collect_history.return_value = {"end": "2026-08-20", "cpus": 1.0, "gpus": 0.0, "runtime": 30.0}
+        context = Mock()
+        context.job_list = Mock(spec=[])  # no .scheduler attribute at all
+
+        result = _collect_history_for(context, "12345")
+
+        mock_condor.collect_history.assert_called_once_with("12345")
+        self.assertEqual(result["cpus"], 1.0)
+
+    @patch('asimov.monitor_states.condor')
+    def test_falls_back_when_job_list_missing_entirely(self, mock_condor):
+        """A context without a job_list attribute at all must still fall back cleanly."""
+        from asimov.monitor_states import _collect_history_for
+
+        mock_condor.collect_history.return_value = {"end": "", "cpus": 1.0, "gpus": 0.0, "runtime": 0.0}
+        context = Mock(spec=[])  # no .job_list attribute at all
+
+        _collect_history_for(context, "12345")
+
+        mock_condor.collect_history.assert_called_once_with("12345")
+
+
+class TestRunningStateSlurmProfiling(unittest.TestCase):
+    """Integration-style test: RunningState should collect Slurm profiling via job_list.scheduler."""
+
+    def setUp(self):
+        self.analysis = Mock()
+        self.analysis.name = "slurm_analysis"
+        self.analysis.status = "running"
+        self.analysis.meta = {}
+        self.analysis.pipeline = Mock()
+        self.analysis.pipeline.detect_completion = Mock(return_value=True)
+        self.analysis.pipeline.after_completion = Mock()
+
+        self.slurm_scheduler = Mock()
+        self.slurm_scheduler.collect_history = Mock(
+            return_value={"end": "2026-08-20", "cpus": 4.0, "gpus": 0.0, "runtime": 120.0}
+        )
+
+        self.context = Mock(spec=MonitorContext)
+        self.context.analysis = self.analysis
+        self.context.job_id = "999"
+        self.context.job_list = Mock()
+        self.context.job_list.scheduler = self.slurm_scheduler
+        self.context.has_condor_job = Mock(return_value=False)
+        self.context.clear_job_id = Mock()
+        self.context.update_ledger = Mock()
+        self.context.refresh_job_list = Mock()
+
+        self.state = RunningState()
+
+    @patch('asimov.monitor_states.click.secho')
+    def test_profiling_collected_via_slurm_scheduler(self, mock_secho):
+        """A Slurm-scheduled analysis should get real profiling data, not silently skip it."""
+        result = self.state.handle(self.context)
+
+        self.assertTrue(result)
+        self.slurm_scheduler.collect_history.assert_called_once_with("999")
+        self.assertEqual(self.analysis.meta["profiling"]["cpus"], 4.0)
+        self.assertEqual(self.analysis.status, "finished")
 
 
 if __name__ == '__main__':

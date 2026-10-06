@@ -1,0 +1,5 @@
+# Verbatim from ldas-grid.ligo.caltech.edu's 99-local-universe-cgroup-
+# enforcement (2026-09-14). Relevant here because `asimov monitor start`'s
+# cron job submits itself as `universe = local`.
+# https://git.ligo.org/computing/sccb/-/issues/1943
+LOCAL_UNIVERSE_CGROUP_ENFORCEMENT = True

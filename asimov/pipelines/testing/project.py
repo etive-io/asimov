@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 
 from ...pipeline import Pipeline
+from ._dump import analysis_lines, encompassed_analyses, write_ledger_dump
+from ._util import accounting_submit_lines
 
 
 class ProjectTestPipeline(Pipeline):
@@ -122,6 +124,10 @@ class ProjectTestPipeline(Pipeline):
                     f.write(f"cat > {results_file} << 'EOF'\n")
                     f.write("# Project analysis test pipeline results\n")
                     f.write("# Population/catalog analysis\n")
+                    for i, subject in enumerate(getattr(self.production, "_subjects", [])):
+                        f.write(f"# Subject {i+1}: {subject}\n")
+                    for line in analysis_lines(encompassed_analyses(self.production)):
+                        f.write(line)
                     f.write("population_rate: 10.5\n")
                     f.write("rate_uncertainty: 2.3\n")
                     f.write("selection_effects: 0.85\n")
@@ -142,7 +148,8 @@ class ProjectTestPipeline(Pipeline):
                     f.write("output = test_project_job.out\n")
                     f.write("error = test_project_job.err\n")
                     f.write("log = test_project_job.log\n")
-                    f.write("getenv = True\n")
+                    for line in accounting_submit_lines(self.production):
+                        f.write(line)
                     f.write("queue 1\n")
                 
                 # Create a minimal DAG file (HTCondor)
@@ -163,6 +170,7 @@ class ProjectTestPipeline(Pipeline):
                     f.write(f"\nbash {job_script}\n")
                 os.chmod(sbatch_file, 0o755)
 
+                write_ledger_dump(self.production, combines=True)
                 self.logger.info(f"Built project test DAG in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified, cannot build DAG")
@@ -185,7 +193,7 @@ class ProjectTestPipeline(Pipeline):
         """
         import subprocess
         import re
-        from asimov.scheduler import Slurm
+        from asimov.scheduler import LocalProcessScheduler, Slurm
 
         if not self.production.rundir:
             self.logger.warning("No run directory specified")
@@ -201,7 +209,17 @@ class ProjectTestPipeline(Pipeline):
         original_dir = os.getcwd()
         os.chdir(self.production.rundir)
         try:
-            if isinstance(self.scheduler, Slurm):
+            if isinstance(self.scheduler, LocalProcessScheduler):
+                job_id = self.scheduler.submit({
+                    "executable": "/bin/bash",
+                    "arguments": "test_project_job.sh",
+                    "output": "local_job.out",
+                    "error": "local_job.err",
+                    "name": f"test-project/{self.production.name}",
+                })
+                self.logger.info(f"Local process job submitted: {job_id}")
+                return job_id
+            elif isinstance(self.scheduler, Slurm):
                 job_id = self.scheduler.submit("sbatch_submit.sh")
                 self.logger.info(f"Slurm job submitted: {job_id}")
                 return job_id

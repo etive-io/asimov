@@ -1,0 +1,4 @@
+kind: configuration
+hooks:
+  telemetry:
+    prometheus: {}

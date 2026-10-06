@@ -27,6 +27,7 @@ import os
 import html
 import urllib.parse
 import configparser
+import warnings
 from copy import deepcopy
 import pathlib
 
@@ -36,8 +37,7 @@ from typing import TYPE_CHECKING, Any, Optional, List, cast
 
 from liquid import Liquid
 
-from . import config, logger, LOGGER_LEVEL
-from .pipelines import known_pipelines
+from . import config, logger, LOGGER_LEVEL, set_logger_level
 from .utils import update, diff_dict
 from .storage import Store
 
@@ -67,6 +67,26 @@ review_map = {
     "checked": "info",
 }
 
+
+
+# Longest subject-joined directory name used as-is; beyond this a short,
+# stable name is used instead (a project analysis over e.g. 52 pulsars
+# would otherwise exceed the 255-character filename limit).
+MAX_SUBJECTS_DIRNAME = 100
+
+
+def subjects_dirname(subjects):
+    """Directory name for a project analysis's subjects: their names joined
+    with ``_`` (as before), or, if that is longer than
+    ``MAX_SUBJECTS_DIRNAME``, ``"<n>-subjects-<first 12 hex of its sha1>"`` -
+    stable for the same subjects in the same order."""
+    import hashlib
+
+    joined = "_".join(f"{subject}" for subject in subjects)
+    if len(joined) <= MAX_SUBJECTS_DIRNAME:
+        return joined
+    digest = hashlib.sha1(joined.encode()).hexdigest()[:12]
+    return f"{len(list(subjects))}-subjects-{digest}"
 
 class Analysis:
     """
@@ -103,6 +123,30 @@ class Analysis:
             # Always remove 'review' from meta since we manage it via _reviews
             self.meta.pop("review")
         return self._reviews
+
+    def __eq__(self, other):
+        # Analyses get reconstructed fresh from the ledger on essentially
+        # every read (see Ledger.events/project_analyses); without this,
+        # two independently-constructed objects representing the same
+        # underlying analysis are never equal, which silently breaks any
+        # code comparing results across two separate ledger reads (e.g.
+        # `set(ledger.project_analyses) - {a for a in ledger.project_analyses
+        # if ...}` never actually subtracts anything). Names are only
+        # unique within their parent event, not globally (see
+        # next_available_name), so event identity is part of the key.
+        # ProjectAnalysis has no event/subject, so this naturally reduces
+        # to a name-only comparison for it via the getattr default.
+        if not isinstance(other, Analysis):
+            return NotImplemented
+        return (
+            type(self) is type(other)
+            and self.name == other.name
+            and getattr(self, "event", None) == getattr(other, "event", None)
+        )
+
+    def __hash__(self):
+        event = getattr(self, "event", None)
+        return hash((type(self), event.name if event is not None else None, self.name))
 
     def _process_dependencies(self, needs):
         """
@@ -304,8 +348,12 @@ class Analysis:
                     )
                     matches = set.union(matches, set(filtered_analyses))
             
-            # Exclude self-dependencies
-            for analysis in matches:
+            # Exclude self-dependencies. Iterate the matches in a
+            # deterministic (name-sorted) order rather than the set's own
+            # order, which varies between processes because of hash
+            # randomisation; callers such as ``_collect_psds`` rely on this
+            # order being stable and reproducible.
+            for analysis in sorted(matches, key=lambda a: a.name):
                 if analysis.name != self.name:
                     all_matches.append(analysis.name)
 
@@ -534,6 +582,102 @@ class Analysis:
     def status(self, value):
         self.status_str = value.lower()
 
+    def _dependency_analyses(self):
+        """
+        Resolve this analysis's dependencies into a list of analysis objects.
+
+        Dependencies can be declared through either of two mechanisms used
+        across the ``Analysis`` subclasses:
+
+        - The name-based ``needs`` graph (:attr:`dependencies`), matched
+          against the analyses belonging to the relevant event(s). This is
+          the mechanism used by single-event analyses such as
+          :class:`SimpleAnalysis`, and is also supported by
+          :class:`ProjectAnalysis` (matched across all of its subjects).
+        - The smart dependency spec that :class:`SubjectAnalysis` and
+          :class:`ProjectAnalysis` resolve directly into :attr:`analyses`.
+
+        Both mechanisms are combined so that dependency validation works
+        regardless of which one a given analysis actually uses; classes
+        which use neither (or have no dependencies) simply contribute an
+        empty list.
+
+        Note that :class:`ProjectAnalysis` resolves its ``needs`` names by
+        querying the ledger for each of its subjects as a side effect of
+        reading :attr:`dependencies`, caching the resulting event objects in
+        ``self._subject_obs``. That property caches and reuses those events
+        itself (querying the ledger for the same subjects more than once is
+        not safe - a second, independent reconstruction of an event that
+        already has productions can raise
+        ``AttributeError: 'Event' object has no attribute 'name'`` deep in
+        the reconstruction), so this method doesn't need to re-derive that
+        protection; it just reads ``_subject_obs`` directly.
+
+        This method deliberately does *not* cache its own result: unlike the
+        event objects above, :attr:`analyses` - the smart-dependency list
+        used by :class:`SubjectAnalysis`/:class:`ProjectAnalysis` - is
+        mutated in place by ``resolve_analyses()``, which
+        ``Event.update_graph()`` can call again on the same instance once
+        more productions become available (for example, after the instance
+        was constructed before a sibling production it depends on existed
+        yet). Caching here would freeze whatever :attr:`analyses` looked
+        like at the first call, silently hiding dependencies that are
+        resolved later on the same instance.
+
+        Returns
+        -------
+        list
+            A list of :class:`Analysis` objects this analysis depends on.
+        """
+        dep_names = set(self.dependencies)
+        by_name = []
+        if dep_names:
+            if getattr(self, "event", None) is not None:
+                pool = self.event.analyses
+            elif hasattr(self, "_subject_obs"):
+                pool = [a for event in self._subject_obs for a in event.analyses]
+            else:
+                pool = []
+            by_name = [a for a in pool if a.name in dep_names]
+
+        combined = list(by_name)
+        for analysis in getattr(self, "analyses", None) or []:
+            if analysis not in combined:
+                combined.append(analysis)
+
+        return combined
+
+    def validate_needs(self):
+        """
+        Validate that dependency productions will provide all required inputs.
+
+        Checks each data product declared as required by this analysis's
+        pipeline against the outputs advertised by every resolved
+        dependency (see :meth:`_dependency_analyses`).  Issues a
+        :class:`UserWarning` for each requirement that is not satisfied by
+        any dependency.
+
+        This method is intended to be called at build or submission time
+        so that configuration errors are caught before compute resources
+        are consumed.
+
+        Examples
+        --------
+        >>> analysis.validate_needs()
+        UserWarning: Analysis 'my-analysis' requires 'psd' but no dependency provides it
+        """
+        required = self.pipeline.get_actual_inputs(self)
+        dep_analyses = self._dependency_analyses()
+        for requirement in required:
+            satisfied = any(
+                requirement in dep.pipeline.get_actual_outputs(dep)
+                for dep in dep_analyses
+            )
+            if not satisfied:
+                warnings.warn(
+                    f"Analysis '{self.name}' requires '{requirement}' but no dependency provides it"
+                )
+
     def matches_filter(self, attribute, match, negate=False):
         """
         Checks to see if this analysis matches a given filtering
@@ -549,6 +693,8 @@ class Analysis:
             - pipeline
 
             - name
+            
+            - label (with optional comparison operators, e.g. "interesting>=1")
 
         In addition, any quantity contained in the analysis metadata
         may be used by accessing it in the nested structure of this
@@ -561,7 +707,8 @@ class Analysis:
         attribute : list
            The attribute path to be tested (e.g., ["waveform", "approximant"])
         match : str
-           The string to be matched against the value of the attribute
+           The string to be matched against the value of the attribute.
+           For labels, can include comparison operators: >=, <=, >, <, ==, !=
         negate : bool, optional
            If True, invert the match result (default: False)
 
@@ -575,9 +722,14 @@ class Analysis:
         is_status = False
         is_name = False
         is_pipeline = False
+        is_label = False
         in_meta = False
         
-        if attribute[0] == "review":
+        if attribute[0] == "label":
+            # Handle label-based dependencies
+            # Format: label: interesting>=1
+            is_label = self._matches_label(match)
+        elif attribute[0] == "review":
             is_review = match.lower() == str(self.review.status).lower()
         elif attribute[0] == "status":
             is_status = match.lower() == self.status.lower()
@@ -604,12 +756,84 @@ class Analysis:
             except (KeyError, TypeError, AttributeError):
                 in_meta = False
 
-        result = is_name | in_meta | is_status | is_review | is_pipeline
+        result = is_name | in_meta | is_status | is_review | is_pipeline | is_label
         
         # Apply negation if requested
         if negate:
             return not result
         return result
+    
+    def _matches_label(self, spec):
+        """
+        Check if analysis matches a label specification.
+        
+        Supports comparison operators for numeric labels:
+        - interesting>=1 (label value must be >= 1)
+        - priority>5 (label value must be > 5)
+        - status==complete (label value must equal "complete")
+        - interesting (label must be truthy, any value)
+        
+        Parameters
+        ----------
+        spec : str
+            Label specification with optional comparison operator
+            
+        Returns
+        -------
+        bool
+            True if label matches the specification
+        """
+        import re
+        
+        # Get labels from metadata
+        labels = self.meta.get('labels', {})
+        
+        # Parse the specification for comparison operators
+        # Match patterns like "interesting>=1", "priority>5", "status==complete", "interesting"
+        match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)(>=|<=|>|<|==|!=)?(.*)$', spec.strip())
+        
+        if not match:
+            return False
+        
+        label_name = match.group(1)
+        operator = match.group(2)
+        threshold = match.group(3).strip() if match.group(3) else None
+        
+        # Check if label exists
+        if label_name not in labels:
+            return False
+        
+        label_value = labels[label_name]
+        
+        # If no operator specified, just check if label is truthy
+        if not operator or not threshold:
+            return bool(label_value)
+        
+        # Try to convert to numeric for comparison
+        try:
+            label_num = float(label_value) if not isinstance(label_value, bool) else int(label_value)
+            threshold_num = float(threshold)
+            
+            if operator == '>=':
+                return label_num >= threshold_num
+            elif operator == '<=':
+                return label_num <= threshold_num
+            elif operator == '>':
+                return label_num > threshold_num
+            elif operator == '<':
+                return label_num < threshold_num
+            elif operator == '==':
+                return label_num == threshold_num
+            elif operator == '!=':
+                return label_num != threshold_num
+        except (ValueError, TypeError):
+            # Fall back to string comparison
+            if operator == '==':
+                return str(label_value).lower() == threshold.lower()
+            elif operator == '!=':
+                return str(label_value).lower() != threshold.lower()
+        
+        return False
 
     def results(self, filename=None, handle=False, hash=None):
         store = Store(root=config.get("storage", "results_store"))
@@ -958,7 +1182,7 @@ class SimpleAnalysis(Analysis):
         self.logger = logger.getChild("analysis").getChild(
             f"{self.event.name}/{self.name}"
         )
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
 
         # fh = logging.FileHandler(logfile)
         # formatter = logging.Formatter("%(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
@@ -996,6 +1220,7 @@ class SimpleAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self.pipeline = pipeline.lower()
+        from asimov.pipelines import known_pipelines
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
         needs_value = self.meta.pop("needs", None)
@@ -1050,7 +1275,7 @@ class SubjectAnalysis(Analysis):
         self.category = "subject_analyses"
 
         self.logger = logger.getChild("event").getChild(f"{self.name}")
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
 
         if status:
             self.status_str = status.lower()
@@ -1107,6 +1332,7 @@ class SubjectAnalysis(Analysis):
             self.resolve_analyses()
 
         self.pipeline = pipeline.lower()
+        from asimov.pipelines import known_pipelines
         self.pipeline = known_pipelines[pipeline.lower()](self)
 
         if "comment" in kwargs:
@@ -1370,7 +1596,7 @@ class ProjectAnalysis(Analysis):
         super().__init__()
         self.name = name
         self.logger = logger.getChild("project analyses").getChild(f"{self.name}")
-        self.logger.setLevel(LOGGER_LEVEL)
+        set_logger_level(self.logger, LOGGER_LEVEL)
         self.ledger = ledger
         self.category = "project_analyses"
 
@@ -1389,7 +1615,7 @@ class ProjectAnalysis(Analysis):
         if "working_directory" in kwargs:
             self.work_dir = kwargs["working_directory"]
         else:
-            subj_string = "_".join([f"{subject}" for subject in self._subjects])
+            subj_string = subjects_dirname(self._subjects)
             self.work_dir = os.path.join("working", "project-analyses", subj_string, f"{self.name}")
 
         if not os.path.exists(self.work_dir):
@@ -1411,6 +1637,7 @@ class ProjectAnalysis(Analysis):
         self.pipeline = pipeline  # .lower()
         if isinstance(pipeline, str):
             try:
+                from asimov.pipelines import known_pipelines
                 self.pipeline = known_pipelines[str(pipeline).lower()](self)
             except KeyError:
                 self.logger.warning(f"The pipeline {pipeline} could not be found.")
@@ -1455,8 +1682,20 @@ class ProjectAnalysis(Analysis):
 
     @property
     def subjects(self):
-        """Return a list of subjects for this project analysis."""
-        return [self.ledger.get_event(subject)[0] for subject in self._subjects]
+        """
+        Return a list of subjects for this project analysis.
+
+        Fetching a subject reconstructs a fresh :class:`~asimov.event.Event`
+        from the ledger, and doing that twice for an event which already has
+        analyses can raise ``AttributeError`` deep inside the second
+        reconstruction (see :attr:`dependencies`). They are therefore fetched
+        once and cached in :attr:`_subject_obs`.
+        """
+        if len(self._subject_obs) != len(self._subjects):
+            self._subject_obs = [
+                self.ledger.get_event(subject)[0] for subject in self._subjects
+            ]
+        return self._subject_obs
 
     @property
     def events(self):
@@ -1521,6 +1760,34 @@ class ProjectAnalysis(Analysis):
                         if analysis not in self.analyses:
                             self.analyses.append(analysis)
 
+    def source_analyses_ready(self):
+        """
+        Check whether the analyses this project analysis depends on are finished.
+
+        This is the ``ProjectAnalysis`` counterpart of
+        ``SubjectAnalysis.source_analyses_ready()``. A project analysis with no
+        ``analyses:`` spec has nothing to wait for and is always ready. When a
+        spec is present, the dependencies are re-resolved (they may have been
+        created or approved since this object was built), and an empty match
+        counts as *not* ready, so an analysis applied before its inputs exist
+        is left waiting rather than being submitted and failing.
+
+        Returns
+        -------
+        bool
+            True if there is no ``analyses:`` spec, or if every analysis it
+            resolves to has finished; False otherwise.
+        """
+        if not self._analysis_spec:
+            return True
+
+        self.resolve_analyses()
+        if not self.analyses:
+            return False
+
+        finished_statuses = {"finished", "uploaded", "processing", "complete"}
+        return all(analysis.status in finished_statuses for analysis in self.analyses)
+
     @property
     def is_stale(self):
         """
@@ -1582,7 +1849,15 @@ class ProjectAnalysis(Analysis):
         - Top-level items in needs are OR'd together
         - Nested lists represent AND conditions (all must match)
         - Individual filters can be negated with !
-        
+
+        Resolving the subjects queries the ledger for each of them, which
+        reconstructs a fresh :class:`~asimov.event.Event` every time. Doing
+        that twice for an event that already has productions can raise
+        ``AttributeError`` deep inside the second reconstruction, so once all
+        subjects have been fetched here they're cached in
+        :attr:`_subject_obs` and reused on subsequent accesses of this
+        property, rather than querying the ledger again.
+
         Returns
         -------
         list
@@ -1595,12 +1870,14 @@ class ProjectAnalysis(Analysis):
             matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
             analyses = []
-            for subject in self._subjects:
-                sub = self.ledger.get_event(subject)[0]
-                self._subject_obs.append(sub)
+            if len(self._subject_obs) != len(self._subjects):
+                self._subject_obs = [
+                    self.ledger.get_event(subject)[0] for subject in self._subjects
+                ]
+            for sub in self._subject_obs:
                 for analysis in sub.analyses:
                     analyses.append(analysis)
-            
+
             for requirement in requirements:
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
@@ -1837,6 +2114,40 @@ class GravitationalWaveTransient(SimpleAnalysis):
         """
 
         self.category = config.get("general", "calibration_directory")
+
+        # Capture whether PSDs were set directly on this analysis, before
+        # `SimpleAnalysis.__init__` merges the event's meta into `self.meta`
+        # (`self.meta = update(self.meta, deepcopy(self.subject.meta))`) --
+        # after that merge `"psds" in self.meta` is true for every analysis
+        # of an event with a `psds:` block, whether or not the analysis set
+        # one itself. We keep the raw kwarg value too, rather than reading
+        # it back out of `self.meta`, because `update()` deep-merges nested
+        # dicts: an analysis-level `psds: {H1: a}` merged onto an
+        # event-level `{H1: x, L1: y}` would otherwise become
+        # `{H1: a, L1: y}`, mixing PSD sources across detectors (#153).
+        #
+        # Note: `SimpleAnalysis.to_dict()` diffs the analysis meta against
+        # the event meta and drops anything that matches, so an
+        # analysis-level value that happens to be *identical* to the
+        # event's is not saved separately. After a save/reload of the
+        # ledger such an analysis would read back as "not set on the
+        # analysis" (i.e. falling through to dependency/event resolution
+        # again) even though it once was explicit. In practice this makes
+        # no observable difference, since the value is the same either way,
+        # so this edge case is accepted rather than worked around.
+        self._psds_kwarg = deepcopy(kwargs.get("psds"))
+        self._xml_psds_kwarg = deepcopy(kwargs.get("xml psds"))
+        self._psds_set_on_analysis = "psds" in kwargs
+        self._xml_psds_set_on_analysis = "xml psds" in kwargs
+
+        # Problems found while resolving PSDs (e.g. more than one `needs:`
+        # dependency provides them) are recorded here rather than raised,
+        # since the whole ledger is reconstructed on every load and an
+        # exception here would break commands that have nothing to do with
+        # this analysis. `manage.py`'s build-time check turns these into a
+        # hard failure before a run configuration is generated.
+        self._psd_errors = {}
+
         super().__init__(subject, name, pipeline, **kwargs)
         self._checks()
 
@@ -1913,14 +2224,20 @@ class GravitationalWaveTransient(SimpleAnalysis):
                 "moving to waveform area of ledger"
             )
             approximant = self.meta.pop("approximant")
-            self.meta["waveform"]["approximant"] = approximant
+            # An explicit waveform setting wins over the deprecated key, which
+            # may have been inherited from the event.
+            self.meta["waveform"].setdefault("approximant", approximant)
         if "reference frequency" in self.meta["likelihood"]:
             self.logger.warning(
                 "Found deprecated ref freq information, "
                 "moving to waveform area of ledger"
             )
             ref_freq = self.meta["likelihood"].pop("reference frequency")
-            self.meta["waveform"]["reference frequency"] = ref_freq
+            # An explicit waveform setting wins over the deprecated key. This
+            # matters after ``apply --update``: the event-level value is
+            # inherited by every analysis on each load, and must not overwrite
+            # the value an existing analysis already migrated (and froze).
+            self.meta["waveform"].setdefault("reference frequency", ref_freq)
 
         # Gather the PSDs for the job
         self.psds = self._collect_psds()
@@ -2006,9 +2323,13 @@ class GravitationalWaveTransient(SimpleAnalysis):
         else:
             # We'll need to search the repository for it.
             try:
-                ini_loc = self.subject.repository.find_prods(self.name, self.category)[
-                    0
-                ]
+                repository = self.subject.repository
+                ini_loc = repository.find_prods(self.name, self.category)[0]
+                if not os.path.exists(ini_loc):
+                    # It may only exist upstream: pull and look again.
+                    ini_loc = repository.find_prods(
+                        self.name, self.category, update=True
+                    )[0]
                 if not os.path.exists(ini_loc):
                     raise ValueError("Could not open the ini file.")
             except IndexError:
@@ -2029,52 +2350,213 @@ class GravitationalWaveTransient(SimpleAnalysis):
         """
         return True
 
+    def _normalise_psds(self, psds, keyword):
+        """
+        Normalise a PSD mapping into the detector-keyed form the ledger
+        vocabulary documents (``psds``/``xml psds`` in ``vocabulary.yaml``).
+
+        Some older event blueprints key PSDs by sample rate first, e.g.
+        ``psds: {1024: {H1: ..., L1: ...}}`` (see
+        ``tests/integration/GW190426190642.yaml``), instead of directly by
+        detector. When every key of the mapping looks like a sample rate
+        (an ``int``, or a string of digits) and every value is itself a
+        mapping, this picks out the entry for this analysis's configured
+        ``likelihood: sample rate``, rather than passing the whole,
+        sample-rate-keyed dict on as if it were detector-keyed.
+
+        Parameters
+        ----------
+        psds : dict
+            The raw PSD mapping, as found on the analysis or event.
+        keyword : str
+            ``"psds"`` or ``"xml psds"``, used only for log messages.
+
+        Returns
+        -------
+        dict
+            The detector-keyed PSD mapping, or ``{}`` if ``psds`` was
+            sample-rate-keyed but no entry matched.
+        """
+        if not isinstance(psds, dict) or not psds:
+            return psds or {}
+
+        def _looks_like_rate(key):
+            return isinstance(key, int) or (isinstance(key, str) and key.isdigit())
+
+        if not (
+            all(_looks_like_rate(key) for key in psds)
+            and all(isinstance(value, dict) for value in psds.values())
+        ):
+            # Already detector-keyed.
+            return psds
+
+        sample_rate = self.meta.get("likelihood", {}).get("sample rate")
+        if sample_rate is None:
+            self.logger.warning(
+                f"'{keyword}' for {self.name} looks like it's keyed by sample "
+                "rate, but this analysis has no 'likelihood: sample rate' "
+                "set, so the correct entry can't be picked; ignoring these PSDs."
+            )
+            return {}
+
+        # Try both the int and str forms of the sample rate, since the
+        # blueprint may have written either as the mapping's keys.
+        candidates = [sample_rate, str(sample_rate)]
+        try:
+            candidates.append(int(sample_rate))
+        except (TypeError, ValueError):
+            pass
+
+        for candidate in candidates:
+            if candidate in psds:
+                return deepcopy(psds[candidate])
+
+        self.logger.warning(
+            f"None of the sample-rate-keyed entries in '{keyword}' for "
+            f"{self.name} match its sample rate ({sample_rate}); "
+            "ignoring these PSDs."
+        )
+        return {}
+
     def _collect_psds(self, format="ascii"):
         """
-        Collect the required psds for this production.
-        """
-        psds = {}
-        # If the PSDs are specifically provided in the ledger,
-        # use those.
+        Collect the required PSDs for this production.
 
+        The precedence, highest first, is:
+
+        1. ``psds``/``xml psds`` set on this analysis itself.
+        2. PSDs from a ``needs:`` dependency's ``pipeline.collect_assets()``.
+        3. ``psds``/``xml psds`` set at the event level.
+
+        If a ``needs:`` dependency is expected to provide PSDs (its pipeline
+        declares ``psd``/``psds`` in ``available_outputs``, or its assets
+        include a ``psds``/``xml psds`` key), the event-level block is never
+        used: if the dependency hasn't produced any PSDs yet, that is
+        recorded as a problem instead.
+
+        If more than one dependency provides PSDs of the requested format,
+        this is ambiguous -- silently picking one (as used to happen,
+        because ``self.dependencies`` iterated a set in a non-deterministic
+        order) could give different results between runs. Rather than
+        raising here -- the whole ledger is rebuilt on every load, so an
+        exception in ``__init__`` would break unrelated commands -- the
+        problem is recorded on ``self._psd_errors`` (keyed by format) and
+        ``{}`` is returned;
+        ``asimov.cli.manage.check_psds_available`` turns this into a hard
+        error at build time.
+        """
         if format == "ascii":
             keyword = "psds"
+            set_on_analysis = self._psds_set_on_analysis
+            analysis_value = self._psds_kwarg
         elif format == "xml":
             keyword = "xml psds"
+            set_on_analysis = self._xml_psds_set_on_analysis
+            analysis_value = self._xml_psds_kwarg
         else:
             raise ValueError(f"This PSD format ({format}) is not recognised.")
 
-        if keyword in self.meta:
-            # if self.meta["likelihood"]["sample rate"] in self.meta[keyword]:
-            psds = self.meta[keyword]  # [self.meta["likelihood"]["sample rate"]]
+        # Start from a clean slate for this format: `_collect_psds` is
+        # called more than once during construction.
+        self._psd_errors.pop(keyword, None)
 
-        # First look through the list of the job's dependencies
-        # to see if they're provided by a job there.
-        elif self.dependencies:
-            productions = {}
-            for production in self.event.productions:
-                productions[production.name] = production
-
-            for previous_job in self.dependencies:
-                try:
-                    # Check if the job provides PSDs as an asset and were produced with compatible settings
-                    if keyword in productions[previous_job].pipeline.collect_assets():
-                        if self._check_compatible(productions[previous_job]):
-                            psds = productions[previous_job].pipeline.collect_assets()[
-                                keyword
-                            ]
-                            break
-                        else:
-                            self.logger.info(
-                                f"The PSDs from {previous_job} are not compatible with this job."
-                            )
-                    else:
-                        psds = {}
-                except Exception:
-                    psds = {}
-        # Otherwise return no PSDs
+        if set_on_analysis:
+            # The analysis's own value wins outright, and replaces any
+            # event-level block entirely rather than being merged with it
+            # (see the comment in __init__ about update()'s deep merge).
+            psds = self._normalise_psds(analysis_value, keyword)
         else:
             psds = {}
+            # Dependencies which are expected to supply PSDs, as
+            # (name, assets) pairs, in the (sorted) order of `dependencies`.
+            psd_sources = []
+            if self.dependencies:
+                productions = {}
+                for production in self.event.productions:
+                    productions[production.name] = production
+
+                for previous_job in self.dependencies:
+                    dependency = productions.get(previous_job)
+                    if dependency is None:
+                        continue
+                    try:
+                        assets = dependency.pipeline.collect_assets() or {}
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Could not collect assets from dependency "
+                            f"'{previous_job}' while looking for {keyword}: {e}",
+                            exc_info=True,
+                        )
+                        assets = {}
+                    declared = (
+                        getattr(dependency.pipeline.__class__, "available_outputs", None)
+                        or []
+                    )
+                    if (
+                        "psd" in declared
+                        or "psds" in declared
+                        or "psds" in assets
+                        or "xml psds" in assets
+                    ):
+                        psd_sources.append((previous_job, assets))
+
+            providers = []
+            for name, assets in psd_sources:
+                if assets.get(keyword):
+                    dependency = productions[name]
+                    if self._check_compatible(dependency):
+                        providers.append((name, assets[keyword]))
+                    else:
+                        self.logger.info(
+                            f"The PSDs from {name} are not compatible with this job."
+                        )
+
+            # Dependencies expected to provide PSDs which haven't produced
+            # any yet, in either format (e.g. they're still running).
+            pending = [
+                name
+                for name, assets in psd_sources
+                if not (assets.get("psds") or assets.get("xml psds"))
+            ]
+
+            if len(providers) > 1:
+                candidate_names = ", ".join(name for name, _ in providers)
+                # Logged at debug level: the ledger rebuilds every analysis
+                # on each load, and `check_psds_available` reports this as
+                # an error at build time, which is when it matters.
+                self.logger.debug(
+                    f"Analysis '{self.name}' has more than one 'needs:' "
+                    f"dependency providing {keyword}: {candidate_names}. "
+                    "Refusing to guess which one to use; narrow the "
+                    "'needs:' list, or set the PSDs explicitly on this "
+                    "analysis."
+                )
+                self._psd_errors[keyword] = (
+                    f"ambiguous {keyword}: dependencies {candidate_names} "
+                    "all provide them"
+                )
+            elif len(providers) == 1:
+                psds = providers[0][1]
+            elif pending:
+                # A dependency which should supply this analysis's PSDs
+                # hasn't done so yet. Don't fall back to the event-level
+                # PSDs: that would quietly build the run with a different
+                # noise curve from the one the `needs:` asked for.
+                self._psd_errors[keyword] = (
+                    f"dependency {', '.join(pending)} has not produced "
+                    "any PSDs yet (has it finished running?)"
+                )
+            elif psd_sources:
+                # The PSD dependency has finished but only provides the
+                # other format (e.g. BayesWave without an XML converter
+                # installed). The dependency remains the source of this
+                # analysis's PSDs, so leave this format empty rather than
+                # mixing in the event-level block.
+                pass
+            elif keyword in self.subject.meta:
+                # No dependency supplies PSDs; fall back to the event-level
+                # block.
+                psds = self._normalise_psds(self.subject.meta[keyword], keyword)
 
         for ifo, psd in psds.items():
             self.logger.debug(f"PSD-{ifo}: {psd}")

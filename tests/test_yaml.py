@@ -73,7 +73,9 @@ class EventTests(unittest.TestCase):
     def setUp(self):
         os.makedirs(f"{self.cwd}/tests/tmp/project")
         os.chdir(f"{self.cwd}/tests/tmp/project")
-        make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
+        make_project(
+            name="Test project", root=f"{self.cwd}/tests/tmp/project", engine="yamlfile"
+        )
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
         apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
         apply_page(file=GWTC21_EVENTS["GW150914_095045"], event=None, ledger=self.ledger)
@@ -108,7 +110,9 @@ class ProductionTests(unittest.TestCase):
     def setUp(self):
         os.makedirs(f"{self.cwd}/tests/tmp/project")
         os.chdir(f"{self.cwd}/tests/tmp/project")
-        make_project(name="Test project", root=f"{self.cwd}/tests/tmp/project")
+        make_project(
+            name="Test project", root=f"{self.cwd}/tests/tmp/project", engine="yamlfile"
+        )
         self.ledger = YAMLLedger(f".asimov/ledger.yml")
         apply_page(file=DEFAULTS_PE, event=None, ledger=self.ledger)
         apply_page(file=GWTC21_EVENTS["GW150914_095045"], event=None, ledger=self.ledger)

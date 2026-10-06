@@ -1,0 +1,2 @@
+# Verbatim from ldas-grid.ligo.caltech.edu's 99-memory (2026-09-14).
+JOB_DEFAULT_REQUESTMEMORY = 2048MB

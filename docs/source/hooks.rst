@@ -49,4 +49,44 @@ It is easiest to do this when you're setting-up your project by applying a file 
 		  postmonitor:
 		    - MyMonitorHook
 
-		      
+Telemetry
+---------
+
+Every analysis automatically gets a structured, timestamped event log - status changes and
+resource-usage snapshots are recorded for you, with no configuration required, in a
+``telemetry.jsonl`` file in the analysis's run directory. This local record is also available
+through the REST API at ``GET /api/v1/analyses/<event>/<analysis>/telemetry``.
+
+For larger deployments you can additionally forward the same events to an external
+observability stack (Prometheus, Grafana, Loki, ...) without asimov itself depending on one.
+
+``asimov.hooks.telemetry``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To advertise an external telemetry sink, implement ``asimov.telemetry.TelemetrySink`` - a
+``name`` property and an ``emit(event)`` method that receives an
+``asimov.telemetry.TelemetryEvent`` - and register it under the ``asimov.hooks.telemetry``
+entry point:
+
+.. code-block:: toml
+
+		[project.entry-points."asimov.hooks.telemetry"]
+		my_sink = "my_package.telemetry:MySink"
+
+As with ``postmonitor``, a discovered sink only runs once its name is added to your project's
+``hooks/telemetry`` configuration:
+
+.. code-block:: yaml
+
+		kind: config
+		hooks:
+		  telemetry:
+		    my_sink:
+		      some_config_key: some_value
+
+asimov ships a reference implementation, ``asimov.telemetry.PrometheusPushgatewaySink``
+(entry-point name ``prometheus``), which pushes events to a `Prometheus Pushgateway
+<https://github.com/prometheus/pushgateway>`_ - Grafana can then read from Prometheus as a
+data source without asimov needing any dashboard code of its own. A pipeline can also emit its
+own custom milestones by calling ``asimov.telemetry.emit_event(analysis, "my_milestone",
+**data)`` directly, for example from a ``before_submit``/``after_completion`` hook.

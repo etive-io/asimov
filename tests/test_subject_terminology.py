@@ -107,5 +107,5 @@ class DatabaseLedgerSubjectTests(unittest.TestCase):
         )
 
     def test_get_subject_with_name_returns_matching_subject(self):
-        subject = self.ledger.get_subject("J1909-3744")
+        subject = self.ledger.get_subject("J1909-3744")[0]
         self.assertEqual(subject.name, "J1909-3744")

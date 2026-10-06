@@ -69,6 +69,19 @@ An example of a complete pipeline interface can be seen in the code for ``asimov
 which asimov's own test suite uses in place of a real analysis pipeline.
 
 
+Reading settings from the ledger
+--------------------------------
+
+Your interface should read its settings from the standard ledger keys
+defined in the :doc:`ledger vocabulary <vocabulary>` wherever one exists,
+rather than inventing a pipeline-specific name for the same quantity. For
+example, read PSDs from ``production.psds`` (which is filled in from the
+ledger or from upstream analyses listed in ``needs``), and compute resources
+from ``scheduler: request cpus``. Only settings which have no meaning to any
+other pipeline should live under your pipeline's own key, and these should be
+registered through the ``asimov.vocabulary`` entry point. Check your
+blueprints and templates with ``asimov vocabulary check``.
+
 Pipeline hooks
 --------------
 
@@ -393,3 +406,199 @@ A full example ``bilby`` template is available below:
     pn-amplitude-order=0
     mode-array=None
     frequency-domain-source-model=lal_binary_black_hole
+
+
+Migrating pipelines to asimov 0.8
+----------------------------------
+
+Asimov 0.8 adds several new hooks and default behaviours to ``asimov.pipeline.Pipeline`` and
+the wider plugin ecosystem. Existing pipeline interfaces built against 0.7 will keep working
+unchanged, but the items below are worth checking against your interface.
+
+Automatic environment capture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Pipeline.before_config`` now captures the current software environment (the conda/pip
+package list) by default, via a new ``Pipeline._capture_environment`` method, and records the
+resulting files under ``production.meta['environment']['files']``. ``Pipeline.store_results``
+now also calls a new ``Pipeline._store_environment_files`` method to place these files into
+the results store alongside the analysis' other outputs.
+
+If your pipeline interface overloads ``before_config`` or ``store_results``, make sure it
+calls the base class implementation (``super().before_config(dryrun=dryrun)`` /
+``super().store_results()``) so this capture still happens - otherwise it will be silently
+skipped for your pipeline.
+
+A real default for ``collect_logs``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Previously ``Pipeline.collect_logs`` had no default implementation - it just returned an empty
+dictionary - so log access depended entirely on whether a given pipeline interface chose to
+implement it. It now has a working, scheduler-independent default: it globs a new class
+attribute, ``Pipeline.log_patterns`` (default ``["*.out", "*.err", "*.log"]``), against the
+production's run directory, and returns the (tail-truncated) contents of whatever matches.
+This covers the naming conventions used by every scheduler asimov currently supports
+(HTCondor, Slurm, and the local process scheduler).
+
+If your pipeline's log files already match one of these patterns you don't need to do
+anything - ``collect_logs`` will find them automatically, and they'll be available via the
+report page's log preview. If your pipeline uses different filenames, override the
+``log_patterns`` class attribute rather than reimplementing ``collect_logs`` from scratch,
+unless you need genuinely different logic (for example, reading logs from somewhere other
+than the run directory).
+
+Result page links in the report
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The analysis modal in the HTML report has a "Results" section. Previously its links were
+hard-coded per pipeline inside asimov, so a pipeline interface distributed as a plugin could
+not add any. ``Pipeline.result_pages()`` now lets a pipeline supply its own. It returns a list
+of ``(label, url)`` pairs, with URLs relative to the root of the report, and asimov shows them
+once the analysis is ``finished`` or ``uploaded``:
+
+.. code-block:: python
+
+    def result_pages(self):
+        pages_dir = os.path.join(self.production.event.name, self.production.name)
+        return [("Full output page", f"{pages_dir}/index.html")]
+
+The default returns an empty list. If the method raises, asimov logs a warning and still builds
+the report. The pipeline is responsible for copying the pages it links to into the report
+directory, typically from ``Pipeline.collect_pages``.
+
+New entry point: ``asimov.labellers``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds a labeller plugin system, discovered through a new ``asimov.labellers`` entry
+point group, that lets plugins automatically attach labels (for example, "interesting" or
+"needs review") to analyses during the monitor loop. This isn't specific to any one pipeline,
+but a pipeline package is a reasonable place to ship a labeller specific to that pipeline's own
+outputs - for example, flagging low-SNR or high-mass-ratio results. Registration follows the
+same pattern as ``asimov.pipelines`` above, just under a different entry point group name.
+
+New entry point: ``asimov.hooks.telemetry``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds structured telemetry: every analysis state change and resource snapshot is
+recorded to a local ``telemetry.jsonl`` file in the run directory automatically, with no
+configuration required. Deployments can additionally register external sinks (for example, to
+forward events to Prometheus) through the ``asimov.hooks.telemetry`` entry point group - this
+is mostly a deployment-level concern rather than a pipeline one, but a pipeline interface can
+call ``asimov.telemetry.emit_event`` directly if it wants to record its own custom events
+alongside the built-in ones. See :doc:`hooks` for details on the hooks mechanism in general.
+
+Declaring pipeline inputs and outputs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Asimov 0.8 adds two class-level attributes to ``Pipeline`` - ``available_outputs`` and
+``required_inputs`` - which let a pipeline interface declare, as plain lists of strings, the
+data products it can produce and the ones it needs to run (for example ``["psd"]`` or
+``["psd", "calibration"]``). Both default to an empty list, so existing pipeline interfaces
+need no changes to keep working exactly as before.
+
+.. important::
+
+    Only list products here that are meant to come from *another analysis in the ledger*,
+    reachable via ``needs:`` or the smart ``analyses:`` spec. ``validate_needs()`` (below) has
+    no way to tell "nothing in the ledger produces this" apart from "this comes from outside
+    the dependency graph entirely" (raw frame files from datafind, a PSD baked into the
+    pipeline's own defaults, a calibration envelope pulled from CVMFS, and so on) - it treats
+    every entry in ``required_inputs``/``get_actual_inputs()`` as something one of this
+    analysis's dependencies must advertise. List an externally-sourced input there and every
+    production using that pipeline will warn on every build, forever, because no dependency
+    will ever satisfy it.
+
+Nothing in asimov ever reads ``available_outputs``/``required_inputs`` directly. Every caller,
+including ``Analysis.validate_needs()`` (below), goes through two methods instead:
+
+``Pipeline.get_actual_outputs(production)``
+    Returns the list of data products this specific production will generate. Defaults to
+    ``list(self.available_outputs)``.
+
+``Pipeline.get_actual_inputs(production)``
+    Returns the list of data products this specific production requires. Defaults to
+    ``list(self.required_inputs)``.
+
+**A pipeline's real inputs and outputs are frequently not fixed - they depend on how that
+particular production is configured** (a calibration model being set, ROQ being enabled,
+marginalisation settings, and so on). ``available_outputs``/``required_inputs`` only cover the
+common case where a pipeline's inputs and outputs are the same for every production that uses
+it. As soon as they can vary, override ``get_actual_outputs``/``get_actual_inputs`` in your
+``Pipeline`` subclass and inspect the ``production`` argument (its ``meta``, its pipeline
+config, etc.) to decide what applies for that specific run, for example:
+
+.. code-block:: python
+
+    class Bilby(Pipeline):
+        required_inputs = ["psd"]
+
+        def get_actual_inputs(self, production):
+            inputs = list(self.required_inputs)
+            if production.meta.get("calibration", {}).get("model"):
+                inputs.append("calibration")
+            return inputs
+
+Note that ``frame_files`` deliberately does *not* appear here even though Bilby needs them to
+run: they come from datafind, not from another analysis in the ledger, so declaring them would
+only ever produce warnings ``validate_needs()`` can't do anything useful with (see the note
+above).
+
+The class attributes and the conditional override are not an either/or choice: set
+``required_inputs``/``available_outputs`` to whatever's unconditionally true for the pipeline,
+and override the methods only to add or remove entries that depend on configuration - as in the
+example above, which keeps ``psd`` in ``required_inputs`` and only adds ``calibration``
+conditionally.
+
+Declaring these lets asimov call ``Analysis.validate_needs()`` ahead of building a production's
+configuration, which checks every required input (from ``get_actual_inputs``) against the
+outputs advertised (via ``get_actual_outputs``) by that analysis's resolved dependencies, and
+issues a ``UserWarning`` for anything unsatisfied - catching a misconfigured ``needs:`` chain
+before compute time is wasted on it, rather than after the pipeline fails at runtime.
+
+This is opt-in infrastructure: until a pipeline interface declares its inputs and outputs (via
+either mechanism above), ``validate_needs()`` is a no-op for it.
+
+Resolving a "requires X but no dependency provides it" warning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``asimov manage build`` runs ``validate_needs()`` for every production and project analysis it
+builds a configuration for, and prints (and logs) a line like this for each unsatisfied
+requirement it finds::
+
+    ● Analysis 'Prod1' requires 'psd' but no dependency provides it
+
+This is a warning, not an error: it never stops the build, since it's meant to catch likely
+misconfigurations early rather than gate submission on a feature that isn't universally adopted
+by pipelines yet. To resolve one, check, in order:
+
+1. **Is the dependency missing from ``needs:``?** The production doesn't list (or list
+   correctly - names are case-sensitive) an analysis that's supposed to provide ``psd``. Add or
+   fix the entry in the production's ``needs:``.
+2. **Does the analysis it depends on actually declare that output?** Look at the dependency's
+   pipeline interface - has it set ``available_outputs`` (or overridden ``get_actual_outputs``)
+   to include ``psd``? If the pipeline genuinely produces it but hasn't declared it yet, that's
+   a gap in the pipeline interface to fix, not in your ledger.
+3. **If the output is conditional, is it actually being produced for *this* dependency's
+   configuration?** For example, if ``get_actual_outputs`` only returns ``psd`` when a
+   particular option is set on the upstream production, and that option isn't set, the warning
+   is correct: the dependency you pointed to won't produce ``psd`` under its current
+   configuration. Either change that production's configuration so it does, or point ``needs:``
+   at a different analysis that does.
+4. **Is the requirement itself wrong?** If the downstream pipeline doesn't actually need
+   ``psd`` for this production's configuration, that's a gap in *its* ``get_actual_inputs``
+   override, which should stop listing it as required in that case.
+
+Ledger changes to be aware of
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two changes to the ledger itself are unlikely to require changes to a pipeline interface, but
+are worth knowing about if your interface or its tests interact with the ledger directly
+rather than through the documented ``Pipeline``/``Analysis``/``Event`` API:
+
++ SQLite is now the default ledger backend, rather than the plain YAML file. Code that
+  constructs a ``YAMLLedger`` directly - most commonly test fixtures - needs to pass
+  ``engine="yamlfile"`` explicitly if it relies on the old default.
++ ``Analysis`` now implements ``__eq__``/``__hash__`` (based on the analysis name plus its
+  parent event), since analyses are reconstructed fresh from the ledger on essentially every
+  read. This only matters if your interface or its tests compare or deduplicate ``Analysis``
+  objects across separate ledger reads.

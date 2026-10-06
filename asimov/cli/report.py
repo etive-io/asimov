@@ -16,10 +16,32 @@ except ImportError:
 
 import otter
 import otter.bootstrap as bt
+from otter.html import HTMLElement
 
 from asimov import config, current_ledger
 
 tz = pytz.timezone("Europe/London")
+
+
+class _RawHTML(HTMLElement):
+    """
+    HTML which Otter should write out exactly as given.
+
+    Otter passes plain strings through Python-Markdown (with ``md_in_html``),
+    whose cost grows quadratically with the size of a block of raw HTML:
+    on real event cards 240 events took 0.3s but 960 took 5.4s, so a few
+    thousand events took minutes. Anything which is already HTML is wrapped
+    in this so that it is never parsed as Markdown.
+    """
+
+    tag = None
+
+    def __init__(self, html):
+        super().__init__()
+        self.html = html
+
+    def __repr__(self):
+        return self.html
 
 
 @click.group()
@@ -783,7 +805,7 @@ def html(event, webdir):
     // Mermaid graph state ---------------------------------------------------
 
     if (window.mermaid) {
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'antiscript' });
     }
 
     window.asimovNodeMap = window.asimovNodeMap || {};
@@ -834,7 +856,6 @@ def html(event, webdir):
             var lbl = '"' + n.label + '"';
             var shape = n.isSubject ? ('{{' + lbl + '}}') : ('[' + lbl + ']');
             lines.push('    ' + n.id + shape + ':::' + n.status);
-            lines.push('    click ' + n.id + ' openAnalysisModalFromMermaid');
         });
         visibleEdges.forEach(function(e) {
             lines.push('    ' + e.from + ' --> ' + e.to);
@@ -842,28 +863,127 @@ def html(event, webdir):
         return lines.join('\\n');
     }
 
+    // Rendering a Mermaid graph (with the ELK layout) is expensive, and a
+    // project can have hundreds of events, so graphs are drawn lazily: only
+    // for events near the viewport, one at a time, yielding to the browser
+    // between renders so the page stays responsive.
+    //
+    // `asimovRenderGeneration` changes whenever the filters do. A graph is
+    // current if it was drawn for the present generation, so a filter change
+    // invalidates every graph at once without redrawing the ones off screen.
     var mermaidRenderSeq = 0;
-    async function rerenderAllGraphs() {
-        if (!window.mermaid || !window.asimovGraphs) return;
-        for (var eventName in window.asimovGraphs) {
-            var gd = window.asimovGraphs[eventName];
-            var def = buildMermaidDef(gd, asimovActiveFilters);
-            var renderId = 'asimov-mermaid-' + (mermaidRenderSeq++);
+    var asimovRenderGeneration = 0;
+    var asimovRenderedGeneration = {};   // event name -> generation drawn
+    var asimovRenderQueue = [];
+    var asimovRenderRunning = false;
+    var asimovNearViewport = new Set();  // events whose graph is near the viewport
+    var asimovContainerEvent = {};       // container id -> event name
+
+    function hasVisibleNodes(gd) {
+        return gd.nodes.some(function(n) { return isNodeVisible(n, asimovActiveFilters); });
+    }
+
+    // Returns true if the graph is now current for the generation it started in.
+    async function renderEventGraph(eventName) {
+        var gd = window.asimovGraphs[eventName];
+        var container = gd && document.getElementById(gd.containerId);
+        if (!container) return true;
+        var generation = asimovRenderGeneration;
+        if (!hasVisibleNodes(gd)) {
+            container.innerHTML = '';
+        } else {
             try {
-                var result = await mermaid.render(renderId, def);
-                var container = document.getElementById(gd.containerId);
-                if (container) {
-                    container.innerHTML = result.svg;
-                    if (result.bindFunctions) result.bindFunctions(container);
-                }
+                var def = buildMermaidDef(gd, asimovActiveFilters);
+                var result = await mermaid.render('asimov-mermaid-' + (mermaidRenderSeq++), def);
+                // The filters changed while this was rendering: drop it.
+                if (generation !== asimovRenderGeneration) return false;
+                container.innerHTML = result.svg;
+                bindNodeClicks(container);
             } catch(e) {
                 console.warn('Mermaid render error for ' + eventName + ':', e);
             }
         }
-        checkEventVisibility();
+        asimovRenderedGeneration[eventName] = generation;
+        return true;
     }
 
-    // Called by Mermaid click handlers in the rendered SVG
+    async function drainRenderQueue() {
+        if (asimovRenderRunning) return;
+        asimovRenderRunning = true;
+        try {
+            while (asimovRenderQueue.length > 0) {
+                var eventName = asimovRenderQueue.shift();
+                if (asimovRenderedGeneration[eventName] === asimovRenderGeneration) continue;
+                // Scrolled out of range while queued: it is redrawn if it
+                // comes back into view.
+                if (!asimovNearViewport.has(eventName)) continue;
+                await renderEventGraph(eventName);
+                // Let the browser handle input and paint before the next graph.
+                await new Promise(function(resolve) { setTimeout(resolve, 0); });
+            }
+        } finally {
+            asimovRenderRunning = false;
+        }
+    }
+
+    function scheduleGraphRender(eventName) {
+        if (!window.mermaid) return;
+        if (asimovRenderedGeneration[eventName] === asimovRenderGeneration) return;
+        if (asimovRenderQueue.indexOf(eventName) !== -1) return;
+        asimovRenderQueue.push(eventName);
+        drainRenderQueue();
+    }
+
+    // Draw graphs as their events scroll into view (or are un-hidden by a
+    // filter or the search box).
+    function initGraphRendering() {
+        var names = Object.keys(window.asimovGraphs || {});
+        names.forEach(function(name) {
+            asimovContainerEvent[window.asimovGraphs[name].containerId] = name;
+        });
+        if (!('IntersectionObserver' in window)) {
+            names.forEach(function(name) { asimovNearViewport.add(name); });
+            names.forEach(scheduleGraphRender);
+            return;
+        }
+        var observer = new IntersectionObserver(function(entries) {
+            entries.forEach(function(entry) {
+                var name = asimovContainerEvent[entry.target.id];
+                if (!name) return;
+                if (entry.isIntersecting) {
+                    asimovNearViewport.add(name);
+                    scheduleGraphRender(name);
+                } else {
+                    asimovNearViewport.delete(name);
+                }
+            });
+        }, { rootMargin: '600px 0px' });
+        names.forEach(function(name) {
+            var container = document.getElementById(window.asimovGraphs[name].containerId);
+            if (container) observer.observe(container);
+        });
+    }
+
+    // Called whenever the filters change.
+    function rerenderAllGraphs() {
+        asimovRenderGeneration++;
+        asimovRenderQueue.length = 0;
+        checkEventVisibility();
+        asimovNearViewport.forEach(scheduleGraphRender);
+    }
+
+    // Mermaid only honours `click` directives at securityLevel 'loose', so
+    // attach the handlers to the rendered SVG nodes ourselves.
+    function bindNodeClicks(container) {
+        container.querySelectorAll('g.node').forEach(function(g) {
+            var m = /^flowchart-(.+)-\\d+$/.exec(g.id || '');
+            if (!m || !window.asimovNodeMap[m[1]]) return;
+            g.style.cursor = 'pointer';
+            g.addEventListener('click', function() { openAnalysisModalFromMermaid(m[1]); });
+        });
+    }
+
+    // Opens the analysis modal for a graph node id
     function openAnalysisModalFromMermaid(nodeId) {
         var dataId = window.asimovNodeMap && window.asimovNodeMap[nodeId];
         if (dataId) openAnalysisModal(dataId);
@@ -1150,7 +1270,42 @@ def html(event, webdir):
                 document.getElementById('modal-analysis-dependencies').textContent = 'None';
                 document.getElementById('modal-dependencies-section').style.display = 'block';
             }
-            
+
+            // Handle labels
+            var labelsContainer = document.getElementById('modal-analysis-labels');
+            var labels = {};
+            try {
+                labels = analysisData.dataset.labels ? JSON.parse(analysisData.dataset.labels) : {};
+            } catch (e) {
+                labels = {};
+            }
+            var labelNames = Object.keys(labels);
+            if (labelNames.length > 0) {
+                labelsContainer.innerHTML = '';
+                labelNames.forEach(function(name) {
+                    var value = labels[name];
+                    var badgeClass, text;
+                    if (typeof value === 'boolean') {
+                        badgeClass = value ? 'badge-success' : 'badge-secondary';
+                        text = name;
+                    } else if (typeof value === 'number') {
+                        badgeClass = 'badge-info';
+                        text = name + ': ' + value;
+                    } else {
+                        badgeClass = 'badge-secondary';
+                        text = name + ': ' + value;
+                    }
+                    var span = document.createElement('span');
+                    span.className = 'badge ' + badgeClass;
+                    span.style.marginRight = '0.25rem';
+                    span.textContent = text;
+                    labelsContainer.appendChild(span);
+                });
+                document.getElementById('modal-labels-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-labels-section').style.display = 'none';
+            }
+
             // Handle results pages
             if (analysisData.dataset.resultPages) {
                 var resultPagesStr = analysisData.dataset.resultPages;
@@ -1209,6 +1364,64 @@ def html(event, webdir):
                 plotsSection.style.display = 'none';
             }
 
+            // Handle profiling/resource usage data
+            var runtime = analysisData.dataset.profilingRuntime;
+            var cpus = analysisData.dataset.profilingCpus;
+            var gpus = analysisData.dataset.profilingGpus;
+            var profilingEnd = analysisData.dataset.profilingEnd;
+            function fmtSeconds(s) {
+                s = parseFloat(s);
+                if (isNaN(s)) return '-';
+                var h = Math.floor(s / 3600);
+                var m = Math.floor((s % 3600) / 60);
+                var sec = Math.floor(s % 60);
+                return h + 'h ' + m + 'm ' + sec + 's';
+            }
+            if (runtime || cpus || gpus || profilingEnd) {
+                document.getElementById('modal-profiling-runtime').textContent = runtime ? fmtSeconds(runtime) : '-';
+                if (runtime && cpus) {
+                    document.getElementById('modal-profiling-cpu-time').textContent = fmtSeconds(parseFloat(runtime) * parseFloat(cpus));
+                } else {
+                    document.getElementById('modal-profiling-cpu-time').textContent = '-';
+                }
+                if (runtime && gpus && parseFloat(gpus) > 0) {
+                    document.getElementById('modal-profiling-gpu-time').textContent = fmtSeconds(parseFloat(runtime) * parseFloat(gpus));
+                    document.getElementById('modal-profiling-gpu-row').style.display = '';
+                } else {
+                    document.getElementById('modal-profiling-gpu-row').style.display = 'none';
+                }
+                document.getElementById('modal-profiling-end').textContent = profilingEnd || '-';
+                document.getElementById('modal-profiling-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-profiling-section').style.display = 'none';
+            }
+
+            // Handle log previews
+            var logsContainer = document.getElementById('modal-analysis-logs');
+            var logs = {};
+            try {
+                logs = analysisData.dataset.logs ? JSON.parse(analysisData.dataset.logs) : {};
+            } catch (e) {
+                logs = {};
+            }
+            var logNames = Object.keys(logs);
+            if (logNames.length > 0) {
+                logsContainer.innerHTML = '';
+                logNames.forEach(function(name) {
+                    var heading = document.createElement('p');
+                    heading.style.cssText = 'margin-bottom:0.25rem;font-weight:600;font-size:0.85rem;color:#586069;';
+                    heading.textContent = name;
+                    var pre = document.createElement('pre');
+                    pre.style.cssText = 'max-height:200px;overflow:auto;background:#f6f8fa;padding:0.5rem;border-radius:0.25rem;font-size:0.8rem;white-space:pre-wrap;word-break:break-all;';
+                    pre.textContent = logs[name];
+                    logsContainer.appendChild(heading);
+                    logsContainer.appendChild(pre);
+                });
+                document.getElementById('modal-logs-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-logs-section').style.display = 'none';
+            }
+
             modal.classList.add('show');
             backdrop.classList.add('show');
         }
@@ -1242,8 +1455,9 @@ def html(event, webdir):
             backdrop.addEventListener('click', closeAnalysisModal);
         }
 
-        // Initial Mermaid render (filters already applied by initializeFilters)
-        rerenderAllGraphs();
+        // Draw graphs lazily as their events come into view
+        checkEventVisibility();
+        initGraphRendering();
     };
 
 </script>
@@ -1402,6 +1616,38 @@ def html(event, webdir):
             <h5>Dependencies</h5>
             <p id="modal-analysis-dependencies">-</p>
         </div>
+        <div class="modal-section" id="modal-labels-section" style="display:none;">
+            <h5>Labels</h5>
+            <p id="modal-analysis-labels"></p>
+        </div>
+        <div class="modal-section" id="modal-profiling-section" style="display:none;">
+            <h5>Resource Usage</h5>
+            <table style="width:100%; border-collapse: collapse;">
+                <tbody>
+                    <tr id="modal-profiling-runtime-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">Wall time</td>
+                        <td id="modal-profiling-runtime">-</td>
+                    </tr>
+                    <tr id="modal-profiling-cpu-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">CPU time</td>
+                        <td id="modal-profiling-cpu-time">-</td>
+                    </tr>
+                    <tr id="modal-profiling-gpu-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">GPU time</td>
+                        <td id="modal-profiling-gpu-time">-</td>
+                    </tr>
+                    <tr id="modal-profiling-end-row">
+                        <td style="padding: 2px 8px 2px 0; color: #666;">Completed</td>
+                        <td id="modal-profiling-end">-</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="modal-section" id="modal-logs-section" style="display:none;">
+            <h5>Logs</h5>
+            <p style="font-size:0.8rem;color:#586069;margin-bottom:0.5rem;">Preview only - see the run directory above for complete logs, or fetch them in full via the REST API's <code>/analyses/&lt;event&gt;/&lt;analysis&gt;/logs</code> endpoint.</p>
+            <div id="modal-analysis-logs"></div>
+        </div>
         <div class="modal-section" id="modal-results-section" style="display:none;">
             <h5>Results</h5>
             <div id="modal-results-links"></div>
@@ -1417,7 +1663,7 @@ def html(event, webdir):
     cards += modal_html
     
     with report:
-        report += cards
+        report += _RawHTML(cards)
 
     with report:
         time = f"Report generated at {datetime.now(tz):%Y-%m-%d %H:%M}"

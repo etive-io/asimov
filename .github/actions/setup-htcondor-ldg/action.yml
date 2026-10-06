@@ -1,0 +1,37 @@
+name: 'Setup HTCondor (LDG parity)'
+description: >
+  Start and verify HTCondor, configured to enforce the same submission-time
+  policy as the LIGO Data Grid (security requirements, accounting group
+  validation, request_disk, SUBMIT_ALLOW_GETENV=False), instead of the
+  permissive defaults the generic `setup-htcondor` action uses. See
+  tests/fixtures/ldg-condor-config/README.md for what this pool does and
+  doesn't cover, and where the underlying config came from.
+runs:
+  using: "composite"
+  steps:
+    - name: Configure HTCondor for CI
+      shell: bash
+      run: |
+        # Override the advertised machine memory so jobs with generous default
+        # requests always match the local slot, same as setup-htcondor.
+        cat > /etc/condor/config.d/10-ci-machine.conf << 'CONDOREOF'
+        MEMORY = 32768
+        CONDOREOF
+
+    - name: Install LDG-parity submission policy
+      shell: bash
+      run: |
+        mkdir -p /etc/condor/accounting
+        cp "$GITHUB_WORKSPACE"/tests/fixtures/ldg-condor-config/accounting/* /etc/condor/accounting/
+        cp "$GITHUB_WORKSPACE"/tests/fixtures/ldg-condor-config/config.d/* /etc/condor/config.d/
+
+    - name: Start HTCondor
+      shell: bash
+      run: |
+        condor_master &
+        for i in $(seq 1 30); do
+          condor_status && break || sleep 3
+        done
+        condor_status
+        echo "=== Active LDG-parity submit-time policy ==="
+        condor_config_val SUBMIT_ALLOW_GETENV SEC_DEFAULT_AUTHENTICATION_METHODS JOB_DEFAULT_REQUESTDISK JOB_DEFAULT_REQUESTMEMORY

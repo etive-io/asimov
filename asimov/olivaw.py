@@ -27,9 +27,11 @@ from asimov.cli import (  # NoQA
     monitor,
     production,
     project,
+    provenance,
     report,
     review,
     blueprint,
+    vocabulary,
 )  # NoQA
 
 
@@ -53,7 +55,7 @@ class ProjectAwareGroup(click.Group):
             return super().invoke(ctx)
 
         # Commands that can run outside of a project
-        commands_allowed_outside_project = {"init", "clone"}
+        commands_allowed_outside_project = {"init", "clone", "vocabulary"}
 
         # Add all registered plugin commands (they handle their own project checks if needed)
         commands_allowed_outside_project.update(self._plugin_commands)
@@ -81,6 +83,7 @@ def olivaw(ctx):
 # Project initialisation
 olivaw.add_command(project.init)
 olivaw.add_command(project.clone)
+olivaw.add_command(project.migrate_ledger)
 
 olivaw.add_command(event.event)
 
@@ -98,8 +101,35 @@ olivaw.add_command(event.event)
 olivaw.add_command(production.production)
 # Review commands
 olivaw.add_command(review.review)
+olivaw.add_command(vocabulary.vocabulary)
 olivaw.add_command(application.apply)
+# Provenance / reproducibility commands
+olivaw.add_command(provenance.provenance)
+olivaw.add_command(provenance.package)
 
+
+@click.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=5000, type=int, help="Port to bind to")
+@click.option("--debug", is_flag=True, help="Enable debug mode")
+def serve(host, port, debug):
+    """Start the REST API server."""
+    from asimov.api.app import create_app
+
+    app = create_app()
+    click.echo(f"Starting API server on {host}:{port}")
+    click.echo(f"Health check: http://{host}:{port}/api/v1/health")
+    if not debug:
+        click.echo(
+            "Warning: You are running the Flask development server with debug disabled. "
+            "This server is not suitable for production. Use a production WSGI server "
+            "such as Gunicorn to run this application in production.",
+            err=True,
+        )
+    app.run(host=host, port=port, debug=debug)
+
+
+olivaw.add_command(serve)
 # Auto-discover plugin commands
 
 discovered_commands = entry_points(group="asimov.commands")

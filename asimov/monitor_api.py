@@ -82,6 +82,10 @@ def run_monitor(
     
     logger.info("Running asimov monitor (programmatic API)")
     
+    # Initialize labellers from ledger configuration and entry points
+    from asimov.monitor_helpers import initialize_labellers
+    initialize_labellers(ledger)
+    
     # Initialize results
     results = {
         'project_analyses': 0,

@@ -99,6 +99,8 @@ def create(event, pipeline, family, comment, needs, template, status, approximan
     if config.get("ledger", "engine") == "yamlfile":
         ledger.events[event.name] = event.to_dict()
         ledger.save()
+    else:
+        ledger.update_event(event)
 
 
 @click.option(
@@ -130,6 +132,8 @@ def set(event, production, status):
             if config.get("ledger", "engine") == "yamlfile":
                 ledger.events[event.name] = event.to_dict()
                 ledger.save()
+            else:
+                ledger.update_event(event)
             click.echo(
                 click.style("●", fg="green")
                 + f" {production.name} status updated to {status}"

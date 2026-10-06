@@ -1,0 +1,20 @@
+# Mirrors the security profile used on the LIGO Data Grid (verified against
+# ldas-grid.ligo.caltech.edu, HTCondor 25.13.2, 2026-09-14): the modern
+# `security:recommended` metaknob, which requires authentication + encryption
+# + integrity for everything except READ commands (rather than the older,
+# host-based trust model).
+#
+# See tests/fixtures/ldg-condor-config/README.md for how this was captured.
+
+if version >= 23.10.0
+    use security:recommended
+else
+    use security:recommended_v9_0
+endif
+
+# The production pool advertises FS, IDTOKENS (in that preference order).
+# FS (filesystem) authentication is sufficient for a single-container CI
+# pool where the schedd and startd share a filesystem/UID namespace, and
+# doesn't require standing up a SciTokens/IDTOKENS issuer just for CI.
+SEC_DEFAULT_AUTHENTICATION_METHODS = FS, IDTOKENS
+SEC_CLIENT_AUTHENTICATION_METHODS = FS, IDTOKENS

@@ -1,0 +1,10 @@
+# Verbatim from ldas-grid.ligo.caltech.edu (LDG/CIT), 2026-09-14.
+#
+# Disallow job submission with GETENV=True
+# https://htcondor.readthedocs.io/en/latest/admin-manual/configuration-macros.html#SUBMIT_ALLOW_GETENV
+#
+# Rolled out across the LIGO Data Grid during O4/O5; live on CIT as of this
+# capture. Jobs must list the specific environment variables they need
+# (`getenv = VAR1,VAR2,...`) instead of inheriting everything.
+# https://computing.docs.ligo.org/guide/compsoft/roadmap/LVK/htcondor_getenv_true/
+SUBMIT_ALLOW_GETENV = False

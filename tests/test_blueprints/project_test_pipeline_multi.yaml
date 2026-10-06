@@ -1,0 +1,11 @@
+# A ProjectAnalysis across two events which combines only approved analyses.
+kind: ProjectAnalysis
+name: test-project-approved
+pipeline: projecttestpipeline
+comment: Combines only approved analyses across both events
+status: ready
+subjects:
+  - GW150914_095045
+  - GW151226_033853
+analyses:
+  - "review: approved"
