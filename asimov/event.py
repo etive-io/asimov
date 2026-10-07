@@ -279,6 +279,16 @@ class Event:
             self._name_index = index
         return index[1].get(name)
 
+    def subject_names(self):
+        """
+        The names of every subject of the project, this one included.
+
+        Used to resolve a ``subject:`` filter in ``needs:`` which can match
+        any subject; only the names are read, not the subjects.
+        """
+        names = getattr(self.ledger, "subject_names", None)
+        return sorted(set(names() if names else []) | {self.name})
+
     _siblings = None
 
     #: Subjects which are being loaded to resolve a ``subject/name`` entry of

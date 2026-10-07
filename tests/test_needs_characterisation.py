@@ -262,38 +262,25 @@ class SlashInNameTests(CharacterisationCase):
 
 
 class SubjectKeyTests(CharacterisationCase):
-    """``subject:`` is not a keyword today; it is a lookup in the analysis metadata.
+    """``subject`` was not a keyword; it was a lookup in the analysis metadata.
 
-    A blueprint cannot set it (``subject`` is already an argument when an
-    analysis is built, so the blueprint is refused), so these set it on the
-    objects directly.
+    It is a reserved filter key now (#231, see ``test_subject_filter_needs.py``),
+    so what is left here is what did not change: a blueprint cannot set it, and
+    a dotted path which starts with it is still a metadata lookup.
     """
 
     def setUp(self):
         super().setUp()
         self.apply("EvA", analysis("tagged"), analysis("untagged"))
-        self.apply("EvB", analysis("tagged-b"))
-        self.apply("EvA", analysis("consumer", needs=["'subject: central'"], status="ready"))
+        self.apply("EvA", analysis("consumer", needs=["'subject.group: central'"], status="ready"))
         self.consumer = self.get("EvA", "consumer")
-        for name in ("tagged", "untagged"):
-            self.consumer.event.analysis_by_name(name)
-        self.consumer.event.analysis_by_name("tagged").meta["subject"] = "central"
+        self.consumer.event.analysis_by_name("tagged").meta["subject"] = {"group": "central"}
 
     def test_a_blueprint_cannot_set_it(self):
         with self.assertRaises(TypeError):
             self.apply("EvA", analysis("bad", extra="subject: central\n"))
 
-    def test_it_matches_a_metadata_key_of_that_name(self):
-        self.assertEqual(self.consumer.dependencies, ["tagged"])
-
-    def test_it_does_not_match_the_name_of_the_subject(self):
-        self.consumer.event.analysis_by_name("untagged").meta["subject"] = "other"
-        self.consumer._needs = ["subject: EvA"]
-        self.assertEqual(self.consumer.dependencies, [])
-
-    def test_it_does_not_reach_other_subjects(self):
-        other = YAMLLedger(".asimov/ledger.yml").get_event("EvB")[0].analysis_by_name("tagged-b")
-        other.meta["subject"] = "central"
+    def test_a_dotted_path_starting_with_it_is_still_a_metadata_lookup(self):
         self.assertEqual(self.consumer.dependencies, ["tagged"])
 
 

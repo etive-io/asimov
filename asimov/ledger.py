@@ -352,6 +352,12 @@ class YAMLLedger(Ledger):
             ]
         return self._events_cache
 
+    def subject_names(self):
+        """
+        The names of the subjects of this project, without building them.
+        """
+        return sorted(self.events)
+
     @_in_own_context
     def get_subject(self, subject=None):
         if subject:
@@ -769,6 +775,12 @@ class DatabaseLedger(Ledger):
                 for analysis in self.db.query("project_analysis")
             ]
         return self._project_analyses_cache
+
+    def subject_names(self):
+        """
+        The names of the subjects of this project, without building them.
+        """
+        return sorted(event_dict["name"] for event_dict in self.db.query("event"))
 
     @_in_own_context
     def get_subject(self, subject=None):
