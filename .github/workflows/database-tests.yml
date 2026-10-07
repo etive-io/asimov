@@ -2,9 +2,9 @@ name: Database Backend End-to-End Tests
 
 on:
   push:
-    branches: [ master, v*-release, v*-preview ]
+    branches: [ master, main, v*-release, v*-preview ]
   pull_request:
-    branches: [ master, v*-release, v*-preview ]
+    branches: [ master, main, v*-release, v*-preview ]
 
 jobs:
   database-e2e:
