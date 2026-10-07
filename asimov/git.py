@@ -9,6 +9,7 @@ import git
 
 from asimov import config, logger
 from asimov.context import resolve_path
+from asimov.preview import is_dry_run
 
 
 class AsimovFileNotFound(FileNotFoundError):
@@ -238,7 +239,8 @@ class EventRepo:
         location : str
            The location of the directory to be used.
         """
-        os.makedirs(resolve_path(location), exist_ok=True)
+        if not is_dry_run():
+            os.makedirs(resolve_path(location), exist_ok=True)
         # The git init and initial commit are deferred until the repository
         # is first used, see _ensure_initialised().
         return cls(directory=location, url=location, pending_init=True)
@@ -267,7 +269,8 @@ class EventRepo:
             tmp = config.get("general", "git_default")
             directory = f"{tmp}/{name}"
 
-            if os.path.exists(resolve_path(directory)):
+            if os.path.exists(resolve_path(directory)) or is_dry_run():
+                # A dry run must not clone, or create anything on disk.
                 return cls(directory, url, update=update)
 
             pathlib.Path(resolve_path(directory)).mkdir(parents=True, exist_ok=True)

@@ -67,6 +67,12 @@ of asimov, not of the storage. Where the log must resist someone with access to 
 database, restrict that access (for example, grant the service ``INSERT`` and ``SELECT``
 on ``audit_log`` and not ``UPDATE`` or ``DELETE``).
 
+Previewing
+----------
+
+``asimov apply --dry-run`` shows the records which applying a blueprint would add, without
+adding them (see :doc:`blueprints`).
+
 Telemetry sinks
 ---------------
 
@@ -97,3 +103,10 @@ API reference
 .. autofunction:: asimov.audit.filter_records
 
 .. autofunction:: asimov.audit.prov_document
+
+.. autoclass:: asimov.preview.ApplyPlan
+   :members:
+
+.. autoclass:: asimov.preview.PlannedChange
+
+.. autofunction:: asimov.preview.changed_paths

@@ -3,6 +3,7 @@ Tools for adding data from JSON and YAML files.
 Inspired by the kubectl apply approach from kubernetes.
 """
 
+import json
 import os
 import re
 import sys
@@ -17,6 +18,7 @@ import yaml
 from asimov import LOGGER_LEVEL, logger
 from asimov.context import current_context
 from asimov.audit import PROJECT, append_audit, new_record
+from asimov.preview import changed_paths, current_plan, is_dry_run, preview
 from asimov.principal import current_principal
 import asimov.event
 from asimov.analysis import ProjectAnalysis
@@ -41,16 +43,61 @@ logger.setLevel(LOGGER_LEVEL)
 REQUESTED_BY = "requested by"
 
 
-def _audited(ledger, kind, target, content, outcome="added"):
+def _audited(ledger, kind, target, content, outcome="added", diff=None):
     """
     Record that a document was applied.
 
     Call it inside ``ledger.transaction()``, in the same block as the change,
     so the record and the change are stored together or not at all.
+
+    In a dry run nothing is recorded: the change which would have been made,
+    and the audit record which would have been written for it, go into the
+    plan instead.
     """
-    append_audit(
-        ledger, new_record("apply", kind, target, content=content, outcome=outcome)
-    )
+    record = new_record("apply", kind, target, content=content, outcome=outcome)
+    if is_dry_run():
+        current_plan().add_change(record, diff)
+        return
+    append_audit(ledger, record)
+
+
+# The colours messages are given, which say what they are about.
+_RED = "\x1b[31m"
+_YELLOW = "\x1b[33m"
+
+
+def _say(message):
+    """
+    Tell the user something about what is being applied.
+
+    In a dry run nothing is said: a document which would be refused, or left
+    out of a bundle, is noted in the plan (messages in red and yellow, as
+    ``click.style`` makes them), and the rest, which says what was done,
+    would be untrue.
+    """
+    if not is_dry_run():
+        click.echo(message)
+        return
+    if _RED in message:
+        current_plan().refuse(click.unstyle(message).lstrip("● ").strip(), "refused")
+    elif _YELLOW in message:
+        current_plan().refuse(click.unstyle(message).lstrip("● ").strip(), "skipped")
+
+
+def _event_snapshot(ledger, name):
+    """What is stored for an event, less what is not event-level, for comparing."""
+    if getattr(ledger, "db", None) is None:
+        data = deepcopy(ledger.events[name])
+    else:
+        data = deepcopy(ledger.get_event(name)[0].meta)
+    for key in ("name", "productions", "working directory", "repository", "ledger"):
+        data.pop(key, None)
+    return data
+
+
+def _event_diff(before, ledger, name):
+    """What changed for an event, in a dry run (``before`` is ``None`` otherwise)."""
+    return None if before is None else changed_paths(before, _event_snapshot(ledger, name))
 
 
 def _requested_by():
@@ -202,12 +249,52 @@ def _update_event_in_database_ledger(ledger, event_obj, update_unstarted=False):
     ledger.save()
 
 
-def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False):
+def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False, dry_run=False):
+    """
+    Apply the documents in a blueprint to the project.
+
+    Parameters
+    ----------
+    file : str
+        The blueprint: a path, or a URL.
+    event : str, optional
+        The event which analyses in the blueprint should be applied to.
+    ledger : Ledger, optional
+        The ledger to apply to. Defaults to the active project's.
+    update_page : bool
+        Update what already exists rather than add new records.
+    name, iterate, update_unstarted
+        See ``asimov apply --help``.
+    dry_run : bool
+        Don't apply anything: work out what would be applied, and return it.
+
+    Returns
+    -------
+    asimov.preview.ApplyPlan or None
+        With ``dry_run``, the changes which would be made, in order, and what
+        would be refused, each change in the form of the audit record which
+        applying it would add. Nothing is written to the ledger, to the audit
+        log, to disk (no directories are made and nothing is cloned), or sent
+        to telemetry sinks. Otherwise ``None``.
+    """
     if update_unstarted:
         update_page = True
     # Get ledger if not provided
     if ledger is None:
         ledger = get_ledger()
+
+    if dry_run:
+        with preview(ledger) as plan:
+            apply_page(
+                file,
+                event=event,
+                ledger=ledger,
+                update_page=update_page,
+                name=name,
+                iterate=iterate,
+                update_unstarted=update_unstarted,
+            )
+        return plan
 
     if file.startswith("http://") or file.startswith("https://"):
         r = requests.get(file)
@@ -255,16 +342,25 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 event_exists = len(database.query("event", "name", event_obj.name)) > 0
 
             if event_exists and update_page is True and database is not None:
+                before = _event_snapshot(ledger, event_obj.name) if is_dry_run() else None
                 with ledger.transaction():
                     _update_event_in_database_ledger(
                         ledger, event_obj, update_unstarted=update_unstarted
                     )
-                    _audited(ledger, doc_kind, event_obj.name, document, outcome="updated")
-                click.echo(
+                    _audited(
+                        ledger,
+                        doc_kind,
+                        event_obj.name,
+                        document,
+                        outcome="updated",
+                        diff=_event_diff(before, ledger, event_obj.name),
+                    )
+                _say(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
                 )
 
             elif event_exists and update_page is True:
+                before = _event_snapshot(ledger, event_obj.name) if is_dry_run() else None
                 old_event = deepcopy(ledger.events[event_obj.name])
                 for key in ["name", "productions", "working directory", "repository", "ledger"]:
                     old_event.pop(key, None)
@@ -310,9 +406,16 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 ledger.events[event_obj.name].pop("ledger", None)
                 with ledger.transaction():
                     ledger.save()
-                    _audited(ledger, doc_kind, event_obj.name, document, outcome="updated")
+                    _audited(
+                        ledger,
+                        doc_kind,
+                        event_obj.name,
+                        document,
+                        outcome="updated",
+                        diff=_event_diff(before, ledger, event_obj.name),
+                    )
 
-                click.echo(
+                _say(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
                 )
 
@@ -320,18 +423,18 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 with ledger.transaction():
                     ledger.update_event(event_obj)
                     _audited(ledger, doc_kind, event_obj.name, document)
-                click.echo(
+                _say(
                     click.style("●", fg="green") + f" Successfully added {event_obj.name}"
                 )
                 logger.info(f"Added {event_obj.name} to project")
 
             elif not event_exists and update_page is True:
-                click.echo(
+                _say(
                     click.style("●", fg="red")
                     + f" {event_obj.name} cannot be updated as there is no record of it in the project."
                 )
             else:
-                click.echo(
+                _say(
                     click.style("●", fg="red")
                     + f" {event_obj.name} already exists in this project."
                 )
@@ -376,7 +479,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                         loaded_events[event_s] = ledger.get_event(event_s)[0]
                     event_obj = loaded_events[event_s]
                 except KeyError as e:
-                    click.echo(
+                    _say(
                         click.style("●", fg="red")
                         + f" Could not apply a production, couldn't find the event {event_s}"
                     )
@@ -399,13 +502,13 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     # ledger only stores it.
                     if not event_obj.productions or event_obj.productions[-1] is not production:
                         event_obj.add_production(production)
-                    click.echo(
+                    _say(
                         click.style("●", fg="green")
                         + f" Successfully applied {production.name} to {event_obj.name}"
                     )
                     logger.info(f"Added {production.name} to {event_obj.name}")
                 except ValueError as e:
-                    click.echo(
+                    _say(
                         click.style("●", fg="red")
                         + f" Could not apply {production.name} to {event_obj.name} as "
                         + "an analysis already exists with this name"
@@ -424,7 +527,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     event_obj = ledger.get_event(event_s)[0]
                     level = event_obj
                 except KeyError as e:
-                    click.echo(
+                    _say(
                         click.style("●", fg="red")
                         + f" Could not apply postprocessing, couldn't find the event {event}"
                     )
@@ -433,7 +536,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 level = ledger
             try:
                 if document["name"] in level.data.get("postprocessing stages", {}):
-                    click.echo(
+                    _say(
                         click.style("●", fg="red")
                         + f" Could not apply postprocessing, as {document['name']} is already in the ledger."
                     )
@@ -456,13 +559,13 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                             level.name if isinstance(level, asimov.event.Event) else PROJECT,
                             document,
                         )
-                    click.echo(
+                    _say(
                         click.style("●", fg="green")
                         + f" Successfully added {document['name']} to {level.name}."
                     )
                     logger.info(f"Added {document['name']}")
             except ValueError as e:
-                click.echo(
+                _say(
                     click.style("●", fg="red")
                     + f" Could not apply {document['name']} to project as "
                     + "a post-process already exists with this name"
@@ -480,14 +583,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 with ledger.transaction():
                     ledger.add_analysis(analysis)
                     _audited(ledger, doc_kind, f"{PROJECT}/{analysis.name}", document)
-                click.echo(
+                _say(
                     click.style("●", fg="green")
                     + f" Successfully added {analysis.name} to this project."
                 )
                 ledger.save()
                 logger.info(f"Added {analysis.name}")
             except ValueError as e:
-                click.echo(
+                _say(
                     click.style("●", fg="red")
                     + f" Could not apply {analysis.name} to project as "
                     + "an analysis already exists with this name"
@@ -501,7 +604,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             analyses_refs = document.get("analyses", [])
 
             if not event:
-                click.echo(
+                _say(
                     click.style("●", fg="red")
                     + f" Analysis bundle '{bundle_name}' requires an event to be specified with -e"
                 )
@@ -511,14 +614,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             try:
                 event_obj = ledger.get_event(event)[0]
             except KeyError as e:
-                click.echo(
+                _say(
                     click.style("●", fg="red")
                     + f" Could not apply bundle '{bundle_name}', couldn't find the event {event}"
                 )
                 logger.exception(e)
                 continue
 
-            click.echo(
+            _say(
                 click.style("●", fg="cyan")
                 + f" Applying bundle '{bundle_name}' ({len(analyses_refs)} analyses) to {event_obj.name}"
             )
@@ -563,7 +666,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                             continue
 
                     if not analysis_file:
-                        click.echo(
+                        _say(
                             click.style("  ●", fg="yellow")
                             + f" Could not find analysis file '{analysis_file_name}', skipping"
                         )
@@ -590,12 +693,12 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                                         f"{event_obj.name}/{production.name}",
                                         analysis_doc,
                                     )
-                                click.echo(
+                                _say(
                                     click.style("  ●", fg="green")
                                     + f" Applied {production.name} from {analysis_ref}"
                                 )
                             except ValueError as e:
-                                click.echo(
+                                _say(
                                     click.style("  ●", fg="yellow")
                                     + f" {analysis_doc.get('name', 'analysis')} from {analysis_ref} already exists, skipping"
                                 )
@@ -616,18 +719,18 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                                 f"{event_obj.name}/{production.name}",
                                 analysis_ref,
                             )
-                        click.echo(
+                        _say(
                             click.style("  ●", fg="green")
                             + f" Applied {production.name} (inline)"
                         )
                     except ValueError as e:
-                        click.echo(
+                        _say(
                             click.style("  ●", fg="yellow")
                             + f" {analysis_ref.get('name', 'analysis')} already exists, skipping"
                         )
                         logger.warning(f"Analysis {analysis_ref.get('name', 'analysis')} already exists: {e}")
 
-            click.echo(
+            _say(
                 click.style("●", fg="green")
                 + f" Successfully applied bundle '{bundle_name}' to {event_obj.name}"
             )
@@ -636,10 +739,17 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             logger.info("Found configurations")
             document.pop("kind")
             with ledger.transaction():
+                before = deepcopy(ledger.data) if is_dry_run() else None
                 update(ledger.data, document)
                 ledger.save()
-                _audited(ledger, doc_kind, PROJECT, document)
-            click.echo(
+                _audited(
+                    ledger,
+                    doc_kind,
+                    PROJECT,
+                    document,
+                    diff=None if before is None else changed_paths(before, ledger.data),
+                )
+            _say(
                 click.style("●", fg="green")
                 + " Successfully applied a configuration update"
             )
@@ -701,11 +811,45 @@ def apply_via_plugin(event, hookname, **kwargs):
     default=False,
     help="Automatically increment the analysis name suffix to avoid a name conflict.",
 )
-def apply(file, event, plugin, update, update_unstarted, name, iterate):
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help="Show what would change, and what would be refused, without changing anything.",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    show_default=True,
+    help="How --dry-run reports what would change.",
+)
+def apply(file, event, plugin, update, update_unstarted, name, iterate, dry_run, output_format):
     from asimov import setup_file_logging
+    if dry_run and plugin:
+        raise click.UsageError("--dry-run can't be used with --plugin.")
+    if output_format != "text" and not dry_run:
+        raise click.UsageError("--format is for --dry-run.")
     current_ledger = get_ledger()
-    setup_file_logging()
+    if not dry_run:
+        setup_file_logging()
     if plugin:
         apply_via_plugin(event, hookname=plugin)
     elif file:
-        apply_page(file, event, ledger=current_ledger, update_page=update, name=name, iterate=iterate, update_unstarted=update_unstarted)
+        plan = apply_page(
+            file,
+            event,
+            ledger=current_ledger,
+            update_page=update,
+            name=name,
+            iterate=iterate,
+            update_unstarted=update_unstarted,
+            dry_run=dry_run,
+        )
+        if dry_run:
+            if output_format == "json":
+                click.echo(json.dumps(plan.to_dict(), indent=2, default=str))
+            else:
+                click.echo("\n".join(plan.render()))
