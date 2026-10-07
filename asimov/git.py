@@ -8,6 +8,7 @@ import subprocess
 import git
 
 from asimov import config, logger
+from asimov.context import current_context
 from asimov.utils import set_directory
 
 
@@ -384,7 +385,7 @@ class EventRepo:
         """
         self._ensure_initialised()
         coinc_file = glob.glob(
-            os.path.join(os.getcwd(), self.directory, category, "*coinc*.xml")
+            os.path.join(current_context().root, self.directory, category, "*coinc*.xml")
         )
 
         if len(coinc_file) > 0:
@@ -421,10 +422,10 @@ class EventRepo:
         if update:
             self.update_once()
         if category is not None:
-            path = f"{os.path.join(os.getcwd(), self.directory, category)}/{name}.ini"
+            path = f"{os.path.join(current_context().root, self.directory, category)}/{name}.ini"
         else:
             category = "project_analyses"
-            path = f"{os.path.join(os.getcwd(), self.directory)}/{name}.ini"
+            path = f"{os.path.join(current_context().root, self.directory)}/{name}.ini"
 
         return [path]
 

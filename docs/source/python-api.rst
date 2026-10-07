@@ -161,7 +161,44 @@ The context manager approach ensures that:
 1. **Transactional Updates**: Changes to the ledger are grouped together and saved atomically
 2. **Automatic Saving**: You don't need to manually call ``save()`` on the ledger
 3. **Clean Resource Management**: The project directory is properly managed during operations
-4. **Error Handling**: If an error occurs, the ledger is not saved, preventing partial updates
+4. **Error Handling**: If an error occurs, nothing written in the block is persisted, preventing partial updates
+
+This holds for both ledger backends. With the default database ledger the block is a single
+database transaction, committed when the block ends and rolled back if it raises. After a
+rollback the project's ledger is reloaded from what is stored the next time it is used, so
+``project.get_event()`` no longer shows the failed block's changes. Nested ``with project:``
+blocks join the outermost one, which is the one that commits.
+
+Project Contexts
+----------------
+
+Each project has a :class:`~asimov.context.ProjectContext`, available as ``project.context``,
+which holds its configuration, ledger, directories (``working_dir``, ``checkouts_dir``,
+``results_dir``, ``log_dir`` and ``webdir``), results store and scheduler. Entering ``with
+project:`` makes it the *active* context for the current thread or task, so ``asimov.config``
+and the ledger returned by ``get_ledger()`` refer to that project.
+
+A context can be used without a ``Project``, and without changing directory:
+
+.. code-block:: python
+
+    from asimov.context import ProjectContext
+
+    ctx = ProjectContext.from_directory("/projects/o4-events")
+    with ctx.activate(), ctx.transaction():
+        ctx.ledger.add_event(event)
+
+Contexts are tracked with :mod:`contextvars`, so threads and asyncio tasks each have their own
+active context. ``from asimov import config`` and ``from asimov import current_ledger`` still
+work: ``config`` follows the active context, and ``current_ledger`` is deprecated in favour of
+``asimov.context.current_context().ledger``. With no context active, they refer to the project
+in the current directory, as before.
+
+.. note::
+
+   Asimov still finds some files relative to the working directory, so ``with project:``
+   changes into the project's directory for the length of the block. Until that is removed
+   (issue #180), don't serve two projects from different threads of one process.
 
 API Reference
 -------------
@@ -172,4 +209,11 @@ Project Class
 .. autoclass:: asimov.project.Project
    :members:
    :undoc-members:
+   :show-inheritance:
+
+Project Context Class
+~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: asimov.context.ProjectContext
+   :members:
    :show-inheritance:

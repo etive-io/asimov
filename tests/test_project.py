@@ -278,27 +278,13 @@ class TestProject(unittest.TestCase):
         finally:
             shutil.rmtree(inner_dir, ignore_errors=True)
 
-    @unittest.expectedFailure
     def test_context_manager_exception_handling(self):
-        """Test that ledger is not saved when an exception occurs in context.
+        """Nothing written in a ``with project:`` block which raises is persisted.
 
-        add_subject() mutates the ledger's in-memory state unconditionally
-        (there's no rollback of that), so this must check what __exit__
-        actually guarantees on exception: that the write never reaches
-        disk. Checking project.get_event() on the same in-memory Project
-        wouldn't distinguish "rolled back" from "just never persisted" -
-        reload from disk to actually tell the difference.
-
-        Known gap, not fixed here: this is an expected failure for the
-        (now default) sqlite/DatabaseLedger engine. __exit__'s "only save
-        on success" logic only ever gated YAMLLedger.save(), which really
-        is the sole write point for that backend. For DatabaseLedger,
-        AsimovSQLDatabase.get_session() commits at the end of *each*
-        insert/update call independently - there's no transaction scoped
-        to the whole `with project:` block - so the write already reached
-        disk before the exception was even raised. Fixing this properly
-        needs Project's context manager to hold open a single DB session/
-        transaction across the block, which is a bigger, separate change.
+        Reloads from disk to tell "rolled back" from "never persisted": the
+        in-memory ``Project`` can't, since ``add_subject()`` mutates it
+        unconditionally. Holds for the default sqlite ledger, whose writes
+        used to be committed one by one, as for the YAML one.
         """
         project = Project(self.project_name, location=self.test_dir)
 

@@ -4,6 +4,7 @@ Project management and Python API interface.
 This module provides a Python API for creating and managing asimov projects.
 """
 
+import contextlib
 import os
 
 try:
@@ -11,23 +12,14 @@ try:
 except ImportError:
     import configparser
 
-from asimov import config as global_config, logger, LOGGER_LEVEL
-from asimov.ledger import YAMLLedger
+from asimov import logger, LOGGER_LEVEL
+from asimov.context import ProjectContext, get_active_context
 from asimov.event import Event
+from asimov.utils import set_directory
 from asimov.cli.project import make_project
 
 logger = logger.getChild("project")
 logger.setLevel(LOGGER_LEVEL)
-
-# Stack of Projects currently active inside nested `with project:` blocks.
-# asimov.cli.application.get_ledger() consults this so that code called
-# from within a project context (rather than using `project.ledger`
-# directly) still operates on the ledger that will actually be saved. A
-# stack (rather than a single reference) is needed so that exiting an
-# inner `with project_b:` block, nested inside an outer `with project_a:`
-# block, correctly restores `project_a` as the active project rather than
-# clearing it entirely.
-_project_context_stack = []
 
 
 def get_active_project():
@@ -35,14 +27,17 @@ def get_active_project():
     Return the innermost ``Project`` currently active inside a
     ``with project:`` block.
 
+    Tracked per thread and task, through the active ``ProjectContext``, so
+    exiting an inner ``with project_b:`` block nested in an outer ``with
+    project_a:`` block restores ``project_a``.
+
     Returns
     -------
     Project or None
         The active project, or ``None`` if no project context is open.
     """
-    if _project_context_stack:
-        return _project_context_stack[-1]
-    return None
+    context = get_active_context()
+    return None if context is None else context.project
 
 
 class Project:
@@ -104,10 +99,8 @@ class Project:
         self.logs = logs
         self.user = user
         
-        # Store the original directory to restore later
-        self._original_dir = None
-        self._ledger = None
-        self._in_context = False
+        self._context = None
+        self._entered = []
         
         # Prevent accidental re-initialization of an existing project directory.
         # If the target location already exists and contains a project, refuse to
@@ -195,43 +188,28 @@ class Project:
                 f"Missing configuration: {e}"
             )
         
-        project._original_dir = None
-        project._ledger = None
-        project._in_context = False
+        project._context = None
+        project._entered = []
         
         logger.info(f"Loaded existing project '{project.name}' from {location}")
         
         return project
     
-    def _load_ledger(self):
+    @property
+    def context(self):
         """
-        Construct the ledger for this project, honouring its configured
-        engine (``[ledger] engine`` in the project's ``asimov.conf``)
-        rather than assuming YAML. Must be called with the current working
-        directory already set to ``self.location``.
+        The ``ProjectContext`` for this project.
 
-        Reads the project's own config into a local parser rather than the
-        process-wide global config, so that using several ``Project``
-        instances in one process (e.g. a test suite, or a long-running
-        agent) doesn't leak one project's ledger settings into another.
+        Holds the project's configuration, ledger and directories. Made on
+        first use, after the project exists on disk.
         """
-        project_config = configparser.ConfigParser()
-        project_config.read(os.path.join(".asimov", "asimov.conf"))
-        engine = project_config.get("ledger", "engine", fallback="yamlfile")
-        location = project_config.get("ledger", "location", fallback=None)
+        if self._context is None:
+            self._context = ProjectContext(self.location, project=self)
+        return self._context
 
-        if engine == "yamlfile":
-            ledger_path = location or os.path.join(".asimov", "ledger.yml")
-            return YAMLLedger(location=ledger_path)
-        else:
-            from asimov.ledger import DatabaseLedger
-            database_url = None
-            if location:
-                database_url = (
-                    location if "://" in location
-                    else f"sqlite:///{os.path.abspath(location)}"
-                )
-            return DatabaseLedger(engine=engine, location=database_url)
+    @property
+    def _in_context(self):
+        return bool(self._entered)
 
     @property
     def ledger(self):
@@ -243,59 +221,51 @@ class Project:
         Ledger
             The project's ledger instance.
         """
-        if self._ledger is None:
-            # Change to project directory to load the ledger
-            # This is required because Event initialization needs the correct working directory
-            original_dir = os.getcwd()
-            try:
-                os.chdir(self.location)
-                self._ledger = self._load_ledger()
-            finally:
-                os.chdir(original_dir)
+        return self.context.ledger
 
-        return self._ledger
-    
     def __enter__(self):
         """
         Enter the context manager, enabling transactional updates.
-        
+
+        Makes this project's context the active one, and opens a transaction
+        on its ledger: what the block writes is saved when it ends, or not
+        at all if it raises.
+
         Returns
         -------
         Project
             The project instance.
         """
-        self._original_dir = os.getcwd()
-        os.chdir(self.location)
-        self._in_context = True
-        
-        # Preserve the existing global project root so it can be restored on exit
+        context = self.context
+        stack = contextlib.ExitStack()
         try:
-            self._previous_project_root = global_config.get("project", "root")
-        except (configparser.NoSectionError, configparser.NoOptionError):
-            self._previous_project_root = None
-        
-        # Update the global config with the project location
-        # This is needed for ledger.save() to work correctly
-        global_config.set("project", "root", self.location)
-        
-        # Load the ledger in the project directory if it hasn't been loaded yet
-        if self._ledger is None:
-            self._ledger = self._load_ledger()
-        
-        # Ensure pipelines section exists in ledger data
-        # This is needed for production.to_dict() to work correctly
-        if "pipelines" not in self._ledger.data:
-            self._ledger.data["pipelines"] = {}
+            stack.enter_context(context.activate())
+            # Much of asimov still finds files relative to the working
+            # directory (see issue #180), so until that is gone a project
+            # block works from the project's directory.
+            stack.enter_context(set_directory(self.location))
+            stack.enter_context(context.transaction())
 
-        _project_context_stack.append(self)
+            # Ensure pipelines section exists in ledger data
+            # This is needed for production.to_dict() to work correctly
+            if "pipelines" not in context.ledger.data:
+                context.ledger.data["pipelines"] = {}
+        except BaseException:
+            stack.close()
+            raise
 
+        self._entered.append(stack)
         logger.debug(f"Entered context for project '{self.name}'")
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
         Exit the context manager, saving changes to the ledger.
-        
+
+        If an exception was raised in the block, nothing written in it is
+        persisted, and the ledger is reloaded from what is stored on the
+        next use.
+
         Parameters
         ----------
         exc_type : type
@@ -305,36 +275,17 @@ class Project:
         exc_tb : traceback
             The exception traceback, if an exception was raised.
         """
+        stack = self._entered.pop()
         try:
-            # Only save if no exception occurred
-            if exc_type is None and self._ledger is not None:
-                self._ledger.save()
-                logger.debug(f"Saved ledger for project '{self.name}'")
-                # Invalidate the ledger cache so it will be reloaded on next access
-                self._ledger = None
-            
-            # Restore the previous global project root
-            if self._previous_project_root is not None:
-                global_config.set("project", "root", self._previous_project_root)
-            else:
-                # There was no previous project.root; remove the option we added in __enter__
-                try:
-                    global_config.remove_option("project", "root")
-                except (configparser.NoSectionError, configparser.NoOptionError):
-                    # If the section/option is missing, there's nothing to restore
-                    pass
+            suppressed = stack.__exit__(exc_type, exc_val, exc_tb)
         finally:
-            self._in_context = False
-            if _project_context_stack and _project_context_stack[-1] is self:
-                _project_context_stack.pop()
-            elif self in _project_context_stack:
-                # Defensive: shouldn't happen with well-nested `with`
-                # blocks, but don't leave a stale entry on the stack.
-                _project_context_stack.remove(self)
-            if self._original_dir:
-                os.chdir(self._original_dir)
+            if not self._entered:
+                # Drop the ledger so the next access reads what is stored,
+                # which after a rollback is not what it holds in memory.
+                self.context.reset_ledger()
                 logger.debug(f"Exited context for project '{self.name}'")
-    
+        return suppressed
+
     def add_subject(self, name, **kwargs):
         """
         Add a new subject (event) to the project.
@@ -363,18 +314,19 @@ class Project:
             )
         
         # Create the event
-        event = Event(name=name, ledger=self._ledger, **kwargs)
+        ledger = self.ledger
+        event = Event(name=name, ledger=ledger, **kwargs)
         
         # Add to ledger without saving (save happens on context exit)
         # Temporarily disable auto-save during add_event to avoid redundant I/O
-        original_save = self._ledger.save
+        original_save = ledger.save
         try:
             # Replace save with a no-op during add_event
-            self._ledger.save = lambda: None
-            self._ledger.add_event(event)
+            ledger.save = lambda: None
+            ledger.add_event(event)
         finally:
             # Restore the original save method
-            self._ledger.save = original_save
+            ledger.save = original_save
         
         logger.info(f"Added subject '{name}' to project '{self.name}'")
         

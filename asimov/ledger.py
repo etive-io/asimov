@@ -21,6 +21,17 @@ from filelock import FileLock
 
 class Ledger:
     @contextlib.contextmanager
+    def transaction(self):
+        """
+        Make the writes in the block atomic (a no-op unless overridden).
+
+        A ledger which persists everything in ``save()`` needs nothing here:
+        a caller which doesn't call ``save()`` after a failure has already
+        written nothing.
+        """
+        yield self
+
+    @contextlib.contextmanager
     def batch_saves(self):
         """Coalesce writes made inside the block (a no-op unless overridden)."""
         yield self
@@ -228,7 +239,13 @@ class YAMLLedger(Ledger):
             return
         with self.lock:  # Acquire exclusive lock for thread-safe saving
             self.data["events"] = list(self.events.values())
-            with set_directory(config.get("project", "root")):
+            # An absolute location needs no help finding its way; a relative
+            # one is relative to the project, wherever the process now is.
+            with (
+                contextlib.nullcontext()
+                if os.path.isabs(self.location)
+                else set_directory(config.get("project", "root"))
+            ):
                 # First produce a backup of the ledger
                 shutil.copy(self.location, self.location + ".bak")
                 with open(self.location + "_tmp", "w") as ledger_file:
@@ -413,6 +430,34 @@ class DatabaseLedger(Ledger):
         self._project_analyses_cache = None
         self._data_cache = None
         self._data_cache_baseline = None
+
+    def _discard_cached_state(self):
+        """Forget everything read from the database, so the next read is fresh."""
+        self._invalidate_events_cache()
+        self._invalidate_project_analyses_cache()
+        self._data_cache = None
+        self._data_cache_baseline = None
+
+    @contextlib.contextmanager
+    def transaction(self):
+        """
+        Run the block in one database transaction.
+
+        Everything written in the block is committed when it ends, or none
+        of it if it raises. The writes are made with ``add_event()``,
+        ``update_event()`` and the like as usual; they just aren't committed
+        one by one.
+
+        After a rollback the ledger's caches are dropped, since they hold
+        what the failed block wrote. Events and analyses which the caller
+        already holds are not touched, and should be discarded with it.
+        """
+        try:
+            with self.db.transaction():
+                yield self
+        except BaseException:
+            self._discard_cached_state()
+            raise
 
     def close(self):
         """Release the database connections held by this ledger."""
