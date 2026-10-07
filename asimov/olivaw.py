@@ -21,6 +21,7 @@ import asimov.pipelines  # NoQA
 # Import CLI bits from elsewhere
 from asimov.cli import (  # NoQA
     application,
+    audit as audit_cli,
     configuration,
     event,
     manage,
@@ -106,6 +107,8 @@ olivaw.add_command(application.apply)
 # Provenance / reproducibility commands
 olivaw.add_command(provenance.provenance)
 olivaw.add_command(provenance.package)
+# The audit trail
+olivaw.add_command(audit_cli.audit)
 
 
 @click.command()

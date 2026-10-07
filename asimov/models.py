@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
+    Index,
     JSON,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -155,6 +156,51 @@ class LedgerConfigModel(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class AuditLogModel(Base):
+    """
+    SQLAlchemy model for the audit log: one row per change to the project.
+
+    Rows are only ever added. ``principal_id`` and ``on_behalf_of`` repeat
+    identifiers held in the ``principal`` snapshot, so the log can be
+    searched by who acted, or who they acted for, without reading every row.
+    ``timestamp`` is the fixed-width UTC text of :func:`asimov.audit.timestamp_for`,
+    which sorts and compares correctly as text on every database.
+    """
+
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_log_target_timestamp", "target", "timestamp"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(String, nullable=False, index=True)
+    action = Column(String, nullable=False)
+    kind = Column(String, nullable=False)
+    target = Column(String, nullable=False)
+    outcome = Column(String, nullable=False)
+    principal_id = Column(String, nullable=False, index=True)
+    on_behalf_of = Column(String, nullable=False, index=True)
+    principal = Column(JSON, nullable=False)
+    content = Column(JSON, nullable=True)
+    content_hash = Column(String, nullable=False, default="")
+    accounting = Column(JSON, nullable=True)
+
+    def to_dict(self):
+        """The row as an :class:`asimov.audit.AuditRecord` dictionary."""
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "action": self.action,
+            "kind": self.kind,
+            "target": self.target,
+            "outcome": self.outcome,
+            "principal": self.principal,
+            "content": self.content,
+            "content_hash": self.content_hash,
+            "accounting": self.accounting,
+        }
 
 
 # Pydantic validation models
