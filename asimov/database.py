@@ -53,6 +53,21 @@ class AsimovDatabase:
         """Query records from the database."""
         raise NotImplementedError
 
+    def name_exists(
+        self, table: str, name: str, event_name: Optional[str] = None
+    ) -> bool:
+        """
+        Whether a production (within one event) or project analysis already has this name.
+
+        This is the general implementation, which reads every record of the
+        table; a backend which can ask more cheaply should override it.
+        """
+        if event_name is not None:
+            rows = self.query(table, "event_name", event_name)
+        else:
+            rows = self.query(table)
+        return any(row.get("name") == name for row in rows)
+
     def update(self, table: str, identifier: Any, data: Dict[str, Any]) -> bool:
         """Update a record in the database."""
         raise NotImplementedError
@@ -515,6 +530,28 @@ class AsimovSQLDatabase(AsimovDatabase):
             for prod in results:
                 session.expunge(prod)
             return results
+
+    def name_exists(
+        self, table: str, name: str, event_name: Optional[str] = None
+    ) -> bool:
+        """
+        Whether a production (within one event) or project analysis already has this name.
+
+        Asks the database for one matching row, rather than building every
+        record of the table: the uniqueness check runs for each analysis
+        added, so reading them all made adding N analyses quadratic.
+        """
+        if table == "production":
+            model = ProductionModel
+        elif table == "project_analysis":
+            model = ProjectAnalysisModel
+        else:
+            raise ValueError(f"Unknown table: {table}")
+        with self.get_session() as session:
+            query = session.query(model.name).filter(model.name == name)
+            if table == "production" and event_name is not None:
+                query = query.filter(ProductionModel.event_name == event_name)
+            return query.first() is not None
 
     def query_project_analyses(
         self, filters: Optional[Dict[str, Any]] = None
