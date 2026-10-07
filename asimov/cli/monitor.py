@@ -1,3 +1,4 @@
+import functools
 import shlex
 import shutil
 import configparser
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from asimov import condor, config, logger, LOGGER_LEVEL
 from asimov.context import current_context, resolve_path
+from asimov.principal import Principal, acting_as
 from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
@@ -303,6 +305,17 @@ def _stop_slurm_monitor_manual():
     click.echo(f"Run 'crontab -e' and remove the line containing '{cronjob_id}'")
 
 
+def _as_monitor(command):
+    """Run a command with changes attributed to the monitor, not a person."""
+
+    @functools.wraps(command)
+    def wrapper(*args, **kwargs):
+        with acting_as(Principal.monitor()):
+            return command(*args, **kwargs)
+
+    return wrapper
+
+
 @click.argument("event", default=None, required=False)
 @click.option(
     "--update",
@@ -321,6 +334,7 @@ def _stop_slurm_monitor_manual():
 )
 @click.command()
 @click.pass_context
+@_as_monitor
 def monitor(ctx, event, update, dry_run, chain):
     """
     Monitor condor jobs' status, and collect logging information.

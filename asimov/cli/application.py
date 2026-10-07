@@ -16,6 +16,7 @@ import yaml
 
 from asimov import LOGGER_LEVEL, logger
 from asimov.context import current_context
+from asimov.principal import current_principal
 import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
@@ -33,6 +34,21 @@ else:
 
 logger = logger.getChild("cli").getChild("apply")
 logger.setLevel(LOGGER_LEVEL)
+
+
+#: The key under which an analysis records who requested it.
+REQUESTED_BY = "requested by"
+
+
+def _requested_by():
+    """
+    Who is requesting what is being applied now, as data for the ledger.
+
+    Always the current principal, never anything the blueprint says: a
+    blueprint is content from the requester, and must not be able to name
+    someone else, since this is what accounting and review rules rely on.
+    """
+    return current_principal().to_dict()
 
 
 def get_ledger():
@@ -342,6 +358,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     )
                     logger.exception(e)
                     continue
+                expanded_doc[REQUESTED_BY] = _requested_by()
                 production = asimov.event.Production.from_dict(
                     parameters=expanded_doc, subject=event_obj, ledger=ledger
                 )
@@ -418,6 +435,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             # Handle a project analysis
             logger.info("Found a project analysis")
             document.pop("kind")
+            document[REQUESTED_BY] = _requested_by()
             analysis = ProjectAnalysis.from_dict(document, ledger=ledger)
 
             try:
@@ -519,6 +537,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     # Parse the analysis file (might be multi-document)
                     for analysis_doc in yaml.safe_load_all(analysis_content):
                         if analysis_doc and analysis_doc.get("kind") == "analysis":
+                            analysis_doc[REQUESTED_BY] = _requested_by()
                             try:
                                 production = asimov.event.Production.from_dict(
                                     parameters=analysis_doc, subject=event_obj, ledger=ledger
@@ -537,6 +556,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
 
                 elif isinstance(analysis_ref, dict):
                     # Inline analysis definition
+                    analysis_ref[REQUESTED_BY] = _requested_by()
                     try:
                         production = asimov.event.Production.from_dict(
                             parameters=analysis_ref, subject=event_obj, ledger=ledger

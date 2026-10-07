@@ -39,6 +39,7 @@ from liquid import Liquid
 
 from . import config, logger, LOGGER_LEVEL, set_logger_level
 from .context import resolve_path
+from .principal import Principal
 from .utils import update, diff_dict
 from .storage import Store
 
@@ -1019,6 +1020,21 @@ class Analysis:
             )
         else:
             return store.fetch_file(self.subject.name, self.name, filename, hash=hash)
+
+    @property
+    def requested_by(self):
+        """
+        Who requested this analysis, or ``None`` if it wasn't recorded.
+
+        Set by asimov when the analysis is applied, to whoever was acting
+        then (see :mod:`asimov.principal`), and never from the blueprint.
+
+        Returns
+        -------
+        asimov.principal.Principal or None
+        """
+        data = self.meta.get("requested by")
+        return None if not data else Principal.from_dict(data)
 
     @property
     def rundir(self):

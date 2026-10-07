@@ -62,6 +62,14 @@ terms:
   comment:
     type: string
     description: A free-text human-readable comment on the analysis.
+  requested by:
+    type: mapping
+    description: >-
+      Who requested an analysis: the principal acting when it was applied
+      (``kind``, ``identifier``, and ``acting for``, ``group`` and ``role``
+      where there are any). Set by asimov, never from a blueprint: a value
+      in a blueprint is replaced when it is applied.
+    used by: [asimov.cli.application.apply]
   status:
     type: string
     description: >-
