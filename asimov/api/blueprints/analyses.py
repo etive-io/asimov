@@ -275,6 +275,6 @@ def delete_analysis(event_name, analysis_name):
     if not analysis:
         return jsonify({'error': 'Analysis not found'}), 404
 
-    event.productions.remove(analysis)
+    event.remove_production(analysis)
     ledger.update_event(event)
     return '', 204
