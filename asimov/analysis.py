@@ -1463,7 +1463,20 @@ class SubjectAnalysis(Analysis):
                 self.meta.pop(noisy_key)
         self.meta = update(self.meta, deepcopy(kwargs))
 
-        self._analysis_spec = self.meta.get("needs") or self.meta.get("analyses")
+        # ``analyses:`` says which analyses this one combines. ``needs:`` is an
+        # ordinary dependency: it holds the analysis back until what it names
+        # has finished, in this subject or (as ``subject/name``) another, and
+        # is not input to it.
+        #
+        # Before ``needs:`` was a dependency of its own, it was read as the
+        # ``analyses:`` spec (and took precedence over it), and an analysis
+        # which has no ``analyses:`` still reads it that way.
+        if self.meta.get("analyses"):
+            self._analysis_spec = self.meta.get("analyses")
+            gate = deepcopy(self.meta.get("needs") or [])
+        else:
+            self._analysis_spec = self.meta.get("needs")
+            gate = []
         # Store the analysis spec names for refresh checking (if it's just a list of names).
         # This lets us detect when dependencies have changed without blocking submission.
         self._analysis_spec_names = []
@@ -1480,9 +1493,10 @@ class SubjectAnalysis(Analysis):
             elif isinstance(self._analysis_spec, str):
                 self._analysis_spec_names.append(self._analysis_spec)
         
-        # SubjectAnalysis does not participate in the dependency graph.
-        # Its _needs remain empty so it doesn't block submission.
-        self._needs = []
+        # The analyses it combines do not make it part of the dependency graph,
+        # and do not hold it back through it (see ``source_analyses_ready``);
+        # only ``needs:`` does.
+        self._needs = gate
         
         # Remove needs and analyses from meta to prevent duplication later
         if "needs" in self.meta:
@@ -1530,50 +1544,20 @@ class SubjectAnalysis(Analysis):
             return
 
         requirements = self._process_dependencies(self._analysis_spec)
-        self.analyses = []
 
+        # Each requirement is resolved as an entry of ``needs`` is, so a
+        # ``subject/name`` reaches another subject. The result is in the order
+        # the analyses are found, which is the order of the subject (the sets
+        # which this used to go through gave an arbitrary one).
+        analyses = []
+        seen = set()
         for requirement in requirements:
-            if isinstance(requirement, list):
-                # This is an AND group - all conditions must match
-                and_matches = set(self.subject.analyses)
-                for parsed_dep in requirement:
-                    # Handle both 3-tuple and 4-tuple formats
-                    if len(parsed_dep) == 4:
-                        attribute, match, negate, optional = parsed_dep
-                    else:
-                        attribute, match, negate = parsed_dep
-                        optional = False
-                    filtered_analyses = list(
-                        filter(
-                            lambda x: x.matches_filter(attribute, match, negate), and_matches
-                        )
-                    )
-                    and_matches = set(filtered_analyses)
-                # Add all matches from this AND group (never include self)
-                for analysis in and_matches:
-                    if analysis is not self and analysis not in self.analyses:
-                        self.analyses.append(analysis)
-            else:
-                # Single condition
-                # Handle both 3-tuple and 4-tuple formats
-                if len(requirement) == 4:
-                    attribute, match, negate, optional = requirement
-                else:
-                    attribute, match, negate = requirement
-                    optional = False
-                filtered_analyses = list(
-                    filter(
-                        lambda x: x is not self and x.matches_filter(attribute, match, negate),
-                        self.subject.analyses
-                    )
-                )
-                # Add all matches from this single condition
-                for analysis in filtered_analyses:
-                    if analysis not in self.analyses:
-                        self.analyses.append(analysis)
-
-        # Keep productions in sync
-        self.productions = self.analyses
+            for analysis in self._requirement_matches(requirement):
+                # Never include self.
+                if analysis is not self and analysis not in seen:
+                    seen.add(analysis)
+                    analyses.append(analysis)
+        self.analyses = analyses
 
     @property
     def is_stale(self):
@@ -1598,7 +1582,7 @@ class SubjectAnalysis(Analysis):
         if self.resolved_dependencies is None:
             return False
 
-        current_names = {a.name for a in self.analyses}
+        current_names = {self._qualified_name(a) for a in self.analyses}
         resolved_names = set(self.resolved_dependencies)
 
         return current_names != resolved_names

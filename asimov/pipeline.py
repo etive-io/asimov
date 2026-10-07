@@ -372,7 +372,14 @@ class Pipeline:
                             # Check if all expected analyses have datasets in the HDF5 file
                             # PESummary stores each analysis as a top-level group
                             available_keys = list(f.keys())
-                            missing = [name for name in expected_analyses if name not in available_keys]
+                            # An analysis in another subject is recorded as
+                            # ``subject/name``; PESummary knows it by either.
+                            missing = [
+                                name
+                                for name in expected_analyses
+                                if name not in available_keys
+                                and name.rpartition("/")[2] not in available_keys
+                            ]
 
                             if missing:
                                 self.logger.warning(

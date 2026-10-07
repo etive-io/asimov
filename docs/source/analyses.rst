@@ -217,7 +217,28 @@ For example, PESummary can be used as a subject analysis to combine results from
 		  - pipeline: bilby  # Combine all bilby analyses
 		refreshable: true    # Auto-update when new analyses finish
 
-The ``analyses`` field works similarly to ``needs``, but is used specifically for subject analyses to specify which simple analyses to include.
+The ``analyses`` field is matched in the same way as ``needs``, but is used specifically for subject analyses to specify which analyses to include.
+A subject analysis starts when every analysis which matches has finished, so one which has not been added yet does not hold it up, and a new one which appears later makes it stale (and, if it is refreshable, it is run again).
+An entry may name an analysis in another subject as ``subject/name``, as in ``needs``.
+
+A subject analysis can have ``needs`` as well.
+These are ordinary dependencies, in this subject or another (``subject/name``): the analysis waits until they have finished, but they are not among the analyses which it combines.
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: CentralCombine
+		pipeline: pesummary
+		needs:
+		  - central/prep-r001      # must have finished first, but is not combined
+		analyses:
+		  - pipeline: bilby        # what is combined
+
+.. note::
+
+   An analysis which has ``needs`` but no ``analyses`` is not a subject analysis.
+   Older versions read ``needs`` as ``analyses`` when both were given; now ``analyses`` says what is combined and ``needs`` is a dependency.
+
 You can also use optional dependencies in subject analyses:
 
 .. code-block:: yaml

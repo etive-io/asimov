@@ -475,7 +475,7 @@ def monitor(ctx, event, update, dry_run, chain):
                 try:
                     if isinstance(prod, SubjectAnalysis):
                         if getattr(prod, "is_refreshable", False) and prod.source_analyses_ready():
-                            current_names = [a.name for a in getattr(prod, "analyses", [])]
+                            current_names = [prod._qualified_name(a) for a in getattr(prod, "analyses", [])]
                             resolved = getattr(prod, "resolved_dependencies", None) or []
 
                             # For SubjectAnalysis with smart dependencies (_analysis_spec),
