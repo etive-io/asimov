@@ -133,6 +133,29 @@ class NameIndexTests(unittest.TestCase):
         analysis._needs = [{"name": "!a1"}]
         self.assertEqual(analysis.dependencies, [f"a{n}" for n in (0, 2, 3, 4, 5, 6)])
 
+    def test_every_kind_of_needs_entry_is_resolved_through_one_method(self):
+        """dependencies and unresolved_needs share _requirement_matches, so a change to how
+        an entry is resolved (an index, a memo, qualified names) has one place to go."""
+        analysis = self.by_name["a7"]
+        analysis._needs = [
+            "a1",
+            [{"pipeline": "simpletestpipeline"}, {"status": "ready"}],
+            {"optional": True, "name": "a2"},
+            {"status": "stuck"},
+        ]
+        with patch.object(Analysis, "_requirement_matches", autospec=True,
+                          side_effect=Analysis._requirement_matches) as resolve:
+            analysis.dependencies
+            self.assertEqual(resolve.call_count, 4)
+            resolve.reset_mock()
+            # Only the entries which are required are checked, and the one
+            # which matches nothing is reported.
+            self.assertEqual(
+                analysis.unresolved_needs,
+                ["no analysis matches status = stuck"],
+            )
+            self.assertEqual(resolve.call_count, 3)
+
     def test_the_index_agrees_with_a_scan_for_random_needs(self):
         names = [f"a{n}" for n in range(8)] + ["nothing", "A1"]
         pipelines = ["simpletestpipeline", "simpletestpipelineb", "bilby"]
