@@ -780,6 +780,11 @@ def submit(event, update, dryrun, max_submit):
     if throttle.limited or throttle.deferred:
         click.echo(throttle.summary())
 
+    # Read by ``asimov monitor --chain``, which runs this more than once in a
+    # pass and keeps to the per-pass limit across the runs. (It is ignored when
+    # this is run from the command line.)
+    return throttle.submitted
+
 @click.option(
     "--event",
     "event",

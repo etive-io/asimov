@@ -115,6 +115,18 @@ Key Features
 Helper Functions
 ---------------
 
+Dependents in the same pass (``--chain``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``asimov monitor --chain`` builds and submits, then monitors.
+It is the monitor step which notices that an analysis has finished, so an analysis which needs it would otherwise only be submitted by the *next* pass: a dependency hop cost a whole monitoring period.
+
+If any analysis finished during the monitor step, ``--chain`` therefore runs build and submit again, so that what needs it starts in the same pass.
+It repeats while running them finishes something more (some analyses finish as they are submitted), at most three times.
+A pass in which nothing finished runs build and submit once, as before, and a dry run never repeats them.
+The ``max_submit_per_pass`` limit is shared by all of the runs in a pass, so repeating them cannot submit more than the limit allows.
+Repeating costs about one more build and one more submit, so it is only done when something has finished.
+
 monitor_analysis
 ^^^^^^^^^^^^^^^
 
