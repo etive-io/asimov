@@ -257,8 +257,10 @@ def build(event, dryrun):
                         ini_loc = production.event.repository.find_prods(
                             production.name, production.category
                         )[0]
-                        if not os.path.exists(ini_loc):
+                        if not os.path.exists(ini_loc) and not dryrun:
                             # Only pull if it isn't here: it may exist upstream.
+                            # A dry run must not touch the repository, which can
+                            # mean creating it and a network round trip.
                             ini_loc = production.event.repository.find_prods(
                                 production.name, production.category, update=True
                             )[0]
