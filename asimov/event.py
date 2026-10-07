@@ -18,6 +18,7 @@ else:
 
 from asimov import config, logger, LOGGER_LEVEL, set_logger_level
 from asimov.context import resolve_path
+from asimov.preview import is_dry_run
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
 
 from .git import EventRepo
@@ -97,7 +98,8 @@ class Event:
             self.work_dir = os.path.join(
                 config.get("general", "rundir_default"), self.name
             )
-        os.makedirs(resolve_path(self.work_dir), exist_ok=True)
+        if not is_dry_run():
+            os.makedirs(resolve_path(self.work_dir), exist_ok=True)
 
         if "ledger" in kwargs:
             if kwargs["ledger"]:

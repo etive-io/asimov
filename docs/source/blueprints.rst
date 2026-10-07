@@ -14,6 +14,29 @@ For example, if we have a blueprint file called ``GW150914_095045.yaml`` we can 
 
     asimov apply -f GW150914_095045.yaml
 
+Previewing a blueprint
+----------------------
+
+To see what a blueprint would do before applying it, add ``--dry-run``::
+
+    asimov apply -f GW150914_095045.yaml --dry-run
+
+Nothing is changed. It runs the same code which applies the blueprint, so it makes the real decisions, and reports what it would add or update, with what would be different for something which already exists, and what it would refuse::
+
+    Dry run: nothing was written.
+      + event GW150914_095045 (added)
+      ~ configuration @project (updated)
+          quality.minimum frequency.H1: 20 -> 30
+      ! GW150914_095045 already exists in this project.
+
+``--format json`` gives the same as data. Each change has the form of the :doc:`audit record <audit>` which applying it would add: the kind of document, what it is applied to, whether it is added or updated, the document, and who would be making the change. ``diff`` lists the values which would change (``before`` is ``null`` for a new key), for the configuration and for an event which is updated.
+
+A dry run writes nothing to the ledger, the audit log or the disk (no directories are created, and repositories are not cloned), and sends nothing to telemetry sinks. Refusals are listed rather than treated as errors, so ``--dry-run`` exits successfully even when something would be refused.
+
+A dry run needs a ledger which can take its writes back: the YAML and SQL ledgers can, a TinyDB ledger cannot and refuses.
+
+From Python, ``apply_page(..., dry_run=True)`` returns the plan (an :class:`asimov.preview.ApplyPlan`), with ``changes`` and ``refused``.
+
 Kinds of blueprint
 ==================
 

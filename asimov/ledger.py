@@ -27,6 +27,10 @@ from filelock import FileLock
 logger = _asimov_logger.getChild("ledger")
 
 
+class _DiscardDryRun(Exception):
+    """Raised at the end of a dry run to roll its transaction back."""
+
+
 def _in_own_context(method):
     """
     Run a ledger method which builds events in the ledger's own project.
@@ -67,6 +71,24 @@ class Ledger:
     def batch_saves(self):
         """Coalesce writes made inside the block (a no-op unless overridden)."""
         yield self
+
+    @contextlib.contextmanager
+    def dry_run(self):
+        """
+        Keep nothing which is written in the block.
+
+        The block runs as it normally would, including reading what it has
+        just written, but when it ends the ledger is as it was before. Used to
+        preview a change (see :mod:`asimov.preview`).
+
+        Raises
+        ------
+        NotImplementedError
+            If this ledger cannot discard writes, in which case the block is
+            not run.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot make a dry run")
+        yield  # pragma: no cover
 
     def append_audit(self, record):
         """
@@ -304,6 +326,27 @@ class YAMLLedger(Ledger):
     # leaves no record that it was made.
     _transaction_depth = 0
     _pending_audit = None
+    _discard_writes = False
+
+    @contextlib.contextmanager
+    def dry_run(self):
+        """
+        Keep nothing which is written in the block.
+
+        :meth:`save` writes nothing while the block runs, and what the ledger
+        held beforehand is put back when it ends.
+        """
+        saved = copy.deepcopy((self.data, self.events))
+        pending = self._pending_audit
+        self._discard_writes = True
+        try:
+            yield self
+        finally:
+            self._discard_writes = False
+            self.data, self.events = saved
+            self._pending_audit = pending
+            self._invalidate_events_cache()
+            self._invalidate_project_analyses_cache()
 
     @contextlib.contextmanager
     def transaction(self):
@@ -397,6 +440,8 @@ class YAMLLedger(Ledger):
 
 
         """
+        if self._discard_writes:
+            return
         if getattr(self, "_batch_depth", 0):
             self._batch_dirty = True
             return
@@ -1163,6 +1208,32 @@ class DatabaseLedger(Ledger):
         else:
             raise NotImplementedError("Delete not implemented for TinyDB backend")
         self._invalidate_events_cache()
+
+    @contextlib.contextmanager
+    def dry_run(self):
+        """
+        Keep nothing which is written in the block.
+
+        The block runs in a database transaction which is rolled back when it
+        ends, and the ledger's caches are dropped.
+
+        Raises
+        ------
+        NotImplementedError
+            For a database which has no transactions (TinyDB), where the writes
+            could not be taken back.
+        """
+        if not isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            raise NotImplementedError(
+                "A dry run needs a database ledger with transactions; "
+                f"this one uses {type(self.db).__name__}"
+            )
+        try:
+            with self.transaction():
+                yield self
+                raise _DiscardDryRun()
+        except _DiscardDryRun:
+            pass
 
     def append_audit(self, record):
         data = record.to_dict()

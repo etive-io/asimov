@@ -39,6 +39,7 @@ from liquid import Liquid
 
 from . import config, logger, LOGGER_LEVEL, set_logger_level
 from .context import resolve_path
+from .preview import is_dry_run
 from .principal import Principal
 from .utils import update, diff_dict
 from .storage import Store
@@ -1425,11 +1426,12 @@ class SimpleAnalysis(Analysis):
         self.event = self.subject = subject
         self.name = name
 
-        pathlib.Path(
-            resolve_path(
-                os.path.join(config.get("logging", "location"), self.event.name, name)
-            )
-        ).mkdir(parents=True, exist_ok=True)
+        if not is_dry_run():
+            pathlib.Path(
+                resolve_path(
+                    os.path.join(config.get("logging", "location"), self.event.name, name)
+                )
+            ).mkdir(parents=True, exist_ok=True)
 
         self.logger = logger.getChild("analysis").getChild(
             f"{self.event.name}/{self.name}"
@@ -1851,7 +1853,8 @@ class ProjectAnalysis(Analysis):
             subj_string = subjects_dirname(self._subjects)
             self.work_dir = os.path.join("working", "project-analyses", subj_string, f"{self.name}")
 
-        os.makedirs(resolve_path(self.work_dir), exist_ok=True)
+        if not is_dry_run():
+            os.makedirs(resolve_path(self.work_dir), exist_ok=True)
 
         self.repository = None
 
