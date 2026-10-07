@@ -1,0 +1,174 @@
+{
+  "environment": {
+    "asimov": "0.1.0.dev584",
+    "commit": "97af622",
+    "python": "3.13.16",
+    "platform": "Linux-6.18.44-fc-v77-x86_64-with-glibc2.39",
+    "cpus": 4,
+    "note": "asimov 0.9 development (main after #249-#260): event git repositories off by default, SQLite ledger, local scheduler, chain-fanin shape"
+  },
+  "results": [
+    {
+      "analyses": 100,
+      "subjects": 1,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.4265995480000129,
+        "apply": 1.9611081240000203,
+        "build": 1.4488284040000963,
+        "submit": 1.6922999910000271,
+        "monitor": 1.5772838109999157,
+        "report": 1.6167550340001071,
+        "update_graph": 0.004260115000079168,
+        "update_event": 0.012271122999891304
+      },
+      "notes": {
+        "loaded": "100 analyses in 1 subjects"
+      }
+    },
+    {
+      "analyses": 100,
+      "subjects": 10,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.4786557459999585,
+        "apply": 2.176433010999972,
+        "build": 1.3921302270000524,
+        "submit": 1.5248096279999572,
+        "monitor": 1.6499449269999786,
+        "report": 1.5329874030001065,
+        "update_graph": 0.0026541470001575362,
+        "update_event": 0.027379648000078305
+      },
+      "notes": {
+        "loaded": "100 analyses in 10 subjects"
+      }
+    },
+    {
+      "analyses": 100,
+      "subjects": 100,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.3420619479998095,
+        "apply": 2.8670746450000024,
+        "build": 1.5490713350000078,
+        "submit": 1.4897224639998967,
+        "monitor": 1.8962203460000637,
+        "report": 1.4551274969999213,
+        "update_graph": 0.00021208500015745813,
+        "update_event": 0.19122371899993595
+      },
+      "notes": {
+        "loaded": "100 analyses in 100 subjects"
+      }
+    },
+    {
+      "analyses": 1000,
+      "subjects": 1,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.5590574249999918,
+        "apply": 7.758417895999855,
+        "build": 1.9872333390001131,
+        "submit": 1.8668339990001641,
+        "monitor": 2.041656503000013,
+        "report": 1.89872251099996,
+        "update_graph": 0.04383850900012476,
+        "update_event": 0.10842489399988153
+      },
+      "notes": {
+        "loaded": "1000 analyses in 1 subjects"
+      }
+    },
+    {
+      "analyses": 1000,
+      "subjects": 10,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.3648974570000973,
+        "apply": 8.088890302999971,
+        "build": 2.2508934390000377,
+        "submit": 1.9852508970000144,
+        "monitor": 2.450658421999833,
+        "report": 2.299492325000074,
+        "update_graph": 0.04335971499995139,
+        "update_event": 0.13909595900008753
+      },
+      "notes": {
+        "loaded": "1000 analyses in 10 subjects"
+      }
+    },
+    {
+      "analyses": 1000,
+      "subjects": 100,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.386819340999864,
+        "apply": 8.352573429999893,
+        "build": 1.8084950630000094,
+        "submit": 2.026051440999936,
+        "monitor": 2.760805476000087,
+        "report": 2.1156296999999995,
+        "update_graph": 0.02467874900003153,
+        "update_event": 0.2547263379999549
+      },
+      "notes": {
+        "loaded": "1000 analyses in 100 subjects"
+      }
+    },
+    {
+      "analyses": 3000,
+      "subjects": 1000,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.3769348219998392,
+        "apply": 27.78174718399987,
+        "build": 3.515098667000075,
+        "submit": 3.35865693300002,
+        "monitor": 7.5720806199999515,
+        "report": 3.511032763000003,
+        "update_graph": 0.04792173500004537,
+        "update_event": 1.9994377689999965
+      },
+      "notes": {
+        "loaded": "3000 analyses in 1000 subjects"
+      }
+    },
+    {
+      "analyses": 5000,
+      "subjects": 1,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.2931910689999313,
+        "apply": 39.73656191699979,
+        "build": 10.322518426999977,
+        "submit": 10.999563286000011,
+        "monitor": 10.419330085999945,
+        "report": 10.770550710999942,
+        "update_graph": 0.7349761519999447,
+        "update_event": 0.3587843940001676
+      },
+      "notes": {
+        "loaded": "5000 analyses in 1 subjects"
+      }
+    },
+    {
+      "analyses": 5000,
+      "subjects": 1000,
+      "shape": "chain-fanin",
+      "timings": {
+        "startup": 1.5026446699998814,
+        "apply": 35.7075400199999,
+        "build": 4.40535349400011,
+        "submit": 4.094201960000191,
+        "monitor": 9.394188988999986,
+        "report": 4.15243075699982,
+        "update_graph": 0.10732912799994665,
+        "update_event": 1.9127810369998315
+      },
+      "notes": {
+        "loaded": "5000 analyses in 1000 subjects"
+      }
+    }
+  ]
+}
