@@ -27,10 +27,16 @@ class TestEventRepoGit(unittest.TestCase):
         with open(self.source, "w") as f:
             f.write("content")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        # Git is off by default, and most of these tests are about how it is used.
+        self._set_event_git("true")
 
-    def _disable_git(self):
+    def _set_event_git(self, value):
+        """Set ``[general] event_git`` (None removes it) until the test ends."""
         old = config.get("general", "event_git", fallback=None)
-        config.set("general", "event_git", "false")
+        if value is None:
+            config.remove_option("general", "event_git")
+        else:
+            config.set("general", "event_git", value)
 
         def restore():
             if old is None:
@@ -39,6 +45,30 @@ class TestEventRepoGit(unittest.TestCase):
                 config.set("general", "event_git", old)
 
         self.addCleanup(restore)
+
+    def _disable_git(self):
+        self._set_event_git("false")
+
+    def test_event_git_is_off_by_default(self):
+        self._set_event_git(None)
+        self.assertFalse(EventRepo.git_enabled())
+        repo = EventRepo.create(self.location)
+        repo.add_file(self.source, "analyses/file.txt")
+        repo.update()
+        self.assertTrue(os.path.exists(os.path.join(self.location, "analyses", "file.txt")))
+        self.assertFalse(os.path.exists(os.path.join(self.location, ".git")))
+
+    def test_event_git_can_be_switched_on(self):
+        self._set_event_git("true")
+        self.assertTrue(EventRepo.git_enabled())
+        repo = EventRepo.create(self.location)
+        repo.add_file(self.source, "analyses/file.txt")
+        self.assertTrue(os.path.isdir(os.path.join(self.location, ".git")))
+        repo.close()
+
+    def test_an_unreadable_setting_means_off(self):
+        self._set_event_git("sometimes")
+        self.assertFalse(EventRepo.git_enabled())
 
     def test_create_is_lazy(self):
         repo = EventRepo.create(self.location)

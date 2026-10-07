@@ -47,16 +47,18 @@ class EventRepo:
         """
         Whether per-event git repositories are in use.
 
-        Set ``[general] event_git = false`` to skip creating and updating
-        git repositories for events (useful for very large projects, where
-        a repository per event is slow and uses a lot of file handles).
-        Repositories which are explicitly configured with a URL are still
-        cloned.
+        Off unless ``[general] event_git = true``. A repository per event is
+        slow to create and update, uses a lot of file handles, and is only of
+        use to a project which keeps its event files under version control,
+        so a project has to ask for it. Files are still written into the
+        event's directory when it is off, but nothing is initialised,
+        committed or pulled. Repositories which are explicitly configured with
+        a URL are still cloned.
         """
         try:
-            return config.getboolean("general", "event_git", fallback=True)
+            return config.getboolean("general", "event_git", fallback=False)
         except ValueError:
-            return True
+            return False
 
     def _ensure_initialised(self):
         """
@@ -224,7 +226,7 @@ class EventRepo:
 
         The directory is created immediately, but ``git init`` and the
         initial commit are deferred until the repository is first used (and
-        skipped altogether if ``[general] event_git`` is false).
+        skipped altogether unless ``[general] event_git`` is true).
 
         Parameters
         ----------
@@ -500,8 +502,8 @@ class EventRepo:
         """
         Pull the latest updates to the repository.
 
-        Does nothing if event git repositories are disabled
-        (``[general] event_git = false``).
+        Does nothing unless event git repositories are enabled
+        (``[general] event_git = true``).
 
         Parameters
         ----------
