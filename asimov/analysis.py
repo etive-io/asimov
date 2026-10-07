@@ -341,42 +341,12 @@ class Analysis:
         else:
             matches = set()
             requirements = self._process_dependencies(deepcopy(self._needs))
-            
+
+            # Each top-level item is OR'd with the others; an AND group is
+            # resolved by _requirement_matches.
             for requirement in requirements:
-                if isinstance(requirement, list):
-                    # This is an AND group - all conditions must match
-                    and_matches = set(self._candidate_analyses(requirement))
-                    for parsed_dep in requirement:
-                        # Handle both 3-tuple and 4-tuple formats
-                        if len(parsed_dep) == 4:
-                            attribute, match, negate, optional = parsed_dep
-                        else:
-                            attribute, match, negate = parsed_dep
-                            optional = False
-                        filtered_analyses = list(
-                            filter(
-                                lambda x: x.matches_filter(attribute, match, negate),
-                                and_matches,
-                            )
-                        )
-                        and_matches = set(filtered_analyses)
-                    matches = set.union(matches, and_matches)
-                else:
-                    # Single condition
-                    # Handle both 3-tuple and 4-tuple formats
-                    if len(requirement) == 4:
-                        attribute, match, negate, optional = requirement
-                    else:
-                        attribute, match, negate = requirement
-                        optional = False
-                    filtered_analyses = list(
-                        filter(
-                            lambda x: x.matches_filter(attribute, match, negate),
-                            self._candidate_analyses([requirement]),
-                        )
-                    )
-                    matches = set.union(matches, set(filtered_analyses))
-            
+                matches.update(self._requirement_matches(requirement))
+
             # Exclude self-dependencies. Iterate the matches in a
             # deterministic (name-sorted) order rather than the set's own
             # order, which varies between processes because of hash
