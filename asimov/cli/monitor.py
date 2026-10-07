@@ -9,7 +9,8 @@ from copy import deepcopy
 from pathlib import Path
 
 from asimov import condor, config, logger, LOGGER_LEVEL
-from asimov import current_ledger as ledger
+from asimov.context import current_context, resolve_path
+from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
@@ -80,11 +81,11 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
     submit_description = {
         "executable": shutil.which("asimov"),
         "arguments": "monitor --chain",
-        "output": os.path.join(".asimov", "asimov_cron.out"),
+        "output": resolve_path(os.path.join(".asimov", "asimov_cron.out")),
         "on_exit_remove": "false",
         "universe": "local",
-        "error": os.path.join(".asimov", "asimov_cron.err"),
-        "log": os.path.join(".asimov", "asimov_cron.log"),
+        "error": resolve_path(os.path.join(".asimov", "asimov_cron.err")),
+        "log": resolve_path(os.path.join(".asimov", "asimov_cron.log")),
         "request_cpus": "1",
         "cron_minute": minute_expression,
         "getenv": getenv,
@@ -146,7 +147,7 @@ def _start_slurm_monitor():
         _start_slurm_monitor_manual(minute_expression)
         return
 
-    project_root = os.getcwd()
+    project_root = current_context().root
     asimov_executable = shutil.which("asimov")
 
     if not asimov_executable:
@@ -185,14 +186,14 @@ def _start_slurm_monitor():
 
 def _start_slurm_monitor_manual(minute_expression="*/15"):
     """Print manual cron setup instructions and write a helper shell script."""
-    project_root = os.getcwd()
+    project_root = current_context().root
     asimov_executable = shutil.which("asimov") or "asimov"
 
     click.secho(
         "  \t  ● python-crontab not installed. Setting up cron manually...", fg="yellow"
     )
 
-    script_path = os.path.join(".asimov", "asimov_monitor.sh")
+    script_path = resolve_path(os.path.join(".asimov", "asimov_monitor.sh"))
     with open(script_path, "w") as f:
         f.write("#!/bin/bash\n")
         f.write(f"cd {shlex.quote(project_root)}\n")
@@ -328,9 +329,7 @@ def monitor(ctx, event, update, dry_run, chain):
     setup_file_logging()
 
     def _webdir_for(subject_name, production_name):
-        webroot = Path(config.get("general", "webroot"))
-        if not webroot.is_absolute():
-            webroot = Path(config.get("project", "root")) / webroot
+        webroot = Path(resolve_path(config.get("general", "webroot")))
         return webroot / subject_name / production_name / "pesummary"
 
     def _has_pesummary_outputs(webdir: Path) -> bool:

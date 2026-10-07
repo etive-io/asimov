@@ -27,6 +27,7 @@ from typing import Any, Optional
 
 import asimov
 from asimov import config
+from asimov.context import resolve_path
 from asimov.storage import Store
 
 PROV_CONTEXT = {
@@ -210,7 +211,7 @@ def build_provenance(
     subject, analysis = _resolve_analysis(ledger, subject_name, analysis_name)
 
     if store is None:
-        store = Store(root=config.get("storage", "directory"))
+        store = Store(root=resolve_path(config.get("storage", "directory")))
 
     pipeline_name = getattr(analysis.pipeline, "name", str(analysis.pipeline))
     config_id = _entity_id("config", subject_name, analysis_name)

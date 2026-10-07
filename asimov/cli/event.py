@@ -5,7 +5,8 @@ from math import floor
 import click
 
 from asimov import config
-from asimov import current_ledger as ledger
+from asimov.context import resolve_path
+from asimov.context import active_ledger as ledger
 from asimov.utils import update
 from asimov.event import Event
 
@@ -65,7 +66,7 @@ def create(name=None, oldname=None, repo=None):
     working_dir = os.path.join(config.get("general", "rundir_default"), name)
 
     event.meta["working directory"] = working_dir
-    pathlib.Path(working_dir).mkdir(parents=True, exist_ok=True)
+    pathlib.Path(resolve_path(working_dir)).mkdir(parents=True, exist_ok=True)
     ledger.update_event(event)
 
 

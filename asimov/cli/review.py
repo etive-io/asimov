@@ -6,7 +6,8 @@ import os
 
 import click
 
-from asimov import config, current_ledger
+from asimov import config
+from asimov.context import active_ledger as current_ledger
 from asimov.pipelines import known_pipelines
 from asimov.review import ReviewMessage
 

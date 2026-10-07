@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from asimov import config
+from asimov.context import resolve_path
 from asimov.provenance import (
     PROV_CONTEXT,
     _ENVIRONMENT_ASSET_FILES,
@@ -76,7 +77,7 @@ def package_analysis(
     subject, analysis = _resolve_analysis(ledger, subject_name, analysis_name)
 
     if store is None:
-        store = Store(root=config.get("storage", "directory"))
+        store = Store(root=resolve_path(config.get("storage", "directory")))
 
     provenance_document = build_provenance(
         ledger, subject_name, analysis_name, store=store

@@ -30,6 +30,7 @@ _HTCondorIOError = getattr(htcondor, "HTCondorIOError", htcondor.HTCondorExcepti
 import yaml
 
 from asimov import config, logger, LOGGER_LEVEL
+from asimov.context import resolve_path
 from asimov.scheduler import HTCondor as HTCondorScheduler
 
 
@@ -345,7 +346,7 @@ class CondorJobList:
             then calling :meth:`refresh`, it won't also refresh a stale cache.
         """
         self.jobs = {}
-        cache = os.path.join(".asimov", "_cache_jobs.yaml")
+        cache = resolve_path(os.path.join(".asimov", "_cache_jobs.yaml"))
         if force_refresh:
             self.refresh()
         elif not os.path.exists(cache):
@@ -430,7 +431,7 @@ class CondorJobList:
                 else:
                     self.jobs[datum.idno] = datum.to_dict()
 
-        with open(os.path.join(".asimov", "_cache_jobs.yaml"), "w") as f:
+        with open(resolve_path(os.path.join(".asimov", "_cache_jobs.yaml")), "w") as f:
             f.write(yaml.safe_dump(self.jobs))
 
 

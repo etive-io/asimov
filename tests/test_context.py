@@ -9,13 +9,15 @@ import threading
 import unittest
 
 import asimov
-from asimov.cli.project import make_project
+from asimov.cli.project import create_project, make_project
 from asimov.context import (
     ConfigProxy,
     NoProjectError,
     ProjectContext,
+    active_ledger,
     current_context,
     get_active_context,
+    resolve_path,
 )
 from asimov.database import AsimovSQLDatabase
 from asimov.event import Event
@@ -358,6 +360,155 @@ class TestTwoProjectsAtOnce(ProjectsTestCase):
         self.assertEqual(os.getcwd(), cwd)
         self.assertEqual(self.event_names(roots["alpha"]), ["event-alpha"])
         self.assertEqual(self.event_names(roots["beta"]), ["event-beta"])
+
+
+class TestNoWorkingDirectoryDependence(ProjectsTestCase):
+    """A project is operated on wherever the process happens to be (#180)."""
+
+    def setUp(self):
+        super().setUp()
+        self.elsewhere = tempfile.mkdtemp()
+        self._dirs.append(self.elsewhere)
+        os.chdir(self.elsewhere)
+
+    def under(self, root, path):
+        return os.path.realpath(path).startswith(os.path.realpath(root) + os.sep)
+
+    def test_with_project_does_not_change_directory(self):
+        root = self.project()
+        project = Project.load(root)
+        with project:
+            self.assertEqual(os.path.realpath(os.getcwd()), os.path.realpath(self.elsewhere))
+            project.add_subject(name="GW150914")
+
+    def test_an_events_directories_are_made_in_the_project(self):
+        for engine in ("sqlite", "yamlfile"):
+            with self.subTest(engine=engine):
+                root = self.project(engine=engine)
+                project = Project.load(root)
+                with project:
+                    project.add_subject(name="GW150914")
+                self.assertTrue(os.path.isdir(os.path.join(root, "working", "GW150914")))
+                self.assertTrue(os.path.isdir(os.path.join(root, "checkouts", "GW150914")))
+                self.assertEqual(os.listdir(self.elsewhere), [])
+
+    def test_an_events_repository_resolves_to_the_project(self):
+        root = self.project()
+        ctx = ProjectContext.from_directory(root)
+        with ctx.activate(), ctx.transaction():
+            event = Event(name="GW150914", ledger=ctx.ledger)
+            self.assertTrue(self.under(root, event.repository.path))
+            self.assertEqual(
+                event.repository.path,
+                os.path.join(ctx.root, event.repository.directory),
+            )
+        ctx.ledger.close()
+
+    def test_resolve_path_follows_the_active_context(self):
+        a = ProjectContext.from_directory(self.project("A"))
+        b = ProjectContext.from_directory(self.project("B"))
+        with a.activate():
+            self.assertEqual(resolve_path("working/x"), os.path.join(a.root, "working", "x"))
+            with b.activate():
+                self.assertEqual(resolve_path("working/x"), os.path.join(b.root, "working", "x"))
+            self.assertEqual(resolve_path("working/x"), os.path.join(a.root, "working", "x"))
+        self.assertEqual(resolve_path("/abs/../path"), "/path")
+        self.assertEqual(
+            resolve_path("working/x"),
+            os.path.join(os.getcwd(), "working", "x"),
+        )
+
+    def test_reading_a_contexts_ledger_needs_no_activation(self):
+        """Events read from a project's ledger are built in that project."""
+        for engine in ("sqlite", "yamlfile"):
+            with self.subTest(engine=engine):
+                root = self.project(engine=engine)
+                project = Project.load(root)
+                with project:
+                    project.add_subject(name="GW150914")
+                shutil_target = os.path.join(root, "working", "GW150914")
+                shutil.rmtree(shutil_target)
+
+                ctx = ProjectContext.from_directory(root)
+                self.assertIsNone(get_active_context())
+                events = ctx.ledger.get_event()
+
+                self.assertEqual([e.name for e in events], ["GW150914"])
+                self.assertTrue(os.path.isdir(shutil_target))
+                self.assertEqual(os.listdir(self.elsewhere), [])
+                close = getattr(ctx.ledger, "close", None)
+                if close:
+                    close()
+
+    def test_the_ledger_proxy_follows_the_active_context(self):
+        a = ProjectContext.from_directory(self.project("A"))
+        b = ProjectContext.from_directory(self.project("B"))
+        with a.activate():
+            a.ledger.add_event(Event(name="in-a", ledger=a.ledger))
+            with b.activate():
+                self.assertEqual(active_ledger.get_event(), [])
+            self.assertEqual([e.name for e in active_ledger.get_event()], ["in-a"])
+        a.ledger.close()
+        b.ledger.close()
+
+    def test_the_ledger_proxy_says_when_there_is_no_project(self):
+        import asimov
+        from unittest.mock import patch
+
+        with patch.object(asimov, "current_ledger", None):
+            self.assertFalse(active_ledger)
+            with self.assertRaises(NoProjectError):
+                active_ledger.get_event()
+
+    def test_create_project_has_no_side_effects(self):
+        root = tempfile.mkdtemp()
+        self._dirs.append(root)
+        before = asimov.config.get("project", "name", fallback=None)
+        config = create_project("Quiet", root, engine="sqlite")
+        self.assertEqual(config.get("project", "name"), "Quiet")
+        self.assertEqual(os.path.realpath(os.getcwd()), os.path.realpath(self.elsewhere))
+        self.assertEqual(asimov.config.get("project", "name", fallback=None), before)
+        self.assertTrue(os.path.exists(os.path.join(root, ".asimov", "ledger.db")))
+        self.assertEqual(self.event_names(root), [])
+
+    def test_a_project_can_be_created_with_an_engine(self):
+        root = tempfile.mkdtemp()
+        self._dirs.append(root)
+        os.rmdir(root)
+        Project("Yaml", location=root, engine="yamlfile")
+        self.assertTrue(os.path.exists(os.path.join(root, ".asimov", "ledger.yml")))
+        self.assertEqual(os.path.realpath(os.getcwd()), os.path.realpath(self.elsewhere))
+
+    def test_threads_create_events_in_their_own_projects(self):
+        roots = {"alpha": self.project("alpha"), "beta": self.project("beta")}
+        both_active = threading.Barrier(2)
+        errors = []
+
+        def serve(name):
+            try:
+                project = Project.load(roots[name])
+                with project:
+                    both_active.wait(timeout=10)
+                    project.add_subject(name=f"event-{name}")
+                    both_active.wait(timeout=10)
+            except BaseException as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+                both_active.abort()
+
+        threads = [threading.Thread(target=serve, args=(n,)) for n in roots]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        for name, root in roots.items():
+            self.assertEqual(self.event_names(root), [f"event-{name}"])
+            self.assertTrue(os.path.isdir(os.path.join(root, "working", f"event-{name}")))
+        other = {"alpha": "beta", "beta": "alpha"}
+        for name, root in roots.items():
+            self.assertFalse(os.path.exists(os.path.join(root, "working", f"event-{other[name]}")))
+        self.assertEqual(os.listdir(self.elsewhere), [])
 
 
 if __name__ == "__main__":

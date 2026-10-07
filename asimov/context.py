@@ -41,6 +41,9 @@ __all__ = [
     "read_config",
     "current_context",
     "get_active_context",
+    "resolve_path",
+    "adopt_config",
+    "active_ledger",
     "NoProjectError",
 ]
 
@@ -233,6 +236,7 @@ class ProjectContext:
         """The project's ledger, opened on first use."""
         if self._ledger is None:
             self._ledger = self._open_ledger()
+            self._ledger._context = self
         return self._ledger
 
     def reset_ledger(self):
@@ -409,3 +413,88 @@ def current_context():
     """The active context, or the ambient one (the current directory's project)."""
     context = _active_context.get()
     return context if context is not None else _ambient
+
+
+def resolve_path(path):
+    """
+    The absolute form of a path which is relative to the project.
+
+    Paths asimov stores (an event's working directory, a repository, a run
+    directory) are relative to the project root so the project can be moved.
+    Use this wherever one is used to touch the filesystem, rather than
+    relying on the process being in the project directory. Absolute paths
+    are returned as they are, normalised.
+
+    Parameters
+    ----------
+    path : str or os.PathLike
+        A path, relative to the active project's root if it is not absolute.
+    """
+    path = os.fspath(path)
+    if not os.path.isabs(path):
+        path = os.path.join(current_context().root, path)
+    return os.path.normpath(path)
+
+
+def adopt_config(parser, target=None):
+    """
+    Copy a project's configuration into the process-wide configuration.
+
+    Used when the process moves into a project it has just created, so the
+    commands which follow see that project's settings, as if asimov had
+    been started there.
+
+    Parameters
+    ----------
+    parser : configparser.ConfigParser
+        The configuration to copy.
+    target : ConfigProxy or ConfigParser, optional
+        The configuration to copy it into: the ``config`` the caller has
+        imported, so the caller and the code sharing it agree. Defaults to
+        the ambient context's.
+    """
+    if target is None:
+        target = _ambient.config
+    for section in parser.sections():
+        if not target.has_section(section):
+            target.add_section(section)
+        for option, value in parser.items(section, raw=True):
+            target.set(section, option, value)
+
+
+class LedgerProxy:
+    """
+    Stands in for the active project's ledger.
+
+    Command modules used to bind ``asimov.current_ledger`` when they were
+    imported, which fixed them to whichever project was in the current
+    directory then. This looks the ledger up each time it is used, so they
+    follow the active :class:`ProjectContext`.
+    """
+
+    @staticmethod
+    def _ledger():
+        import asimov
+
+        ledger = asimov.current_ledger
+        if ledger is None:
+            raise NoProjectError("There is no asimov project to use the ledger of")
+        return ledger
+
+    def __getattr__(self, name):
+        return getattr(self._ledger(), name)
+
+    def __setattr__(self, name, value):
+        setattr(self._ledger(), name, value)
+
+    def __bool__(self):
+        import asimov
+
+        return asimov.current_ledger is not None
+
+    def __repr__(self):
+        return "<LedgerProxy for the active project's ledger>"
+
+
+#: The ledger of the active project, for modules which want one name for it.
+active_ledger = LedgerProxy()

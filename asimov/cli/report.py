@@ -18,7 +18,9 @@ import otter
 import otter.bootstrap as bt
 from otter.html import HTMLElement
 
-from asimov import config, current_ledger
+from asimov import config
+from asimov.context import active_ledger as current_ledger
+from asimov.context import resolve_path
 
 tz = pytz.timezone("Europe/London")
 
@@ -65,6 +67,7 @@ def html(event, webdir):
 
     if not webdir:
         webdir = config.get("general", "webroot")
+    webdir = resolve_path(webdir)
 
     # Copy the bundled Mermaid+ELK JS alongside the report
     os.makedirs(webdir, exist_ok=True)
@@ -82,7 +85,7 @@ def html(event, webdir):
         author="Asimov",
         title="Asimov project report",
         theme_location=str(files("asimov.cli").joinpath("report-theme")),
-        config_file=os.path.join(".asimov", "asimov.conf"),
+        config_file=resolve_path(os.path.join(".asimov", "asimov.conf")),
     )
     with report:
 

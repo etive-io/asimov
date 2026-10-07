@@ -8,7 +8,8 @@ import os
 import click
 
 from asimov import config
-from asimov import current_ledger as ledger
+from asimov.context import resolve_path
+from asimov.context import active_ledger as ledger
 from asimov.provenance import ProvenanceError, build_provenance
 from asimov.rocrate import package_analysis
 from asimov.storage import Store
@@ -26,7 +27,7 @@ from asimov.storage import Store
 )
 def provenance(subject, analysis, output):
     """Show the provenance record for ANALYSIS on SUBJECT."""
-    store = Store(root=config.get("storage", "directory"))
+    store = Store(root=resolve_path(config.get("storage", "directory")))
     try:
         document = build_provenance(ledger, subject, analysis, store=store)
     except ProvenanceError as error:
@@ -54,7 +55,7 @@ def provenance(subject, analysis, output):
 )
 def package(subject, analysis, output):
     """Package ANALYSIS on SUBJECT as an RO-Crate."""
-    store = Store(root=config.get("storage", "directory"))
+    store = Store(root=resolve_path(config.get("storage", "directory")))
     destination = output or f"{subject}-{analysis}.crate"
     if os.path.exists(destination):
         raise click.ClickException(f"{destination} already exists.")

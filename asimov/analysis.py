@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Optional, List, cast
 from liquid import Liquid
 
 from . import config, logger, LOGGER_LEVEL, set_logger_level
+from .context import resolve_path
 from .utils import update, diff_dict
 from .storage import Store
 
@@ -869,7 +870,7 @@ class Analysis:
         return False
 
     def results(self, filename=None, handle=False, hash=None):
-        store = Store(root=config.get("storage", "results_store"))
+        store = Store(root=resolve_path(config.get("storage", "results_store")))
         if not filename:
             try:
                 items = store.manifest.list_resources(self.subject.name, self.name)
@@ -889,11 +890,11 @@ class Analysis:
         Return the run directory for this analysis.
         """
         if "rundir" in self.meta and self.meta["rundir"] is not None:
-            return os.path.abspath(self.meta["rundir"])
+            return resolve_path(self.meta["rundir"])
         elif "working directory" in self.subject.meta:
             value = os.path.join(self.subject.meta["working directory"], self.name)
             self.meta["rundir"] = value
-            return os.path.abspath(self.meta["rundir"])
+            return resolve_path(self.meta["rundir"])
             # TODO: Make sure this is saved back to the ledger
         else:
             return None
@@ -1209,7 +1210,9 @@ class SimpleAnalysis(Analysis):
         self.name = name
 
         pathlib.Path(
-            os.path.join(config.get("logging", "location"), self.event.name, name)
+            resolve_path(
+                os.path.join(config.get("logging", "location"), self.event.name, name)
+            )
         ).mkdir(parents=True, exist_ok=True)
 
         self.logger = logger.getChild("analysis").getChild(
@@ -1604,11 +1607,11 @@ class SubjectAnalysis(Analysis):
         Return the run directory for this subject analysis.
         """
         if "rundir" in self.meta:
-            return os.path.abspath(self.meta["rundir"])
+            return resolve_path(self.meta["rundir"])
         elif "working directory" in self.subject.meta:
             value = os.path.join(self.subject.meta["working directory"], self.name)
             self.meta["rundir"] = value
-            return os.path.abspath(self.meta["rundir"])
+            return resolve_path(self.meta["rundir"])
         else:
             return None
 
@@ -1654,8 +1657,7 @@ class ProjectAnalysis(Analysis):
             subj_string = subjects_dirname(self._subjects)
             self.work_dir = os.path.join("working", "project-analyses", subj_string, f"{self.name}")
 
-        if not os.path.exists(self.work_dir):
-            os.makedirs(self.work_dir)
+        os.makedirs(resolve_path(self.work_dir), exist_ok=True)
 
         self.repository = None
 
@@ -2028,10 +2030,10 @@ class ProjectAnalysis(Analysis):
         """
 
         if "rundir" in self.meta:
-            return os.path.abspath(self.meta["rundir"])
+            return resolve_path(self.meta["rundir"])
         elif self.work_dir:
             self.meta["rundir"] = self.work_dir
-            return os.path.abspath(self.meta["rundir"])
+            return resolve_path(self.meta["rundir"])
         else:
             return None
 
@@ -2356,6 +2358,8 @@ class GravitationalWaveTransient(SimpleAnalysis):
         """
         if "ini" in self.meta:
             ini_loc = self.meta["ini"]
+            if isinstance(ini_loc, str):
+                ini_loc = resolve_path(ini_loc)
         else:
             # We'll need to search the repository for it.
             try:

@@ -14,13 +14,14 @@ import getpass
 import click
 
 from asimov import config, storage, logger, LOGGER_LEVEL
+from asimov.context import adopt_config, read_config
 from asimov.ledger import Ledger
 
 logger = logger.getChild("cli").getChild("project")
 logger.setLevel(LOGGER_LEVEL)
 
 
-def make_project(
+def create_project(
     name,
     root,
     working="working",
@@ -31,10 +32,16 @@ def make_project(
     engine=None,
 ):
     """
-    Create a new project called NAME.
+    Create a new project called NAME in ``root``.
 
-    This command creates a new asimov project, creating the appropriate
-    directory structure, and creating a blank ledger.
+    Creates the project's directory structure, its configuration file and a
+    blank ledger. This neither changes directory nor touches the process-wide
+    configuration, so it can be used while other projects are being served.
+
+    Returns
+    -------
+    configparser.ConfigParser
+        The new project's configuration, as written to its ``asimov.conf``.
 
     Parameters
     ----------
@@ -46,8 +53,9 @@ def make_project(
     """
     import pathlib
 
+    root = os.path.abspath(root)
     pathlib.Path(root).mkdir(parents=True, exist_ok=True)
-    os.chdir(root)
+    config = read_config(root)
 
     config.set("project", "name", name)
     config.set("project", "root", root)
@@ -67,23 +75,23 @@ def make_project(
     config.set("general", "environment", "environment")
 
     # Make the working directory
-    pathlib.Path(working).mkdir(parents=True, exist_ok=True)
+    pathlib.Path(root, working).mkdir(parents=True, exist_ok=True)
     config.set("general", "rundir_default", working)
 
     # Make the git directory
-    pathlib.Path(checkouts).mkdir(parents=True, exist_ok=True)
+    pathlib.Path(root, checkouts).mkdir(parents=True, exist_ok=True)
     config.set("general", "git_default", checkouts)
 
     # Make the log directory
-    pathlib.Path(logs).mkdir(parents=True, exist_ok=True)
+    pathlib.Path(root, logs).mkdir(parents=True, exist_ok=True)
     config.set("logging", "location", logs)
 
     # Make the results store
-    storage.Store.create(root=results, name=f"{project_name} storage")
+    storage.Store.create(root=os.path.join(root, results), name=f"{project_name} storage")
     config.set("storage", "directory", results)
 
     # Make the ledger and operative files
-    pathlib.Path(".asimov").mkdir(parents=True, exist_ok=True)
+    pathlib.Path(root, ".asimov").mkdir(parents=True, exist_ok=True)
     if engine is None:
         engine = config.get("ledger", "engine", fallback="sqlite")
     ledger_filename = "ledger.yml" if engine == "yamlfile" else "ledger.db"
@@ -156,14 +164,55 @@ def make_project(
     # CI runners writing the *next* file in the same freshly-created
     # directory. Writing the plain config file first sidesteps whatever
     # that interaction is, and is arguably the more sensible order anyway.
-    with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
+    with open(os.path.join(root, ".asimov", "asimov.conf"), "w") as config_file:
         config.write(config_file)
 
-    Ledger.create(
+    ledger = Ledger.create(
         engine=engine,
         name=project_name,
-        location=os.path.join(".asimov", ledger_filename),
+        location=os.path.join(root, ".asimov", ledger_filename),
     )
+    close = getattr(ledger, "close", None)
+    if close is not None:
+        close()
+
+    return config
+
+
+def make_project(
+    name,
+    root,
+    working="working",
+    checkouts="checkouts",
+    results="results",
+    logs="logs",
+    user=None,
+    engine=None,
+):
+    """
+    Create a new project called NAME, and move into it.
+
+    This is what ``asimov init`` does: it makes the project with
+    :func:`create_project`, then changes into it and brings the process-wide
+    configuration into line with it, so the commands which follow operate on
+    the new project. Code which serves several projects should use
+    :func:`create_project`, which does neither.
+    """
+    if engine is None:
+        # What this process has been configured to use, as it always has.
+        engine = config.get("ledger", "engine", fallback="sqlite")
+    created = create_project(
+        name,
+        root,
+        working=working,
+        checkouts=checkouts,
+        results=results,
+        logs=logs,
+        user=user,
+        engine=engine,
+    )
+    os.chdir(root)
+    adopt_config(created, config)
 
 
 @click.command()

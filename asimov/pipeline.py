@@ -10,6 +10,7 @@ import time
 import asimov.analysis
 
 from asimov import utils  # NoQA
+from asimov.context import resolve_path
 from asimov import config, logger, logging, LOGGER_LEVEL, set_logger_level  # NoQA
 
 import otter  # NoQA
@@ -192,9 +193,9 @@ class Pipeline:
         env_files = self.production.meta['environment']['files']
         
         for file_type, filepath in env_files.items():
-            if os.path.exists(filepath):
+            if os.path.exists(resolve_path(filepath)):
                 try:
-                    store = Store(root=config.get("storage", "directory"))
+                    store = Store(root=resolve_path(config.get("storage", "directory")))
                     filename = os.path.basename(filepath)
                     store.add_file(
                         self.production.event.name, 
@@ -307,9 +308,7 @@ class Pipeline:
         Store the PE Summary results
         """
         # Prefer absolute webroot; if relative, join to project root
-        webroot = config.get("general", "webroot")
-        if not os.path.isabs(webroot):
-            webroot = os.path.join(config.get("project", "root"), webroot)
+        webroot = resolve_path(config.get("general", "webroot"))
 
         files = [
             f"{self.production.name}_pesummary.dat",
@@ -328,7 +327,7 @@ class Pipeline:
             )
             if os.path.exists(results):
                 try:
-                    store = Store(root=config.get("storage", "directory"))
+                    store = Store(root=resolve_path(config.get("storage", "directory")))
                     store.add_file(
                         self.production.event.name, self.production.name, file=results
                     )
@@ -348,9 +347,7 @@ class Pipeline:
         all expected analyses as datasets. For regular analyses, just checks
         that the file exists and is readable.
         """
-        webroot = config.get("general", "webroot")
-        if not os.path.isabs(webroot):
-            webroot = os.path.join(config.get("project", "root"), webroot)
+        webroot = resolve_path(config.get("general", "webroot"))
 
         base = os.path.join(webroot, self.production.event.name, self.production.name, "pesummary")
 
@@ -625,7 +622,7 @@ class Pipeline:
         """
         Build an entire report on this pipeline, including logs and configs.
         """
-        webdir = config.get("general", "webroot")
+        webdir = resolve_path(config.get("general", "webroot"))
         if reportformat == "html":
             # report = otter.Otter(
             #     f"{webdir}/{self.production.event.name}/{self.production.name}/index.html",
