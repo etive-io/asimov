@@ -16,6 +16,7 @@ import yaml
 
 from asimov import LOGGER_LEVEL, logger
 from asimov.context import current_context
+from asimov.audit import PROJECT, append_audit, new_record
 from asimov.principal import current_principal
 import asimov.event
 from asimov.analysis import ProjectAnalysis
@@ -38,6 +39,18 @@ logger.setLevel(LOGGER_LEVEL)
 
 #: The key under which an analysis records who requested it.
 REQUESTED_BY = "requested by"
+
+
+def _audited(ledger, kind, target, content, outcome="added"):
+    """
+    Record that a document was applied.
+
+    Call it inside ``ledger.transaction()``, in the same block as the change,
+    so the record and the change are stored together or not at all.
+    """
+    append_audit(
+        ledger, new_record("apply", kind, target, content=content, outcome=outcome)
+    )
 
 
 def _requested_by():
@@ -222,6 +235,9 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
     for document in quick_parse:
         if document["kind"] != "analysis":
             loaded_events.clear()
+        doc_kind = {"subject": "event"}.get(
+            str(document["kind"]).lower(), str(document["kind"]).lower()
+        )
         if document["kind"] in ("event", "subject"):
             logger.info("Found an event")
             document.pop("kind")
@@ -239,7 +255,11 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 event_exists = len(database.query("event", "name", event_obj.name)) > 0
 
             if event_exists and update_page is True and database is not None:
-                _update_event_in_database_ledger(ledger, event_obj, update_unstarted=update_unstarted)
+                with ledger.transaction():
+                    _update_event_in_database_ledger(
+                        ledger, event_obj, update_unstarted=update_unstarted
+                    )
+                    _audited(ledger, doc_kind, event_obj.name, document, outcome="updated")
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
                 )
@@ -288,14 +308,18 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 update(ledger.events[event_obj.name], event_obj.meta)
                 ledger.events[event_obj.name]["productions"] = analyses
                 ledger.events[event_obj.name].pop("ledger", None)
-                ledger.save()
+                with ledger.transaction():
+                    ledger.save()
+                    _audited(ledger, doc_kind, event_obj.name, document, outcome="updated")
 
                 click.echo(
                     click.style("●", fg="green") + f" Successfully updated {event_obj.name}"
                 )
 
             elif not event_exists and update_page is False:
-                ledger.update_event(event_obj)
+                with ledger.transaction():
+                    ledger.update_event(event_obj)
+                    _audited(ledger, doc_kind, event_obj.name, document)
                 click.echo(
                     click.style("●", fg="green") + f" Successfully added {event_obj.name}"
                 )
@@ -363,7 +387,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     parameters=expanded_doc, subject=event_obj, ledger=ledger
                 )
                 try:
-                    ledger.add_analysis(production, event=event_obj)
+                    with ledger.transaction():
+                        ledger.add_analysis(production, event=event_obj)
+                        _audited(
+                            ledger,
+                            doc_kind,
+                            f"{event_obj.name}/{production.name}",
+                            expanded_doc,
+                        )
                     # The YAML ledger adds it to the event itself; the database
                     # ledger only stores it.
                     if not event_obj.productions or event_obj.productions[-1] is not production:
@@ -417,7 +448,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                     elif isinstance(level, Ledger):
                         level.data["postprocessing stages"][document["name"]] = document
                         level.name = "the project"
-                    ledger.save()
+                    with ledger.transaction():
+                        ledger.save()
+                        _audited(
+                            ledger,
+                            doc_kind,
+                            level.name if isinstance(level, asimov.event.Event) else PROJECT,
+                            document,
+                        )
                     click.echo(
                         click.style("●", fg="green")
                         + f" Successfully added {document['name']} to {level.name}."
@@ -439,7 +477,9 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             analysis = ProjectAnalysis.from_dict(document, ledger=ledger)
 
             try:
-                ledger.add_analysis(analysis)
+                with ledger.transaction():
+                    ledger.add_analysis(analysis)
+                    _audited(ledger, doc_kind, f"{PROJECT}/{analysis.name}", document)
                 click.echo(
                     click.style("●", fg="green")
                     + f" Successfully added {analysis.name} to this project."
@@ -542,7 +582,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                                 production = asimov.event.Production.from_dict(
                                     parameters=analysis_doc, subject=event_obj, ledger=ledger
                                 )
-                                ledger.add_analysis(production, event=event_obj)
+                                with ledger.transaction():
+                                    ledger.add_analysis(production, event=event_obj)
+                                    _audited(
+                                        ledger,
+                                        "analysis",
+                                        f"{event_obj.name}/{production.name}",
+                                        analysis_doc,
+                                    )
                                 click.echo(
                                     click.style("  ●", fg="green")
                                     + f" Applied {production.name} from {analysis_ref}"
@@ -561,7 +608,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                         production = asimov.event.Production.from_dict(
                             parameters=analysis_ref, subject=event_obj, ledger=ledger
                         )
-                        ledger.add_analysis(production, event=event_obj)
+                        with ledger.transaction():
+                            ledger.add_analysis(production, event=event_obj)
+                            _audited(
+                                ledger,
+                                "analysis",
+                                f"{event_obj.name}/{production.name}",
+                                analysis_ref,
+                            )
                         click.echo(
                             click.style("  ●", fg="green")
                             + f" Applied {production.name} (inline)"
@@ -581,8 +635,10 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
         elif document["kind"] == "configuration":
             logger.info("Found configurations")
             document.pop("kind")
-            update(ledger.data, document)
-            ledger.save()
+            with ledger.transaction():
+                update(ledger.data, document)
+                ledger.save()
+                _audited(ledger, doc_kind, PROJECT, document)
             click.echo(
                 click.style("●", fg="green")
                 + " Successfully applied a configuration update"

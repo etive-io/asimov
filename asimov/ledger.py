@@ -6,6 +6,9 @@ import yaml
 
 import copy
 import contextlib
+import dataclasses
+import datetime
+import json
 import os
 import shutil
 import functools
@@ -13,12 +16,15 @@ from functools import reduce
 
 import asimov
 import asimov.database
-from asimov import config
+from asimov import config, logger as _asimov_logger
+from asimov.audit import AuditRecord, filter_records, timestamp_for
 from asimov.context import get_active_context
 from asimov.analysis import ProjectAnalysis, SubjectAnalysis
 from asimov.event import Event, Production, Subject
 from asimov.utils import update, diff_dict, set_directory
 from filelock import FileLock
+
+logger = _asimov_logger.getChild("ledger")
 
 
 def _in_own_context(method):
@@ -61,6 +67,48 @@ class Ledger:
     def batch_saves(self):
         """Coalesce writes made inside the block (a no-op unless overridden)."""
         yield self
+
+    def append_audit(self, record):
+        """
+        Add a record to the project's audit log.
+
+        The log is append-only: there is no way to change or remove a record.
+        Call this inside :meth:`transaction`, with the change it describes.
+
+        Parameters
+        ----------
+        record : asimov.audit.AuditRecord
+
+        Returns
+        -------
+        asimov.audit.AuditRecord
+            The record as stored, with its ``id`` where that is known.
+        """
+        raise NotImplementedError
+
+    def audit_log(
+        self, target=None, principal=None, kind=None, action=None, since=None, until=None, limit=None
+    ):
+        """
+        Read the project's audit log, oldest first.
+
+        Parameters
+        ----------
+        target, principal, kind, action, since, until
+            See :func:`asimov.audit.filter_records`.
+        limit : int, optional
+            Return only the most recent ``limit`` records.
+
+        Returns
+        -------
+        list of asimov.audit.AuditRecord
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def _audit_bound(moment):
+        """A ``since``/``until`` as the text records are stamped with."""
+        return timestamp_for(moment) if isinstance(moment, datetime.datetime) else moment
 
     def _invalidate_events_cache(self):
         """
@@ -250,6 +298,93 @@ class YAMLLedger(Ledger):
             if self._batch_depth == 0 and self._batch_dirty:
                 self._batch_dirty = False
                 self.save()
+
+    # Audit records made inside a transaction wait here, and are written when
+    # the outermost transaction succeeds, so a change which is abandoned
+    # leaves no record that it was made.
+    _transaction_depth = 0
+    _pending_audit = None
+
+    @contextlib.contextmanager
+    def transaction(self):
+        """
+        Make the audit records written in the block follow the block's fate.
+
+        The ledger itself is only written by :meth:`save`, so a block which
+        raises writes nothing of it. Its audit records are kept back until
+        the outermost block ends, and written then if it succeeded.
+        """
+        self._transaction_depth += 1
+        try:
+            yield self
+        except BaseException:
+            if self._transaction_depth == 1:
+                self._pending_audit = None
+            raise
+        else:
+            if self._transaction_depth == 1 and self._pending_audit:
+                pending, self._pending_audit = self._pending_audit, None
+                self._write_audit(pending)
+        finally:
+            self._transaction_depth -= 1
+
+    @property
+    def _audit_path(self):
+        return os.path.join(os.path.dirname(self.location), "audit.jsonl")
+
+    def _write_audit(self, records):
+        """Append records to the audit file, returning the id of the first."""
+        with self.lock:
+            first = len(self._read_audit_file()) + 1
+            with open(self._audit_path, "a") as audit_file:
+                for record in records:
+                    data = record.to_dict()
+                    data.pop("id", None)
+                    audit_file.write(json.dumps(data, default=str) + "\n")
+                audit_file.flush()
+                os.fsync(audit_file.fileno())
+        return first
+
+    def _read_audit_file(self):
+        """The records in the audit file, numbered by their line."""
+        if not os.path.exists(self._audit_path):
+            return []
+        records = []
+        with open(self._audit_path, "r") as audit_file:
+            for number, line in enumerate(audit_file, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    records.append(AuditRecord.from_dict({**json.loads(line), "id": number}))
+                except (ValueError, TypeError) as error:
+                    logger.warning("Skipping unreadable audit record %s: %s", number, error)
+        return records
+
+    def append_audit(self, record):
+        if self._transaction_depth:
+            if self._pending_audit is None:
+                self._pending_audit = []
+            self._pending_audit.append(record)
+            return record
+        first = self._write_audit([record])
+        return dataclasses.replace(record, id=first)
+
+    def audit_log(
+        self, target=None, principal=None, kind=None, action=None, since=None, until=None, limit=None
+    ):
+        records = self._read_audit_file() + list(self._pending_audit or [])
+        matching = list(
+            filter_records(
+                records,
+                target=target,
+                principal=principal,
+                kind=kind,
+                action=action,
+                since=self._audit_bound(since),
+                until=self._audit_bound(until),
+            )
+        )
+        return matching if limit is None else matching[-limit:]
 
     def save(self):
         """
@@ -1016,6 +1151,48 @@ class DatabaseLedger(Ledger):
         else:
             raise NotImplementedError("Delete not implemented for TinyDB backend")
         self._invalidate_events_cache()
+
+    def append_audit(self, record):
+        data = record.to_dict()
+        data.pop("id", None)
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            new_id = self.db.insert_audit(data)
+        else:
+            new_id = self.db.insert("audit_log", data)
+        return dataclasses.replace(record, id=new_id)
+
+    def audit_log(
+        self, target=None, principal=None, kind=None, action=None, since=None, until=None, limit=None
+    ):
+        since, until = self._audit_bound(since), self._audit_bound(until)
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            rows = self.db.query_audit(
+                target=target,
+                principal=principal,
+                kind=kind,
+                action=action,
+                since=since,
+                until=until,
+                limit=limit,
+            )
+            return [AuditRecord.from_dict(row) for row in rows]
+
+        records = [
+            AuditRecord.from_dict({**row, "id": row.doc_id})
+            for row in self.db.query("audit_log")
+        ]
+        matching = list(
+            filter_records(
+                records,
+                target=target,
+                principal=principal,
+                kind=kind,
+                action=action,
+                since=since,
+                until=until,
+            )
+        )
+        return matching if limit is None else matching[-limit:]
 
     def save(self):
         """
