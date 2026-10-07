@@ -203,10 +203,12 @@ def build_provenance(
     Notes
     -----
     This intentionally omits any record of *who* applied the blueprint that
-    created or changed this analysis's configuration - asimov doesn't track
-    that yet (see issue #143). Once it does, that can be added here as an
-    additional ``prov:Agent``/``prov:Activity`` pair without needing to
-    change the shape of anything already emitted.
+    created or changed this analysis's configuration. Who requested the
+    analysis is recorded as ``requested by`` (see :mod:`asimov.principal`,
+    and ``Principal.to_prov()`` for the PROV form), but the changes made to
+    it afterwards aren't recorded yet (see issue #143). Once they are, that
+    can be added here as an additional ``prov:Agent``/``prov:Activity`` pair
+    without needing to change the shape of anything already emitted.
     """
     subject, analysis = _resolve_analysis(ledger, subject_name, analysis_name)
 

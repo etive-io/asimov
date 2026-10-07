@@ -168,15 +168,20 @@ class ProjectContext:
         not given.
     project : asimov.project.Project, optional
         The ``Project`` this context belongs to, if it was made by one.
+    principal : asimov.principal.Principal, optional
+        Who acts on this project when nothing more specific says so (see
+        :func:`asimov.principal.current_principal`). Left unset, the
+        principal is the local user.
     """
 
-    def __init__(self, root, config=None, ledger=None, project=None):
+    def __init__(self, root, config=None, ledger=None, project=None, principal=None):
         self._root = os.path.abspath(root)
         self.config = config if config is not None else read_config(self._root)
         if not self.config.has_section("project"):
             self.config.add_section("project")
         self.config.set("project", "root", self.root)
         self.project = project
+        self.principal = principal
         self._ledger = ledger
         self._storage = None
         self._scheduler = None
@@ -342,6 +347,7 @@ class AmbientContext(ProjectContext):
     def __init__(self, config):
         self.config = config
         self.project = None
+        self.principal = None
         self._ledger = None
         self._ledger_tried = False
         self._storage = None
