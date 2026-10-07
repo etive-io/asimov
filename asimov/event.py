@@ -279,6 +279,49 @@ class Event:
             self._name_index = index
         return index[1].get(name)
 
+    _siblings = None
+
+    #: Subjects which are being loaded to resolve a ``subject/name`` entry of
+    #: ``needs:``. Loading one builds its analyses, which can read their own
+    #: ``needs:``, so two subjects which need each other would otherwise load
+    #: each other without end. A subject on this list resolves to nothing
+    #: until the next pass, by which time it has been loaded.
+    _loading = set()
+
+    def sibling(self, name):
+        """
+        Return another subject of the same project, or None.
+
+        This is for resolving a ``subject/name`` entry of ``needs:`` (#231).
+        The subject is read from the ledger the first time it is asked for and
+        kept until :meth:`update_graph` next runs, so a pass sees every
+        analysis of it as it was at the start of the pass, and looks it up
+        once however many analyses refer to it.
+
+        Returns None if there is no ledger, no such subject, or the subject is
+        this one (a ``subject/name`` entry naming its own subject is
+        resolved against this subject's own analyses, not a second copy).
+        """
+        if name == self.name or self.ledger is None:
+            return None
+        if self._siblings is None:
+            self._siblings = {}
+        if name in self._siblings:
+            return self._siblings[name]
+        if name in Event._loading:
+            return None
+        added = {self.name, name} - Event._loading
+        Event._loading |= added
+        try:
+            found = self.ledger.get_event(name)
+            sibling = found[0] if isinstance(found, list) and found else None
+        except (KeyError, ValueError):
+            sibling = None
+        finally:
+            Event._loading -= added
+        self._siblings[name] = sibling
+        return sibling
+
     def remove_production(self, production):
         """
         Remove a production from this event.
@@ -316,6 +359,9 @@ class Event:
         """
         # Clear all edges but keep nodes
         self.graph.clear_edges()
+
+        # Other subjects are read again at the start of each pass.
+        self._siblings = None
 
         # Rebuild edges based on current dependencies
         analysis_dict = {production.name: production for production in self.productions}
@@ -576,6 +622,12 @@ class Event:
                         >= production.meta["needs settings"]["minimum"]
                     ):
                         ends.append(production)
+
+        # The graph is of this subject only, so an analysis which needs one in
+        # another subject (``needs: [subject/name]``) is held back here.
+        ends = [
+            end for end in ends if not getattr(end, "foreign_dependencies_unfinished", None)
+        ]
 
         ready_values = {end for end in ends if end.status.lower() == "ready"}
 

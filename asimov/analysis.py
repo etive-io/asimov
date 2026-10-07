@@ -320,44 +320,104 @@ class Analysis:
                     break
         return list(self.event.analyses)
 
-    @property
-    def dependencies(self):
+    def _is_foreign(self, analysis):
+        """Whether an analysis belongs to another subject than this one."""
+        from asimov.event import Event
+
+        event = getattr(analysis, "event", None)
+        return (
+            isinstance(event, Event)
+            and event is not getattr(self, "event", None)
+            and event.name != getattr(getattr(self, "event", None), "name", None)
+        )
+
+    def _qualified_name(self, analysis):
         """
-        Return a list of analyses which this analysis depends upon.
-        
+        The name by which this analysis refers to another one.
+
+        A bare name for one in this analysis's own subject, as it always has
+        been, and ``subject/name`` for one in another subject.
+        """
+        if self._is_foreign(analysis):
+            return f"{analysis.event.name}/{analysis.name}"
+        return analysis.name
+
+    @property
+    def dependency_objects(self):
+        """
+        The analyses which this analysis depends upon, in name order.
+
+        This is the one place which resolves ``needs``; :attr:`dependencies`
+        and everything which needs the analyses themselves, rather than their
+        names, are built on it.
+
         The dependency resolution supports complex logic:
         - Top-level items in needs are OR'd together
         - Nested lists represent AND conditions (all must match)
         - Individual filters can be negated with !
-        
+        - ``subject/name`` reaches an analysis of another subject
+
+        Returns
+        -------
+        list
+            The analyses, without this one.
+        """
+        if len(self._needs) == 0:
+            return []
+        matches = set()
+        requirements = self._process_dependencies(deepcopy(self._needs))
+
+        # Each top-level item is OR'd with the others; an AND group is
+        # resolved by _requirement_matches.
+        for requirement in requirements:
+            matches.update(self._requirement_matches(requirement))
+
+        # Exclude self-dependencies. Order the matches deterministically
+        # (by name) rather than by the set's own order, which varies between
+        # processes because of hash randomisation; callers such as
+        # ``_collect_psds`` rely on this order being stable and reproducible.
+        named = [(self._qualified_name(analysis), analysis) for analysis in matches]
+        named.sort(key=lambda pair: pair[0])
+        return [analysis for name, analysis in named if name != self.name]
+
+    @property
+    def dependencies(self):
+        """
+        Return a list of the names of the analyses which this analysis depends upon.
+
+        The name of an analysis in this analysis's own subject is just its
+        name. One in another subject is ``subject/name``.
+
         Returns
         -------
         list
             List of analysis names that this analysis depends on
         """
-        all_matches = []
-        if len(self._needs) == 0:
-            return []
-        else:
-            matches = set()
-            requirements = self._process_dependencies(deepcopy(self._needs))
+        return [self._qualified_name(analysis) for analysis in self.dependency_objects]
 
-            # Each top-level item is OR'd with the others; an AND group is
-            # resolved by _requirement_matches.
-            for requirement in requirements:
-                matches.update(self._requirement_matches(requirement))
+    @property
+    def foreign_dependencies_unfinished(self):
+        """
+        The dependencies in other subjects which have not finished.
 
-            # Exclude self-dependencies. Iterate the matches in a
-            # deterministic (name-sorted) order rather than the set's own
-            # order, which varies between processes because of hash
-            # randomisation; callers such as ``_collect_psds`` rely on this
-            # order being stable and reproducible.
-            for analysis in sorted(matches, key=lambda a: a.name):
-                if analysis.name != self.name:
-                    all_matches.append(analysis.name)
+        The dependency graph of an event holds only its own analyses, so it
+        cannot hold an analysis back for one in another subject. This does.
+        It uses the same test as the graph: an analysis in the ``wait`` state
+        does not hold back the ones which need it.
 
-            return all_matches
-    
+        Returns
+        -------
+        list of str
+            ``subject/name`` of each unfinished dependency in another subject.
+        """
+        return [
+            self._qualified_name(analysis)
+            for analysis in self.dependency_objects
+            if self._is_foreign(analysis)
+            and not analysis.finished
+            and analysis.status != "wait"
+        ]
+
     @property
     def required_dependencies(self):
         """
@@ -420,7 +480,63 @@ class Analysis:
                 for analysis in matches
                 if analysis.matches_filter(attribute, match, negate)
             ]
+        if not matches:
+            # A name which is not an analysis of this subject may be
+            # ``subject/name``. A literal name always wins, so this is only
+            # tried when nothing matched.
+            matches = self._qualified_matches(conditions)
         return matches
+
+    @staticmethod
+    def _qualified_target(conditions):
+        """
+        The ``(subject, name)`` which a ``subject/name`` condition refers to.
+
+        Only a plain, non-negated name of exactly two non-empty parts counts:
+        three parts are reserved for ``project/subject/name`` (#187).
+
+        Returns
+        -------
+        tuple or None
+            ``(subject, name, index)`` with the index of the condition, or None.
+        """
+        for index, parsed_dep in enumerate(conditions):
+            attribute, match, negate = parsed_dep[:3]
+            if attribute == ["name"] and not negate and match.count("/") == 1:
+                subject, _, name = match.partition("/")
+                if subject and name:
+                    return subject, name, index
+        return None
+
+    def _qualified_matches(self, conditions):
+        """
+        The analyses of another subject which some conditions, one of which is
+        ``subject/name``, refer to. The other conditions still apply.
+        """
+        target = self._qualified_target(conditions)
+        sibling = getattr(getattr(self, "event", None), "sibling", None)
+        if target is None or sibling is None:
+            return []
+        subject, name, index = target
+        # The qualified form of a name in this analysis's own subject.
+        own = getattr(self.event, "name", None)
+        other = self.event if subject == own else sibling(subject)
+        found = other.analysis_by_name(name) if other is not None else None
+        if not isinstance(found, Analysis):
+            return []
+        for position, parsed_dep in enumerate(conditions):
+            if position == index:
+                continue
+            attribute, match, negate = parsed_dep[:3]
+            if not found.matches_filter(attribute, match, negate):
+                return []
+        return [found]
+
+    @staticmethod
+    def _is_qualified_requirement(requirement):
+        """Whether a parsed ``needs`` item names an analysis as ``subject/name``."""
+        conditions = requirement if isinstance(requirement, list) else [requirement]
+        return Analysis._qualified_target(conditions) is not None
 
     @staticmethod
     def _describe_requirement(requirement):
@@ -463,6 +579,25 @@ class Analysis:
             self._describe_requirement(requirement)
             for requirement in self.required_dependencies
             if len(self._requirement_matches(requirement)) == 0
+        ]
+
+    @property
+    def unresolved_qualified_needs(self):
+        """
+        The ``unresolved_needs`` which name an analysis as ``subject/name``.
+
+        Unlike the others these always hold the analysis back: an entry which
+        is not a name in this subject is not one which existing ledgers could
+        have relied on being ignored, and starting a job early for want of a
+        typo, or of a subject which is not there yet, is the thing to avoid.
+        """
+        if getattr(self, "event", None) is None:
+            return []
+        return [
+            self._describe_requirement(requirement)
+            for requirement in self.required_dependencies
+            if self._is_qualified_requirement(requirement)
+            and len(self._requirement_matches(requirement)) == 0
         ]
 
     @property
@@ -662,16 +797,17 @@ class Analysis:
         list
             A list of :class:`Analysis` objects this analysis depends on.
         """
-        dep_names = set(self.dependencies)
         by_name = []
-        if dep_names:
-            if getattr(self, "event", None) is not None:
-                pool = self.event.analyses
-            elif hasattr(self, "_subject_obs"):
-                pool = [a for event in self._subject_obs for a in event.analyses]
-            else:
-                pool = []
-            by_name = [a for a in pool if a.name in dep_names]
+        if getattr(self, "event", None) is not None:
+            by_name = self.dependency_objects
+        else:
+            dep_names = set(self.dependencies)
+            if dep_names:
+                if hasattr(self, "_subject_obs"):
+                    pool = [a for event in self._subject_obs for a in event.analyses]
+                else:
+                    pool = []
+                by_name = [a for a in pool if a.name in dep_names]
 
         combined = list(by_name)
         for analysis in getattr(self, "analyses", None) or []:
@@ -1263,15 +1399,9 @@ class SimpleAnalysis(Analysis):
 
     def _previous_assets(self):
         assets = {}
-        # ``dependencies`` resolves ``needs`` against every analysis in the
-        # subject each time it is read, so read it once.
-        dependencies = self.dependencies
-        if dependencies:
-            productions = {}
-            for production in self.event.productions:
-                productions[production.name] = production
-            for previous_job in dependencies:
-                assets.update(productions[previous_job].pipeline.collect_assets())
+        # Resolving ``needs`` is not free, so do it once.
+        for dependency in self.dependency_objects:
+            assets.update(dependency.pipeline.collect_assets())
         return assets
 
     @classmethod
@@ -2506,17 +2636,15 @@ class GravitationalWaveTransient(SimpleAnalysis):
             # Dependencies which are expected to supply PSDs, as
             # (name, assets) pairs, in the (sorted) order of `dependencies`.
             psd_sources = []
-            # Read once: ``dependencies`` scans the whole subject each time.
-            dependencies = self.dependencies
-            if dependencies:
-                productions = {}
-                for production in self.event.productions:
-                    productions[production.name] = production
-
-                for previous_job in dependencies:
-                    dependency = productions.get(previous_job)
-                    if dependency is None:
-                        continue
+            # Read once: resolving ``needs`` is not free. Keyed by the name
+            # this analysis refers to each one by (``subject/name`` for one
+            # in another subject), in name order.
+            productions = {
+                self._qualified_name(dependency): dependency
+                for dependency in self.dependency_objects
+            }
+            if productions:
+                for previous_job, dependency in productions.items():
                     try:
                         assets = dependency.pipeline.collect_assets() or {}
                     except Exception as e:
