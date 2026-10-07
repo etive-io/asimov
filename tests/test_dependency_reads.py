@@ -1,7 +1,7 @@
 """
-``Analysis.dependencies`` resolves ``needs`` against every analysis in the
-subject each time it is read, so code which needs it more than once in a call
-should read it once (#242).
+Resolving ``needs`` (``Analysis.dependency_objects``, which ``dependencies`` is
+built on) is not free, so code which needs the dependencies more than once in a
+call should read them once (#242).
 """
 import os
 import shutil
@@ -55,8 +55,9 @@ class DependencyReadTests(unittest.TestCase):
         shutil.rmtree(self.root, ignore_errors=True)
 
     def reads(self, call):
+        prod0 = self.prod1.event.analysis_by_name("Prod0")
         with patch.object(
-            Analysis, "dependencies", new_callable=PropertyMock, return_value=["Prod0"]
+            Analysis, "dependency_objects", new_callable=PropertyMock, return_value=[prod0]
         ) as dependencies:
             call()
         return dependencies.call_count

@@ -57,7 +57,9 @@ def report_unresolved_needs(analysis, logger):
     Such an entry contributes no dependency, so the analysis would otherwise
     be treated as having no dependency on it and be eligible to run at once.
     The warning is always given. An analysis with ``strict needs: true`` is
-    also held back until every entry resolves.
+    also held back until every entry resolves, and so is one which has an
+    entry naming an analysis as ``subject/name`` (#231) which does not
+    resolve, whether or not it sets that.
 
     Args:
     analysis: the analysis to check
@@ -67,16 +69,20 @@ def report_unresolved_needs(analysis, logger):
     """
     try:
         unresolved = analysis.unresolved_needs
+        qualified = set(getattr(analysis, "unresolved_qualified_needs", []))
     except Exception as e:
         logger.warning(f"Could not check the needs of {analysis.name}: {e}")
         return False
     if not unresolved:
         return False
-    hold = analysis.strict_needs
+    strict = analysis.strict_needs
+    hold = False
     for problem in unresolved:
+        held = strict or problem in qualified
+        hold = hold or held
         message = f"{analysis.name} has an unresolved need: {problem}"
-        if hold:
-            message += " (strict needs: not ready)"
+        if held:
+            message += " (not ready)" if problem in qualified else " (strict needs: not ready)"
         click.echo(click.style("●", fg="yellow") + f" {message}")
         logger.warning(message)
     return hold

@@ -169,6 +169,35 @@ To mark a dependency as optional, use the dict format with an ``optional: true``
 In this example, the analysis will only run if at least one ``bilby`` analysis is present.
 However, if a ``rift`` analysis is also available, it will be included as a dependency.
 
+Needing an analysis in another subject
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An entry in ``needs`` is looked for among the analyses of the same subject.
+To need an analysis in another subject of the same project, write its name as ``subject/name``:
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: fit-r002
+		pipeline: example
+		needs:
+		  - central/combine-r001   # in the subject "central"
+		  - fit-r001               # in this subject, as always
+
+The analysis waits until ``central/combine-r001`` has finished, in the same way as for an analysis in its own subject, and can use its results.
+This works in either direction, so a step in one subject can need a step in another which itself needs a step in the first, as long as there is no cycle.
+
+* An entry which names an analysis as ``subject/name`` and does not resolve, because of a misspelling or because the subject or analysis has not been added yet, always holds the analysis back and is reported as not ready.
+  Unlike an entry which is just a name, it is not ignored, because starting a job early for want of a typo is rarely what is meant.
+  Mark it ``optional: true`` to ignore it.
+* A name which contains ``/`` and is the name of an analysis in the same subject is that analysis, as it always has been.
+  Only if there is no such analysis is it read as ``subject/name``.
+  Deleting that analysis would therefore change what the entry means.
+* Two parts always mean ``subject/name``; a third part is reserved for naming analyses in other projects.
+* In ``resolved_dependencies``, which is used to tell whether an analysis is stale, a dependency in the same subject is still its bare name, and one in another subject is ``subject/name``.
+* A version of asimov without this feature ignores such an entry, so it would start the analysis without waiting.
+  Do not run a ledger which uses it with an older version.
+
 .. _subject-analysis:
 
 A Blueprint for a subject analysis
