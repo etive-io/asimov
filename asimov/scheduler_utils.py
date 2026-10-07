@@ -7,10 +7,12 @@ the scheduler API in pipelines and other parts of asimov.
 
 import configparser
 import functools
-from asimov import config as _active_config, logger
+from asimov import config, logger
 from asimov.scheduler import get_scheduler, JobDescription, JobList
 
 logger = logger.getChild("scheduler_utils")
+
+_active_config = config
 
 
 def get_configured_scheduler(config=None):
