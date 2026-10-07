@@ -61,6 +61,13 @@ def _config_value(key, fallback=None):
         return fallback
 
 
+def per_pass_limit():
+    """
+    The ``[scheduler] max_submit_per_pass`` setting, or None for no limit.
+    """
+    return _positive_int(_config_value("max_submit_per_pass"))
+
+
 def count_active(ledger):
     """
     Count the analyses in a project which are currently in the queue.

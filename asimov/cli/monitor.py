@@ -14,6 +14,7 @@ from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
+from asimov.throttle import per_pass_limit
 from asimov.telemetry import initialize_telemetry_sinks
 
 # Try to import crontab for Slurm cron support
@@ -303,6 +304,103 @@ def _stop_slurm_monitor_manual():
     click.echo(f"Run 'crontab -e' and remove the line containing '{cronjob_id}'")
 
 
+#: The most times ``monitor --chain`` runs build and submit again in one pass,
+#: after analyses have finished, so what needs them can start without waiting for
+#: the next pass (a dependency hop would otherwise cost a whole period).
+CHAIN_MAX_RERUNS = 3
+
+
+def _run_build_and_submit(ctx, event, max_submit=None):
+    """
+    Run ``manage build`` then ``manage submit``, as a chain pass does.
+
+    A failure while building must not stop analyses which are already built
+    from being submitted (or the rest of the monitor pass).
+
+    Returns
+    -------
+    int
+        The number of analyses which were submitted.
+    """
+    submitted = 0
+    for step in (manage.build, manage.submit):
+        kwargs = {"event": event}
+        if step is manage.submit and max_submit is not None:
+            kwargs["max_submit"] = max_submit
+        try:
+            result = ctx.invoke(step, **kwargs)
+            if step is manage.submit and isinstance(result, int):
+                submitted = result
+        except Exception as e:
+            logger.exception(e)
+            click.echo(
+                click.style("●", fg="red") + f" asimov manage {step.name} failed: {e}"
+            )
+    return submitted
+
+
+def _finished_analyses(event):
+    """The ``(subject, name)`` of every analysis which has finished."""
+    finished = set()
+    for subject in ledger.get_event(event):
+        for analysis in subject.productions:
+            if analysis.finished:
+                finished.add((subject.name, analysis.name))
+    for analysis in ledger.project_analyses:
+        if analysis.finished:
+            finished.add((None, analysis.name))
+    return finished
+
+
+def _settle_chain_pass(ctx, event, newly_finished, submitted):
+    """
+    Run build and submit again after analyses have finished in this pass.
+
+    The monitor step is what notices that an analysis has finished, and what
+    needs it is only submitted by a later run of submit. Running them again
+    here starts it now, instead of in the next pass. This repeats while
+    running them finishes something more (some analyses finish as they are
+    submitted), at most ``CHAIN_MAX_RERUNS`` times, and keeps to the
+    ``max_submit_per_pass`` limit across all of the runs in the pass.
+
+    Parameters
+    ----------
+    event : str or None
+        The subject which the pass is for.
+    newly_finished : int
+        How many analyses the monitor step found to have finished.
+    submitted : int
+        How many analyses the pass has submitted so far.
+
+    Returns
+    -------
+    int
+        The number of times build and submit were run again.
+    """
+    click.echo(
+        click.style("●", fg="green")
+        + f" {newly_finished} finished in this pass: running build and submit again"
+        " so that what needs them can start"
+    )
+    limit = per_pass_limit()
+    known = _finished_analyses(event)
+    reruns = 0
+    while reruns < CHAIN_MAX_RERUNS:
+        remaining = None
+        if limit is not None:
+            remaining = limit - submitted
+            if remaining <= 0:
+                click.echo("The submission limit for this pass has been reached")
+                break
+        reruns += 1
+        submitted += _run_build_and_submit(ctx, event, max_submit=remaining)
+        now = _finished_analyses(event)
+        if not now - known:
+            break
+        known = now
+    return reruns
+
+
 @click.argument("event", default=None, required=False)
 @click.option(
     "--update",
@@ -350,19 +448,14 @@ def monitor(ctx, event, update, dry_run, chain):
     from asimov.monitor_helpers import initialize_labellers
     initialize_labellers(ledger)
 
+    # ``event`` is reused as a loop variable below.
+    event_filter = event
+    submitted = 0
+    newly_finished = 0
+
     if chain:
         logger.info("Running in chain mode")
-        # A failure while building must not stop analyses which are already
-        # built from being submitted (or the rest of the monitor pass).
-        for step in (manage.build, manage.submit):
-            try:
-                ctx.invoke(step, event=event)
-            except Exception as e:
-                logger.exception(e)
-                click.echo(
-                    click.style("●", fg="red")
-                    + f" asimov manage {step.name} failed: {e}"
-                )
+        submitted = _run_build_and_submit(ctx, event_filter)
 
     try:
         # Get the job listing using the new scheduler API
@@ -400,6 +493,7 @@ def monitor(ctx, event, update, dry_run, chain):
         click.secho(f"Subjects: {analysis.subjects}", bold=True)
         
         if analysis.status.lower() in ACTIVE_STATES:
+            was_finished = analysis.finished
             monitor_analysis(
                 analysis=analysis,
                 job_list=job_list,
@@ -407,6 +501,7 @@ def monitor(ctx, event, update, dry_run, chain):
                 dry_run=dry_run,
                 analysis_path=f"project_analyses/{analysis.name}"
             )
+            newly_finished += int(analysis.finished and not was_finished)
 
     all_analyses = set(ledger.project_analyses)
     complete = {
@@ -454,6 +549,7 @@ def monitor(ctx, event, update, dry_run, chain):
         ]
 
         for production in on_deck:
+            was_finished = production.finished
             monitor_analysis(
                 analysis=production,
                 job_list=job_list,
@@ -461,6 +557,7 @@ def monitor(ctx, event, update, dry_run, chain):
                 dry_run=dry_run,
                 analysis_path=f"{event.name}/{production.name}"
             )
+            newly_finished += int(production.finished and not was_finished)
 
         ledger.update_event(event)
 
@@ -559,6 +656,11 @@ def monitor(ctx, event, update, dry_run, chain):
                             logger.warning(traceback_text)
 
         if chain:
+            ctx.invoke(report.html)
+
+    # What needs an analysis which has just finished can start in this pass.
+    if chain and not dry_run and newly_finished:
+        if _settle_chain_pass(ctx, event_filter, newly_finished, submitted):
             ctx.invoke(report.html)
 
     # run the cbcflow hook once to update all the info if needed

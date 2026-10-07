@@ -54,6 +54,7 @@ Selects and configures the ledger backend. See :doc:`ledger` for the full compar
 ``max_submit_per_pass``
    The maximum number of analyses a single ``asimov manage submit`` (or ``asimov monitor --chain``) will
    submit. May be overridden with ``asimov manage submit --max-submit N``. Unset or ``0`` means no limit.
+   ``asimov monitor --chain`` may run submit more than once in a pass; the limit is shared by all of the runs.
 
 ``submit_interval``
    Seconds to wait between consecutive submissions. Defaults to ``0``.
