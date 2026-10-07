@@ -37,6 +37,7 @@ from asimov.models import (
     ProductionModel,
     ProjectAnalysisModel,
     LedgerConfigModel,
+    AuditLogModel,
     EventSchema,
     ProductionSchema,
     ProjectAnalysisSchema,
@@ -146,6 +147,7 @@ class AsimovTinyDatabase(AsimovDatabase):
             "event": self.db.table("event"),
             "production": self.db.table("production"),
             "config": self.db.table("config"),
+            "audit_log": self.db.table("audit_log"),
         }
         self.Q = Query()
 
@@ -496,6 +498,93 @@ class AsimovSQLDatabase(AsimovDatabase):
             _ = analysis.comment, analysis.meta
             session.expunge(analysis)
             return analysis
+
+    def insert_audit(self, data: Dict[str, Any]) -> int:
+        """
+        Add a record to the audit log.
+
+        Parameters
+        ----------
+        data : dict
+            An :class:`asimov.audit.AuditRecord` as a dictionary.
+
+        Returns
+        -------
+        int
+            The record's id: its place in the log.
+        """
+        from asimov.audit import responsible_identifier
+
+        principal = data["principal"]
+        with self.get_session() as session:
+            row = AuditLogModel(
+                timestamp=data["timestamp"],
+                action=data["action"],
+                kind=data["kind"],
+                target=data["target"],
+                outcome=data.get("outcome", "added"),
+                principal_id=principal["identifier"],
+                on_behalf_of=responsible_identifier(principal),
+                principal=principal,
+                content=data.get("content"),
+                content_hash=data.get("content_hash", ""),
+                accounting=data.get("accounting"),
+            )
+            session.add(row)
+            session.flush()
+            return row.id
+
+    def query_audit(
+        self,
+        target: Optional[str] = None,
+        principal: Optional[str] = None,
+        kind: Optional[str] = None,
+        action: Optional[str] = None,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict]:
+        """
+        Read the audit log, oldest first.
+
+        The filters mean what they do in :func:`asimov.audit.filter_records`.
+        With a ``limit`` it is the most recent records which are returned.
+
+        Returns
+        -------
+        list of dict
+            Matching records as :class:`asimov.audit.AuditRecord` dictionaries.
+        """
+        with self.get_session() as session:
+            query = session.query(AuditLogModel)
+            if target is not None:
+                query = query.filter(
+                    or_(
+                        AuditLogModel.target == target,
+                        AuditLogModel.target.startswith(target + "/", autoescape=True),
+                    )
+                )
+            if principal is not None:
+                query = query.filter(
+                    or_(
+                        AuditLogModel.principal_id == principal,
+                        AuditLogModel.on_behalf_of == principal,
+                    )
+                )
+            if kind is not None:
+                query = query.filter(AuditLogModel.kind == kind)
+            if action is not None:
+                query = query.filter(AuditLogModel.action == action)
+            if since is not None:
+                query = query.filter(AuditLogModel.timestamp >= since)
+            if until is not None:
+                query = query.filter(AuditLogModel.timestamp < until)
+            if limit is not None:
+                rows = query.order_by(AuditLogModel.id.desc()).limit(limit).all()
+                rows.reverse()
+            else:
+                rows = query.order_by(AuditLogModel.id.asc()).all()
+            return [row.to_dict() for row in rows]
 
     def insert(self, table: str, data: Dict[str, Any]) -> Any:
         """

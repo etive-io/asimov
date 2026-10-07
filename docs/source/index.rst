@@ -171,6 +171,7 @@ Advanced topics
    environment-reproducibility
    provenance
    principals
+   audit
    build-process
    scheduler-integration
    dag-translation-examples
