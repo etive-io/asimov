@@ -20,6 +20,7 @@ for production deployments with better concurrency handling.
 import os
 import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Dict, List, Optional, Any
 
 from tinydb import Query, TinyDB
@@ -42,8 +43,26 @@ from asimov.models import (
 )
 
 
+# The sessions held open by ``AsimovSQLDatabase.transaction()``, keyed by
+# the database object. A ``ContextVar`` rather than an attribute of the
+# database, so each thread or asyncio task which opens a transaction sees
+# only its own: two requests sharing one database never join each other's
+# transaction.
+_open_transactions: ContextVar = ContextVar("asimov_open_transactions", default=None)
+
+
 class AsimovDatabase:
     """Base class for asimov database backends."""
+
+    @contextmanager
+    def transaction(self):
+        """
+        Group the writes made inside the block, so they all persist or none do.
+
+        This backend cannot do that, so the block just runs: each write is
+        persisted as it is made, and an exception does not undo them.
+        """
+        yield self
 
     def insert(self, table: str, data: Dict[str, Any]) -> Any:
         """Insert a record into the database."""
@@ -262,17 +281,60 @@ class AsimovSQLDatabase(AsimovDatabase):
         self.engine.dispose()
 
     @contextmanager
+    def transaction(self):
+        """
+        Run the block in one database transaction.
+
+        Every ``get_session()`` made in the block, in the same thread or
+        task, joins this transaction rather than committing on its own. The
+        transaction commits when the block ends, or rolls back if it raises,
+        so nothing written in a block which fails is persisted.
+
+        Nested blocks join the outermost transaction; only it commits.
+
+        Yields
+        ------
+        Session
+            The session shared by the block.
+        """
+        open_now = _open_transactions.get() or {}
+        if id(self) in open_now:
+            yield open_now[id(self)]
+            return
+
+        session = self.SessionLocal()
+        token = _open_transactions.set({**open_now, id(self): session})
+        try:
+            yield session
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise
+        finally:
+            _open_transactions.reset(token)
+            session.close()
+
+    @contextmanager
     def get_session(self) -> Session:
         """
         Context manager for database sessions.
 
-        Provides automatic transaction handling and session cleanup.
+        Provides automatic transaction handling and session cleanup. Inside
+        a ``transaction()`` block it hands out the transaction's session
+        instead, flushing on the way out so later queries in the block see
+        the write; committing is left to the transaction.
 
         Yields
         ------
         Session
             SQLAlchemy session with transaction support.
         """
+        shared = (_open_transactions.get() or {}).get(id(self))
+        if shared is not None:
+            yield shared
+            shared.flush()
+            return
+
         session = self.SessionLocal()
         try:
             yield session

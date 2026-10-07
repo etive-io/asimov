@@ -7,18 +7,23 @@ the scheduler API in pipelines and other parts of asimov.
 
 import configparser
 import functools
-from asimov import config, logger
+from asimov import config as _active_config, logger
 from asimov.scheduler import get_scheduler, JobDescription, JobList
 
 logger = logger.getChild("scheduler_utils")
 
 
-def get_configured_scheduler():
+def get_configured_scheduler(config=None):
     """
     Get a scheduler instance based on the asimov configuration.
     
     This function reads the scheduler configuration from asimov.conf
     and returns an appropriate scheduler instance.
+
+    Parameters
+    ----------
+    config : ConfigParser, optional
+        The configuration to read. Defaults to the active project's.
     
     Returns
     -------
@@ -34,6 +39,9 @@ def get_configured_scheduler():
     ...                      error="err.log", log="job.log")
     >>> cluster_id = scheduler.submit(job)
     """
+    if config is None:
+        config = _active_config
+
     try:
         scheduler_type = config.get("scheduler", "type")
     except (configparser.NoOptionError, configparser.NoSectionError, KeyError):

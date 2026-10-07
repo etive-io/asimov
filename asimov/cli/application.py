@@ -52,10 +52,11 @@ def get_ledger():
     Ledger
         The current ledger instance.
     """
-    from asimov.project import get_active_project
-    active_project = get_active_project()
-    if active_project is not None:
-        return active_project.ledger
+    from asimov.context import get_active_context
+
+    active = get_active_context()
+    if active is not None:
+        return active.ledger
 
     from asimov import config
     if config.get("ledger", "engine") == "yamlfile":

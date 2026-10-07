@@ -29,27 +29,24 @@ try:
 except ImportError:
     import configparser
 
+from .context import (  # noqa: E402
+    ConfigProxy,
+    _config_locations,
+    _install_ambient,
+    current_context,
+    read_config,
+)
+
 default_config = files(__name__).joinpath(f"{__packagename__}.conf").read_bytes()
 
-config = configparser.ConfigParser()
-# if not config_file:
+config_locations = list(reversed(_config_locations(os.curdir)))
 
-config.read_string(default_config.decode("utf8"))
-config_locations = [
-    os.path.join(os.curdir, ".asimov", "{}.conf".format(__packagename__)),
-    os.path.join(
-        os.path.expanduser("~"),
-        ".config",
-        __packagename__,
-        "{}.conf".format(__packagename__),
-    ),
-    os.path.join(os.path.expanduser("~"), ".{}".format(__packagename__)),
-    "/etc/{}".format(__packagename__),
-]
-
-config_locations.reverse()
-
-config.read([conffile for conffile in config_locations])
+# The configuration of the project in the current directory, read once when
+# asimov is imported. Code which has activated a ProjectContext sees that
+# project's configuration instead, through the ``config`` proxy.
+_default_config = read_config(os.curdir)
+config = ConfigProxy(_default_config)
+_install_ambient(_default_config)
 
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
@@ -190,36 +187,14 @@ def setup_file_logging(logfile=None):
             _file_handler = None  # Mark as attempted but failed
 
 
-try:
-    _engine = config.get("ledger", "engine")
-    if _engine == "yamlfile":
-        from .ledger import YAMLLedger
+def __getattr__(name):
+    """
+    ``asimov.current_ledger``: the active project's ledger.
 
-        current_ledger = YAMLLedger(config.get("ledger", "location"))
-    elif _engine == "gitlab":
-        logger.error("The gitlab interface has been removed from v0.6 of asimov")
-        current_ledger = None
-    elif _engine in {"tinydb", "sqlalchemy", "sqlite", "postgresql", "mysql"}:
-        from .ledger import DatabaseLedger
-
-        # For a file-backed database (sqlite, the common case) only attach
-        # to it if it already exists. AsimovSQLDatabase.__init__ will
-        # happily create a brand new database file (and its parent
-        # directory) the moment it's asked to connect to one that isn't
-        # there yet - appropriate for an explicit `asimov init`, but not
-        # for this best-effort "is there a project here?" probe that runs
-        # on every `import asimov`, in whatever directory that happens to
-        # be. Network-backed URLs (postgresql://, mysql://) have no local
-        # path to check, so those are left to connect as before.
-        _location = config.get("ledger", "location", fallback=None)
-        if _location and "://" not in _location and not os.path.exists(_location):
-            current_ledger = None
-        else:
-            current_ledger = DatabaseLedger(engine=_engine)
-    else:
-        current_ledger = None
-except FileNotFoundError:
-    current_ledger = None
-except Exception as e:
-    logger.debug("Could not initialise ledger at startup: %s", e)
-    current_ledger = None
+    Deprecated in favour of ``asimov.context.current_context().ledger``.
+    Read on each access, so it follows the active context; ``None`` if
+    there is no project to open.
+    """
+    if name == "current_ledger":
+        return current_context().ledger
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
