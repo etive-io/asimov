@@ -9,7 +9,8 @@ import warnings
 
 import click
 
-from asimov import current_ledger as ledger
+from asimov.context import active_ledger as ledger
+from asimov.context import resolve_path
 import asimov
 from asimov import condor
 from asimov import LOGGER_LEVEL
@@ -197,11 +198,10 @@ def build(event, dryrun):
                 if analysis.status in {"ready"}:
                     # Need to ensure a directory exists for these!
                     subj_string = subjects_dirname(analysis._subjects)
-                    project_analysis_dir = os.path.join(
-                        "checkouts", "project-analyses", subj_string
+                    project_analysis_dir = resolve_path(
+                        os.path.join("checkouts", "project-analyses", subj_string)
                     )
-                    if not os.path.exists(project_analysis_dir):
-                        os.makedirs(project_analysis_dir)
+                    os.makedirs(project_analysis_dir, exist_ok=True)
                     click.echo(
                         click.style("●", fg="green")
                         + f" Building project analysis {analysis.name}"

@@ -1,6 +1,7 @@
 import click
 import os
 from asimov import config
+from asimov.context import resolve_path
 
 
 @click.group()
@@ -38,5 +39,5 @@ def update(kwargs):
     if not config.has_section(section):
         config.add_section(section)
     config.set(section, key, value)
-    with open(os.path.join(".asimov", "asimov.conf"), "w") as config_file:
+    with open(resolve_path(os.path.join(".asimov", "asimov.conf")), "w") as config_file:
         config.write(config_file)

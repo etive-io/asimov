@@ -4,7 +4,8 @@ import click
 import yaml
 
 from asimov import config
-from asimov import current_ledger as ledger
+from asimov.context import resolve_path
+from asimov.context import active_ledger as ledger
 
 from asimov.event import Production
 from asimov.storage import Store
@@ -179,7 +180,7 @@ def results(event, production, file, hash=None):
         for production_o in event.productions
         if production_o.name == production
     ][0]
-    store = Store(root=config.get("storage", "directory"))
+    store = Store(root=resolve_path(config.get("storage", "directory")))
 
     if not file:
         try:

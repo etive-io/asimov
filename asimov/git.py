@@ -8,8 +8,7 @@ import subprocess
 import git
 
 from asimov import config, logger
-from asimov.context import current_context
-from asimov.utils import set_directory
+from asimov.context import resolve_path
 
 
 class AsimovFileNotFound(FileNotFoundError):
@@ -42,6 +41,11 @@ class EventRepo:
         self.url = url
 
         self.logger = logger
+
+    @property
+    def path(self):
+        """The repository's directory, as an absolute path in the project."""
+        return resolve_path(self.directory)
 
     @staticmethod
     def git_enabled():
@@ -78,42 +82,42 @@ class EventRepo:
         a missing checkout is an error (a failed clone), not something to
         paper over with an empty repository.
         """
-        if self._initialised or not os.path.isdir(self.directory):
+        if self._initialised or not os.path.isdir(self.path):
             return
         category = config.get("general", "calibration_directory")
         if self._pending_init:
-            os.makedirs(os.path.join(self.directory, category), exist_ok=True)
+            os.makedirs(os.path.join(self.path, category), exist_ok=True)
             self._pending_init = False
         if not self.git_enabled():
             return
-        if os.path.exists(os.path.join(self.directory, ".git")):
+        if os.path.exists(os.path.join(self.path, ".git")):
             self._initialised = True
             return
         if self.url not in (None, self.directory):
             return
         self._initialised = True
         try:
-            repo = git.Repo.init(self.directory, initial_branch="main")
+            repo = git.Repo.init(self.path, initial_branch="main")
         except (TypeError, git.exc.GitCommandError) as exc:
             # Fallback for older git versions that don't support initial_branch
             logger.warning(
                 "Git version does not support 'initial_branch' when initializing "
                 "repository at %s; falling back to default initial branch. "
                 "Original error: %s",
-                self.directory,
+                self.path,
                 exc,
             )
-            repo = git.Repo.init(self.directory)
+            repo = git.Repo.init(self.path)
         try:
-            os.makedirs(os.path.join(self.directory, category), exist_ok=True)
-            with open(os.path.join(self.directory, category, ".gitkeep"), "w") as f:
+            os.makedirs(os.path.join(self.path, category), exist_ok=True)
+            with open(os.path.join(self.path, category, ".gitkeep"), "w") as f:
                 f.write(" ")
             repo.git.add(os.path.join(".", category, ".gitkeep"))
             try:
                 repo.git.commit("-m", "Initial commit")
             except git.exc.GitCommandError as e:
                 if "working tree clean" not in (e.stdout or ""):
-                    logger.debug(f"Initial commit in {self.directory} skipped: {e}")
+                    logger.debug(f"Initial commit in {self.path} skipped: {e}")
         finally:
             repo.close()
 
@@ -134,7 +138,7 @@ class EventRepo:
         if self._repo is not None:
             yield self._repo
             return
-        repo = git.Repo(self.directory)
+        repo = git.Repo(self.path)
         try:
             yield repo
         finally:
@@ -164,7 +168,7 @@ class EventRepo:
         """
         self._ensure_initialised()
         if self._repo is None:
-            self._repo = git.Repo(self.directory)
+            self._repo = git.Repo(self.path)
         return self._repo
 
     def get_default_branch(self):
@@ -234,7 +238,7 @@ class EventRepo:
         location : str
            The location of the directory to be used.
         """
-        os.makedirs(location, exist_ok=True)
+        os.makedirs(resolve_path(location), exist_ok=True)
         # The git init and initial commit are deferred until the repository
         # is first used, see _ensure_initialised().
         return cls(directory=location, url=location, pending_init=True)
@@ -263,10 +267,10 @@ class EventRepo:
             tmp = config.get("general", "git_default")
             directory = f"{tmp}/{name}"
 
-            if os.path.exists(directory):
+            if os.path.exists(resolve_path(directory)):
                 return cls(directory, url, update=update)
 
-            pathlib.Path(directory).mkdir(parents=True, exist_ok=True)
+            pathlib.Path(resolve_path(directory)).mkdir(parents=True, exist_ok=True)
 
         # Replace an https address with an ssh address
         if "https" in url:
@@ -277,9 +281,9 @@ class EventRepo:
             url = f"{start}:{final}"
 
         try:
-            repo = git.Repo.clone_from(url, directory)
+            repo = git.Repo.clone_from(url, resolve_path(directory))
         except git.exc.GitCommandError:
-            repo = git.Repo(directory)
+            repo = git.Repo(resolve_path(directory))
             try:
                 try:
                     repo.git.stash()
@@ -322,10 +326,10 @@ class EventRepo:
 
         self._ensure_initialised()
         destination_dir = os.path.dirname(destination)
-        destination_dir = os.path.join(self.directory, destination_dir)
+        destination_dir = os.path.join(self.path, destination_dir)
         pathlib.Path(destination_dir).mkdir(parents=True, exist_ok=True)
 
-        destination_d = os.path.join(self.directory, destination)
+        destination_d = os.path.join(self.path, destination)
 
         try:
             shutil.copyfile(source, destination_d)
@@ -366,12 +370,11 @@ class EventRepo:
         """
 
         self._ensure_initialised()
-        with set_directory(os.path.join(self.directory, category)):
-            try:
-                gps_file = glob.glob("*gps*.txt")[0]
-                return gps_file
-            except IndexError:
-                raise AsimovFileNotFound
+        try:
+            gps_file = glob.glob(os.path.join(self.path, category, "*gps*.txt"))[0]
+        except IndexError:
+            raise AsimovFileNotFound
+        return os.path.basename(gps_file)
 
     def find_coincfile(self, category=config.get("general", "calibration_directory")):
         """
@@ -385,7 +388,7 @@ class EventRepo:
         """
         self._ensure_initialised()
         coinc_file = glob.glob(
-            os.path.join(current_context().root, self.directory, category, "*coinc*.xml")
+            os.path.join(self.path, category, "*coinc*.xml")
         )
 
         if len(coinc_file) > 0:
@@ -422,10 +425,10 @@ class EventRepo:
         if update:
             self.update_once()
         if category is not None:
-            path = f"{os.path.join(current_context().root, self.directory, category)}/{name}.ini"
+            path = f"{os.path.join(self.path, category)}/{name}.ini"
         else:
             category = "project_analyses"
-            path = f"{os.path.join(current_context().root, self.directory)}/{name}.ini"
+            path = f"{os.path.join(self.path)}/{name}.ini"
 
         return [path]
 

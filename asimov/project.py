@@ -15,8 +15,7 @@ except ImportError:
 from asimov import logger, LOGGER_LEVEL
 from asimov.context import ProjectContext, get_active_context
 from asimov.event import Event
-from asimov.utils import set_directory
-from asimov.cli.project import make_project
+from asimov.cli.project import create_project
 
 logger = logger.getChild("project")
 logger.setLevel(LOGGER_LEVEL)
@@ -69,7 +68,7 @@ class Project:
     """
     
     def __init__(self, name, location=None, working="working", checkouts="checkouts", 
-                 results="results", logs="logs", user=None):
+                 results="results", logs="logs", user=None, engine=None):
         """
         Initialize a new asimov project.
         
@@ -90,8 +89,12 @@ class Project:
         user : str, optional
             The user account to be used for accounting purposes. 
             Defaults to the current user if not set.
+        engine : str, optional
+            The ledger engine ('sqlite', 'yamlfile', ...). Defaults to the
+            configured default, which is sqlite.
         """
         self.name = name
+        self._engine = engine
         self.location = location if location else os.getcwd()
         self.working = working
         self.checkouts = checkouts
@@ -117,29 +120,24 @@ class Project:
     
     def _initialize_project(self):
         """
-        Initialize the project structure by calling the make_project function.
+        Initialize the project structure by calling the create_project function.
+
+        This leaves the working directory and the process-wide configuration
+        alone.
         """
-        # Store current directory
-        original_dir = os.getcwd()
-        
-        try:
-            # Create the project
-            make_project(
-                name=self.name,
-                root=self.location,
-                working=self.working,
-                checkouts=self.checkouts,
-                results=self.results,
-                logs=self.logs,
-                user=self.user
-            )
-            
-            logger.info(f"Created new project '{self.name}' at {self.location}")
-            
-        finally:
-            # Return to original directory
-            os.chdir(original_dir)
-    
+        create_project(
+            name=self.name,
+            root=self.location,
+            working=self.working,
+            checkouts=self.checkouts,
+            results=self.results,
+            logs=self.logs,
+            user=self.user,
+            engine=self._engine,
+        )
+
+        logger.info(f"Created new project '{self.name}' at {self.location}")
+
     @classmethod
     def load(cls, location):
         """
@@ -188,6 +186,7 @@ class Project:
                 f"Missing configuration: {e}"
             )
         
+        project._engine = None
         project._context = None
         project._entered = []
         
@@ -240,10 +239,6 @@ class Project:
         stack = contextlib.ExitStack()
         try:
             stack.enter_context(context.activate())
-            # Much of asimov still finds files relative to the working
-            # directory (see issue #180), so until that is gone a project
-            # block works from the project's directory.
-            stack.enter_context(set_directory(self.location))
             stack.enter_context(context.transaction())
 
             # Ensure pipelines section exists in ledger data

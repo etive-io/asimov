@@ -194,11 +194,21 @@ work: ``config`` follows the active context, and ``current_ledger`` is deprecate
 ``asimov.context.current_context().ledger``. With no context active, they refer to the project
 in the current directory, as before.
 
+Nothing in a ``with project:`` block depends on the current working directory, and entering
+one does not change it. The paths asimov stores, such as an event's working directory or
+repository, are relative to the project and are made absolute against the active context's root
+with :func:`asimov.context.resolve_path`, so several projects can be served by one process.
+
+The ``asimov init`` command and :func:`asimov.cli.project.make_project` still move into the
+project they create and update the process-wide configuration, since the commands which follow
+expect it. :func:`asimov.cli.project.create_project`, which ``Project(...)`` uses, does neither.
+A ledger which comes from a context reads its events in that project, whether or not the context
+is active.
+
 .. note::
 
-   Asimov still finds some files relative to the working directory, so ``with project:``
-   changes into the project's directory for the length of the block. Until that is removed
-   (issue #180), don't serve two projects from different threads of one process.
+   The testing pipelines (``asimov.pipelines.testing``) still change into a run directory while
+   they submit, so they are not safe to run for two projects at once in one process.
 
 API Reference
 -------------

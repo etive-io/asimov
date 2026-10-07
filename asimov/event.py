@@ -17,6 +17,7 @@ else:
     from importlib.metadata import entry_points
 
 from asimov import config, logger, LOGGER_LEVEL, set_logger_level
+from asimov.context import resolve_path
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
 
 from .git import EventRepo
@@ -96,8 +97,7 @@ class Event:
             self.work_dir = os.path.join(
                 config.get("general", "rundir_default"), self.name
             )
-        if not os.path.exists(self.work_dir):
-            os.makedirs(self.work_dir)
+        os.makedirs(resolve_path(self.work_dir), exist_ok=True)
 
         if "ledger" in kwargs:
             if kwargs["ledger"]:
@@ -503,19 +503,20 @@ class Event:
         try:
             content = client.fetch(gid, gfile)
 
-            with open("download.file", "wb") as dest_file:
+            download = os.path.join(resolve_path(self.work_dir), "download.file")
+            with open(download, "wb") as dest_file:
                 dest_file.write(content)
 
             if "xml" in gfile:
                 # Convert to the new xml format
-                command = ["ligolw_no_ilwdchar", "download.file"]
+                command = ["ligolw_no_ilwdchar", download]
                 pipe = subprocess.Popen(
                     command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
                 )
                 out, err = pipe.communicate()
 
             self.repository.add_file(
-                "download.file",
+                download,
                 destination,
                 commit_message=f"Downloaded {gfile} from GraceDB",
             )

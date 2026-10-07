@@ -8,18 +8,44 @@ import copy
 import contextlib
 import os
 import shutil
+import functools
 from functools import reduce
 
 import asimov
 import asimov.database
 from asimov import config
+from asimov.context import get_active_context
 from asimov.analysis import ProjectAnalysis, SubjectAnalysis
 from asimov.event import Event, Production, Subject
 from asimov.utils import update, diff_dict, set_directory
 from filelock import FileLock
 
 
+def _in_own_context(method):
+    """
+    Run a ledger method which builds events in the ledger's own project.
+
+    Building an ``Event`` makes directories and finds repositories relative
+    to the project, so a ledger which belongs to a ``ProjectContext`` does
+    that work with the context active, whichever project (if any) the
+    caller has active. A ledger with no context uses whatever is active.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        context = self._context
+        if context is None or get_active_context() is context:
+            return method(self, *args, **kwargs)
+        with context.activate():
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class Ledger:
+    #: The ``ProjectContext`` this ledger belongs to, if it was opened by one.
+    _context = None
+
     @contextlib.contextmanager
     def transaction(self):
         """
@@ -142,6 +168,8 @@ class YAMLLedger(Ledger):
         state = self.__dict__.copy()
         # Remove the unpicklable FileLock object
         state.pop('lock', None)
+        # A ledger is pickled without the project context it belongs to.
+        state.pop('_context', None)
         return state
 
     def __setstate__(self, state):
@@ -306,6 +334,7 @@ class YAMLLedger(Ledger):
         self.add_analysis(analysis=production, event=event)
 
     @property
+    @_in_own_context
     def project_analyses(self):
         if self._project_analyses_cache is None:
             self._project_analyses_cache = [
@@ -315,6 +344,7 @@ class YAMLLedger(Ledger):
         return self._project_analyses_cache
 
     @property
+    @_in_own_context
     def _all_events(self):
         if self._events_cache is None:
             self._events_cache = [
@@ -322,6 +352,7 @@ class YAMLLedger(Ledger):
             ]
         return self._events_cache
 
+    @_in_own_context
     def get_subject(self, subject=None):
         if subject:
             kwargs = self.events[subject]
@@ -523,7 +554,14 @@ class DatabaseLedger(Ledger):
             Initialized ledger instance.
         """
         ledger = cls(engine=engine, location=location)
-        ledger.db._create()
+        # Make the tables in the database just opened. ``_create()`` is a
+        # classmethod which opens a database of its own, at the configured
+        # default location rather than this one.
+        create_tables = getattr(ledger.db, "create_tables", None)
+        if create_tables is not None:
+            create_tables()
+        else:
+            ledger.db._create()
         if name is not None:
             ledger.data["project"]["name"] = name
             ledger.save()
@@ -650,6 +688,7 @@ class DatabaseLedger(Ledger):
         }
 
     @property
+    @_in_own_context
     def events(self):
         """
         Return all of the events in the ledger.
@@ -671,6 +710,7 @@ class DatabaseLedger(Ledger):
             ]
         return self._events_cache
 
+    @_in_own_context
     def _event_from_dict(self, event_dict):
         kwargs = update(self.get_defaults(), dict(event_dict), inplace=False)
         kwargs.pop("ledger", None)
@@ -708,6 +748,7 @@ class DatabaseLedger(Ledger):
         return event
 
     @property
+    @_in_own_context
     def project_analyses(self):
         """
         Return all project analyses in the ledger.
@@ -729,6 +770,7 @@ class DatabaseLedger(Ledger):
             ]
         return self._project_analyses_cache
 
+    @_in_own_context
     def get_subject(self, subject=None):
         """
         Find a specific subject in the ledger and return it.

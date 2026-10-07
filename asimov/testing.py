@@ -8,7 +8,7 @@ import os
 import unittest
 import shutil
 import git
-from asimov import current_ledger as ledger
+from asimov.context import active_ledger as ledger
 from asimov.cli.project import make_project
 from asimov.ledger import YAMLLedger
 

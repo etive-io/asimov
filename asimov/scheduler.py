@@ -21,6 +21,8 @@ import warnings
 from abc import ABC, abstractmethod
 from dateutil import tz
 
+from asimov.context import resolve_path
+
 try:
     warnings.filterwarnings("ignore", module="htcondor2")
     import htcondor2 as htcondor  # NoQA
@@ -1638,7 +1640,9 @@ class JobList:
         """
         self.scheduler = scheduler
         self.jobs = {}
-        self.cache_file = cache_file or os.path.join(".asimov", "_cache_jobs.yaml")
+        self.cache_file = cache_file or resolve_path(
+            os.path.join(".asimov", "_cache_jobs.yaml")
+        )
         self.cache_time = cache_time
         
         # Try to load from cache

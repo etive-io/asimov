@@ -9,7 +9,7 @@ automation workflows.
 
 from typing import Optional, List
 from asimov import condor, logger, LOGGER_LEVEL
-from asimov import current_ledger as ledger
+from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES
 from asimov.monitor_helpers import monitor_analysis
 

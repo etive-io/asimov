@@ -15,6 +15,7 @@ import requests
 import yaml
 
 from asimov import LOGGER_LEVEL, logger
+from asimov.context import current_context
 import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
@@ -476,8 +477,8 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
 
                     # Try to find the file in common locations
                     search_paths = [
-                        Path.cwd(),  # Current directory
-                        Path.cwd() / "analyses",  # Local analyses dir
+                        Path(current_context().root),  # The project directory
+                        Path(current_context().root) / "analyses",  # Local analyses dir
                     ]
 
                     # Also check ASIMOV_DATA_PATH if set
