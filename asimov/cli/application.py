@@ -22,7 +22,7 @@ import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
 from asimov.utils import update
-from asimov.strategies import expand_strategy
+from asimov.strategies import StrategyContext, expand_strategy, strategy_stamp
 from copy import deepcopy
 from datetime import datetime
 import sys
@@ -340,8 +340,12 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             logger.info("Found an analysis")
             document.pop("kind")
             
-            # Expand strategy if present
-            expanded_documents = expand_strategy(document)
+            # Expand strategy if present. A plugin strategy may want to know
+            # which subject this is for, if that is already known.
+            known_event = event or document.get("event")
+            expanded_documents = expand_strategy(
+                document, StrategyContext(ledger=ledger, event=known_event)
+            )
             
             # Determine event once for all expanded analyses
             if event:
@@ -362,10 +366,35 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             # (it instantiates Production objects and runs git/graph operations).
             if name is not None or iterate:
                 existing_names = _raw_production_names(ledger, event_s)
+            # Applying a plugin strategy's blueprint again must be safe, so an
+            # analysis it made before is skipped rather than reported as an
+            # error. (That is how a count can be raised and only the new
+            # analyses added.)
+            emitted_before = set()
+            if any(strategy_stamp(doc) for doc in expanded_documents):
+                emitted_before = _raw_production_names(ledger, event_s)
+            skipped = 0
             for expanded_doc in expanded_documents:
-                if name is not None:
-                    expanded_doc["name"] = name
-                elif iterate:
+                if strategy_stamp(expanded_doc) and (name is not None or iterate):
+                    # The names are what make applying it again safe, so they
+                    # are not changed.
+                    logger.warning(
+                        "--name and --iterate do not apply to the analyses of a strategy; "
+                        f"{expanded_doc['name']} keeps its name"
+                    )
+                    effective_name, effective_iterate = None, False
+                else:
+                    effective_name, effective_iterate = name, iterate
+                if strategy_stamp(expanded_doc) and expanded_doc.get("name") in emitted_before:
+                    logger.info(
+                        f"{expanded_doc['name']} already exists in {event_s}; "
+                        "it was made by this strategy, so it is left as it is"
+                    )
+                    skipped += 1
+                    continue
+                if effective_name is not None:
+                    expanded_doc["name"] = effective_name
+                elif effective_iterate:
                     expanded_doc["name"] = next_available_name(expanded_doc["name"], existing_names)
                     # Keep existing_names current so consecutive iterations in a
                     # strategy expansion don't collide with each other.
@@ -411,6 +440,13 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                         + "an analysis already exists with this name"
                     )
                     logger.exception(e)
+
+            if skipped:
+                click.echo(
+                    click.style("●", fg="yellow")
+                    + f" {skipped} of {len(expanded_documents)} analyses already existed"
+                    + " (made by this strategy) and were left as they are"
+                )
 
         elif document["kind"].lower() == "postprocessing":
             # Handle a project analysis

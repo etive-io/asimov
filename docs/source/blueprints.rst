@@ -410,6 +410,71 @@ Here's a complete example combining multiple features::
 
 This creates 6 analyses (3 waveforms × 2 samplers), each inheriting the ``needs``, ``likelihood``, and ``comment`` settings while varying the waveform and sampler.
 
+.. _plugin-strategies:
+
+Plugin strategies
+-----------------
+
+A matrix strategy makes analyses which are all alike.
+A *plugin strategy* is provided by a plugin, and expands one blueprint into a graph of analyses which differ in role and depend on each other, such as a number of rounds of fits which each feed the next.
+It is selected with ``type``, a name, and the other options are the plugin's own::
+
+    kind: analysis
+    name: fit
+    pipeline: bilby
+    strategy:
+      type: chain      # a strategy which ships with asimov, as an example
+      length: 3
+
+This makes ``fit-001``, ``fit-002`` (which needs ``fit-001``) and ``fit-003`` (which needs ``fit-002``).
+A ``strategy`` with a ``type`` which is a name is a plugin strategy; a ``strategy`` whose values are lists is a matrix strategy, as before.
+
+* The analyses are applied in the usual way, so they are checked as if you had written them.
+  Each is marked with the strategy which made it, ``strategy: {type: chain, id: fit}``, where ``id`` is the name of the blueprint.
+* **Applying the blueprint again is safe.**
+  An analysis which the strategy made before is left as it is, and said so, instead of being an error.
+  So raising ``length: 3`` to ``length: 5`` and applying again adds only ``fit-004`` and ``fit-005``.
+* If the strategy is not installed, the error lists the ones which are.
+  If a strategy fails, or returns something which cannot be applied, nothing from that blueprint is applied.
+* ``--name`` and ``--iterate`` do not rename the analyses of a strategy: their names are what make applying it again safe.
+
+Writing a strategy
+^^^^^^^^^^^^^^^^^^
+
+Subclass :class:`asimov.strategies.Strategy`, and register it in the ``asimov.strategies`` entry-point group:
+
+.. code-block:: toml
+
+    [project.entry-points."asimov.strategies"]
+    my-pattern = "my_package.strategies:MyPattern"
+
+.. code-block:: python
+
+    from asimov.strategies import Strategy, StrategyError
+
+    class MyPattern(Strategy):
+        def validate(self, spec):
+            # Optional. Raise early, at apply time, on a bad strategy: block.
+            if spec.get("rounds", 1) < 1:
+                raise StrategyError("rounds must be at least 1")
+
+        def expand(self, blueprint, context):
+            # Return the analyses to apply, in order, as dictionaries. Each needs
+            # a ``name`` (the same every time, so that applying again is safe)
+            # and a ``pipeline``, and can have ``needs`` to depend on the others.
+            rounds = blueprint["strategy"].get("rounds", 1)
+            return [
+                {**base(blueprint), "name": f"{blueprint['name']}-r{n:02d}"}
+                for n in range(1, rounds + 1)
+            ]
+
+``context`` gives read-only information about the project (``context.subjects()``, ``context.analyses()``, ``context.event``, ``context.project`` and ``context.logger``).
+A strategy returns documents and never changes the ledger: asimov applies them, so validation and provenance are the same as for any blueprint.
+The ``chain`` strategy, :class:`asimov.strategies_builtin.ChainStrategy`, is a small example.
+A plugin which cannot be loaded is reported and skipped, and does not stop other commands.
+
+Only analyses can be returned for now.
+
 Waveform
 ========
 
