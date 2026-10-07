@@ -123,13 +123,17 @@ class PoolSelectionTests(CharacterisationCase):
         self.assertEqual(sorted(a.name for a in combined.analyses), ["only-a", "shared"])
         self.assertEqual({a.event.name for a in combined.analyses}, {"EvA"})
 
-    def test_subject_analysis_has_no_needs_of_its_own(self):
-        """Its ``needs`` is its ``analyses:`` spec, and takes precedence over it,
-        and it has no graph dependencies."""
+    def test_subject_analysis_needs_is_a_dependency_separate_from_its_analyses(self):
+        """``needs:`` holds a subject analysis back, and does not say what it combines.
+
+        This is the one thing which changed after these tests were written
+        (#231, subject analyses): ``needs:`` used to be read as the
+        ``analyses:`` spec, and to take precedence over it, and a subject
+        analysis had no dependencies of its own.
+        """
         combined = self.subject_analysis(needs=["only-a"], analyses=["shared"])
-        self.assertEqual([a.name for a in combined.analyses], ["only-a"])
-        self.assertEqual(combined.dependencies, [])
-        self.assertEqual(combined._needs, [])
+        self.assertEqual([a.name for a in combined.analyses], ["shared"])
+        self.assertEqual(combined.dependencies, ["only-a"])
 
     def test_project_analysis_matches_in_its_declared_subjects(self):
         self.apply_project(

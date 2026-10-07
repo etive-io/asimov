@@ -257,8 +257,18 @@ def build_provenance(
     # Dependencies are other *activities* (upstream analyses), not entities,
     # so they belong on `prov:wasInformedBy` (activity-to-activity) rather
     # than `prov:used` (whose range is `prov:Entity`) - see `used_ids` below.
+    def _dependency_location(dependency_name):
+        # A dependency in another subject is recorded as ``subject/name``. A
+        # name which is that of an analysis in this subject is not one, even
+        # if it contains a "/".
+        lookup = getattr(getattr(analysis, "event", None), "analysis_by_name", None)
+        if "/" in dependency_name and not (lookup and lookup(dependency_name)):
+            subject, _, name = dependency_name.partition("/")
+            return subject, name
+        return subject_name, dependency_name
+
     dependency_activity_ids = [
-        _entity_id("activity", subject_name, dependency_name)
+        _entity_id("activity", *_dependency_location(dependency_name))
         for dependency_name in (getattr(analysis, "resolved_dependencies", None) or [])
     ]
 
