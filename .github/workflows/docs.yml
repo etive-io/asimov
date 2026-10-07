@@ -15,8 +15,11 @@ permissions:
   pages: write
   id-token: write
 
+# A new push cancels the earlier run for the same pull request, but one pull
+# request's run no longer cancels another's, nor a deployment of main (which
+# all shared a single group before).
 concurrency:
-  group: "pages"
+  group: pages-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'deploy' }}
   cancel-in-progress: true
 
 jobs:
