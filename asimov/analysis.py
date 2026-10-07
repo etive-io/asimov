@@ -291,6 +291,35 @@ class Analysis:
             self.meta["scheduler"] = {}
         self.meta["scheduler"]["job id"] = value
 
+    def _candidate_analyses(self, conditions):
+        """
+        The analyses of this subject which could satisfy all of some conditions.
+
+        When one of the conditions is a plain, non-negated name, only the
+        analysis with that name can satisfy them all, and it is found by name
+        instead of by scanning the subject. Otherwise every analysis is a
+        candidate. The conditions must still be applied to the result.
+
+        Parameters
+        ----------
+        conditions : list
+            Parsed ``(attribute, match, negate[, optional])`` tuples which must all hold.
+        """
+        lookup = getattr(self.event, "analysis_by_name", None)
+        if lookup is not None:
+            for parsed_dep in conditions:
+                attribute, match, negate = parsed_dep[:3]
+                if attribute == ["name"] and not negate:
+                    found = lookup(match)
+                    if found is None:
+                        return []
+                    if isinstance(found, Analysis):
+                        return [found]
+                    # Not something this can rely on (e.g. a stand-in for an
+                    # event), so scan.
+                    break
+        return list(self.event.analyses)
+
     @property
     def dependencies(self):
         """
@@ -316,7 +345,7 @@ class Analysis:
             for requirement in requirements:
                 if isinstance(requirement, list):
                     # This is an AND group - all conditions must match
-                    and_matches = set(self.event.analyses)
+                    and_matches = set(self._candidate_analyses(requirement))
                     for parsed_dep in requirement:
                         # Handle both 3-tuple and 4-tuple formats
                         if len(parsed_dep) == 4:
@@ -343,7 +372,7 @@ class Analysis:
                     filtered_analyses = list(
                         filter(
                             lambda x: x.matches_filter(attribute, match, negate),
-                            self.event.analyses,
+                            self._candidate_analyses([requirement]),
                         )
                     )
                     matches = set.union(matches, set(filtered_analyses))
@@ -413,7 +442,7 @@ class Analysis:
             The matching analyses.
         """
         conditions = requirement if isinstance(requirement, list) else [requirement]
-        matches = list(self.event.analyses)
+        matches = self._candidate_analyses(conditions)
         for parsed_dep in conditions:
             attribute, match, negate = parsed_dep[:3]
             matches = [

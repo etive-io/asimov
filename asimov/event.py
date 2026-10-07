@@ -258,6 +258,35 @@ class Event:
         else:
             return None
 
+    _name_index = None
+
+    def analysis_by_name(self, name):
+        """
+        Return the analysis of this event with a given name, or None.
+
+        Names are unique within an event, so this is a dictionary lookup
+        rather than a scan of every analysis. The dictionary is built when it
+        is first needed and rebuilt if the number of analyses has changed
+        since, so it follows :meth:`add_production`, :meth:`remove_production`
+        and any other change to the list which alters its length.
+        """
+        index = self._name_index
+        if index is None or index[0] != len(self.productions):
+            index = (
+                len(self.productions),
+                {production.name: production for production in self.productions},
+            )
+            self._name_index = index
+        return index[1].get(name)
+
+    def remove_production(self, production):
+        """
+        Remove a production from this event.
+        """
+        self.productions.remove(production)
+        self.graph.remove_node(production) if production in self.graph else None
+        self._name_index = None
+
     def add_production(self, production):
         """
         Add an additional production to this event.
@@ -268,6 +297,7 @@ class Event:
             )
 
         self.productions.append(production)
+        self._name_index = None
         self.graph.add_node(production)
 
         # Note: Dependencies are resolved dynamically when accessed, so we don't
