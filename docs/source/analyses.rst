@@ -198,6 +198,32 @@ This works in either direction, so a step in one subject can need a step in anot
 * A version of asimov without this feature ignores such an entry, so it would start the analysis without waiting.
   Do not run a ledger which uses it with an older version.
 
+Selecting analyses in other subjects
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To need, or to combine, every analysis which matches some properties, in some subjects, use a ``subject`` condition.
+It can be used on its own or in a group with other conditions, which apply to the analyses of the subjects it selects:
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: combine-r002
+		pipeline: example
+		needs:
+		  - - subject: "*"           # any subject
+		    - round: 1
+		  - - "subject: !noise"      # any subject except "noise"
+		    - "status: finished"
+		  - subject: central         # every analysis of the subject "central"
+
+* Without a ``subject`` condition, only the analyses of this analysis's own subject are considered, as always.
+* ``subject: name`` selects that subject, ``subject: "*"`` every subject, and ``subject: "!name"`` every subject except that one (including this one).
+* ``subject`` is a reserved name.
+  Before it was, it was looked up in an analysis's metadata like any other property; a property which is nested under ``subject`` (``subject.group``) is still a metadata lookup.
+* In a project analysis, ``subject`` only narrows the subjects it was declared with; it never adds one.
+* As for ``subject/name``, the analysis waits for the analyses which match to finish, and an entry which matches nothing at all holds it back and is reported, unless it is ``optional``.
+  Selecting from every subject reads every subject of the project each time asimov looks at the analysis, so use a named subject where you can.
+
 .. _subject-analysis:
 
 A Blueprint for a subject analysis

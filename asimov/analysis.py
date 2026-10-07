@@ -473,7 +473,8 @@ class Analysis:
             The matching analyses.
         """
         conditions = requirement if isinstance(requirement, list) else [requirement]
-        matches = self._candidate_analyses(conditions)
+        scoped = self._subject_scoped_candidates(conditions)
+        matches = scoped if scoped is not None else self._candidate_analyses(conditions)
         for parsed_dep in conditions:
             attribute, match, negate = parsed_dep[:3]
             matches = [
@@ -481,12 +482,60 @@ class Analysis:
                 for analysis in matches
                 if analysis.matches_filter(attribute, match, negate)
             ]
-        if not matches:
+        if not matches and scoped is None:
             # A name which is not an analysis of this subject may be
             # ``subject/name``. A literal name always wins, so this is only
             # tried when nothing matched.
             matches = self._qualified_matches(conditions)
         return matches
+
+    def _subject_scoped_candidates(self, conditions):
+        """
+        The analyses a requirement is matched against when it names a subject.
+
+        The pool is this analysis's own subject unless the requirement has a
+        ``subject:`` condition (#231). A subject named without ``!`` or ``*``
+        makes the pool that subject; ``*`` or a negation makes it every subject
+        of the project. The conditions, ``subject:`` included, are still
+        applied to the result, so a negation excludes and several conditions
+        narrow.
+
+        Returns
+        -------
+        list or None
+            The candidates, or None if no condition names a subject.
+        """
+        subjects = [parsed[:3] for parsed in conditions if parsed[0] == ["subject"]]
+        if not subjects:
+            return None
+        event = getattr(self, "event", None)
+        if event is None:
+            return None
+        named = sorted({match for _, match, negate in subjects if not negate and match != "*"})
+        if named:
+            names = named
+        else:
+            list_names = getattr(event, "subject_names", None)
+            names = list_names() if list_names else [event.name]
+
+        # A plain name still finds its analysis in each subject by name.
+        wanted = [
+            match
+            for attribute, match, negate in (parsed[:3] for parsed in conditions)
+            if attribute == ["name"] and not negate
+        ]
+        candidates = []
+        for name in names:
+            subject = event if name == event.name else getattr(event, "sibling", lambda _: None)(name)
+            if subject is None:
+                continue
+            if wanted and hasattr(subject, "analysis_by_name"):
+                found = subject.analysis_by_name(wanted[0])
+                if isinstance(found, Analysis):
+                    candidates.append(found)
+            else:
+                candidates.extend(subject.analyses)
+        return candidates
 
     @staticmethod
     def _qualified_target(conditions):
@@ -535,9 +584,14 @@ class Analysis:
 
     @staticmethod
     def _is_qualified_requirement(requirement):
-        """Whether a parsed ``needs`` item names an analysis as ``subject/name``."""
+        """
+        Whether a parsed ``needs`` item reaches into subjects by name: it names
+        an analysis as ``subject/name`` or has a ``subject:`` condition.
+        """
         conditions = requirement if isinstance(requirement, list) else [requirement]
-        return Analysis._qualified_target(conditions) is not None
+        return Analysis._qualified_target(conditions) is not None or any(
+            parsed[0] == ["subject"] for parsed in conditions
+        )
 
     @staticmethod
     def _describe_requirement(requirement):
@@ -894,8 +948,16 @@ class Analysis:
         is_pipeline = False
         is_label = False
         in_meta = False
-        
-        if attribute[0] == "label":
+        is_subject = False
+
+        if attribute == ["subject"]:
+            # ``subject`` is reserved (#231): the subject this analysis is in,
+            # or ``*`` for any. It used to be looked up in the metadata.
+            event = getattr(self, "event", None)
+            is_subject = match == "*" or (
+                event is not None and getattr(event, "name", None) == match
+            )
+        elif attribute[0] == "label":
             # Handle label-based dependencies
             # Format: label: interesting>=1
             is_label = self._matches_label(match)
@@ -926,7 +988,9 @@ class Analysis:
             except (KeyError, TypeError, AttributeError):
                 in_meta = False
 
-        result = is_name | in_meta | is_status | is_review | is_pipeline | is_label
+        result = (
+            is_name | in_meta | is_status | is_review | is_pipeline | is_label | is_subject
+        )
         
         # Apply negation if requested
         if negate:
