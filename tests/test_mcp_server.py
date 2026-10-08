@@ -10,16 +10,16 @@ import sys
 import tempfile
 import unittest
 
-import pytest
+try:
+    from mcp import Client
+except ImportError:  # pragma: no cover - the mcp extra is optional
+    raise unittest.SkipTest("the mcp package is not installed")
 
-pytest.importorskip("mcp")
 
-from mcp import Client  # noqa: E402
-
-from asimov.cli.application import apply_page  # noqa: E402
-from asimov.cli.project import make_project  # noqa: E402
-from asimov.context import ProjectContext  # noqa: E402
-from asimov.mcp_server import create_server, untrusted  # noqa: E402
+from asimov.cli.application import apply_page
+from asimov.cli.project import make_project
+from asimov.context import ProjectContext
+from asimov.mcp_server import create_server, untrusted
 
 DATA = os.path.join(os.path.dirname(__file__), "test_data")
 ENGINES = ("yamlfile", "sqlite")
