@@ -8,12 +8,38 @@ from flask import Flask
 from flask_cors import CORS
 from asimov import config
 from .blueprints import events, analyses
+from . import projects
 from .errors import register_error_handlers
 
 
-def create_app():
+def configured_registry():
+    """
+    The registry the configuration names, if it names one.
+
+    ``$ASIMOV_REGISTRY``, or ``registry`` in the ``[api]`` section, is the path
+    of a registry file (see :class:`asimov.registry.FileRegistry`).
+
+    Returns
+    -------
+    asimov.registry.FileRegistry or None
+    """
+    from asimov.registry import FileRegistry
+
+    path = os.environ.get('ASIMOV_REGISTRY') or config.get('api', 'registry', fallback=None)
+    return FileRegistry(path) if path else None
+
+
+def create_app(registry=None):
     """
     Create and configure Flask app.
+
+    Parameters
+    ----------
+    registry : asimov.registry.ProjectRegistry, optional
+        The projects to serve. Defaults to the one the configuration names
+        (see :func:`configured_registry`). Without one, the API serves the
+        project the configuration names, on the routes without a project in
+        them, as it always has.
 
     Returns
     -------
@@ -45,9 +71,17 @@ def create_app():
         # Test suites use the Flask test client directly and don't need CORS.
         CORS(app, origins="*")
 
-    # Register blueprints
+    # Register blueprints. The routes without a project in them serve the
+    # instance's only project, if it has a registry (see asimov.api.projects).
     app.register_blueprint(events.bp, url_prefix='/api/v1/events')
     app.register_blueprint(analyses.bp, url_prefix='/api/v1/analyses')
+    app.register_blueprint(
+        events.bp, name='project_events',
+        url_prefix='/api/v1/projects/<project>/events')
+    app.register_blueprint(
+        analyses.bp, name='project_analyses',
+        url_prefix='/api/v1/projects/<project>/analyses')
+    projects.init_app(app, registry if registry is not None else configured_registry())
 
     # Register error handlers
     register_error_handlers(app)

@@ -93,6 +93,47 @@ Write requests (authentication required):
      -H "Content-Type: application/json" \
      -d '{"name":"GW150914","meta":{"test":true}}'
 
+Serving several projects
+------------------------
+
+An instance can serve more than one project, using the :doc:`project registry <registry>`.
+Name the registry file with ``$ASIMOV_REGISTRY`` or ``registry`` in the ``[api]``
+section, and start the server as usual:
+
+.. code-block:: bash
+
+   export ASIMOV_REGISTRY=/etc/asimov/registry.yaml
+   asimov serve
+
+Every ``events`` and ``analyses`` route is then available for each project, under
+``/api/v1/projects/<project>``:
+
+.. code-block:: bash
+
+   curl http://localhost:5000/api/v1/projects/                       # the projects you may read
+   curl http://localhost:5000/api/v1/projects/gw-o4/events/          # one project's events
+   curl http://localhost:5000/api/v1/projects/gw-o4/analyses/GW150914/bilby-prod
+
+Each project has its own ledger, so a request only ever sees the project it names.
+The routes without a project in them (``/api/v1/events/`` and so on) keep working
+when the registry has exactly one project, and are for that project. With several
+they return 404, since there is no way to say which is meant.
+
+Before a route runs, the API checks that the caller may read the project (and write
+to it, for requests which change something): see :func:`asimov.access.authorize`.
+A project the caller may not read looks the same as one which doesn't exist (404).
+Requests which are allowed but not permitted to write get 403. Writes are
+attributed to the user their API key belongs to.
+
+.. warning::
+
+    Until projects have groups with roles, the policy allows everything: anyone who
+    can reach the API can read every project in the registry, and anyone with an API
+    key can write to all of them. See :doc:`registry`.
+
+Without a registry the API serves the project its configuration names, on the
+routes without a project in them, as it always has, and the project routes don't exist.
+
 API Endpoints
 -------------
 

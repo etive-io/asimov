@@ -121,6 +121,36 @@ def verify_token(token):
     return None
 
 
+def authenticate():
+    """
+    Who the request is from, if it says.
+
+    Unlike :func:`require_auth` this never refuses the request: it is for
+    work which needs to know who is asking whether or not the endpoint
+    insists on it.
+
+    Returns
+    -------
+    str or None
+        The username the request's token belongs to, or ``None`` if it has no
+        valid token (or no tokens are configured).
+    """
+    header = request.headers.get('Authorization')
+    if not header:
+        return None
+    try:
+        scheme, token = header.split(' ', 1)
+    except ValueError:
+        return None
+    if scheme.lower() != 'bearer':
+        return None
+    try:
+        return verify_token(token)
+    except RuntimeError:
+        # No tokens are configured: nobody can be authenticated.
+        return None
+
+
 def require_auth(f):
     """
     Decorator for endpoints requiring authentication.
