@@ -39,7 +39,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     ) from error
 
 import asimov
-from asimov import reading
+from asimov import actions, reading
 from asimov.cli.application import apply_page
 from asimov.context import ProjectContext
 from asimov.preview import recording
@@ -85,6 +85,8 @@ Offset = Annotated[int, Field(ge=0, description="How many to skip, to get the ne
 _READ = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False)
 _PREVIEW = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False)
 _APPLY = ToolAnnotations(destructiveHint=True, idempotentHint=False, openWorldHint=True)
+_ADD = ToolAnnotations(destructiveHint=False, idempotentHint=False, openWorldHint=False)
+_REMOVE = ToolAnnotations(destructiveHint=True, idempotentHint=True, openWorldHint=False)
 
 _CLOSING = "</untrusted-data"
 
@@ -498,6 +500,77 @@ def create_server(project, acting_for=None, read_only=False):
         the id of the audit record of each change, and what was refused.
         """
         return blueprint_run(ctx, blueprint, subject, update, dry_run=False)
+
+    def act(ctx, subject, analysis, change, *args):
+        """Make a change to an analysis and say what record was made of it."""
+        with session(ctx) as ledger:
+            found = analysis_of(ledger, subject, analysis)
+            try:
+                record = change(ledger, found, *args)
+            except actions.ActionError as error:
+                raise ToolError(str(error))
+            return {
+                "target": record.target,
+                "audit": {"id": getattr(record, "id", None), "action": record.action},
+                "note": NOTE,
+            }
+
+    @server.tool(annotations=_ADD, title="Set an analysis's review status")
+    def set_review_status(
+        ctx: Context,
+        subject: str,
+        analysis: str,
+        status: Annotated[
+            str, Field(description="APPROVED, REJECTED, PREFERRED or DEPRECATED.")
+        ],
+        message: Annotated[
+            Optional[str], Field(max_length=10_000, description="Why, if you want to say.")
+        ] = None,
+    ) -> dict[str, Any]:
+        """Give an analysis a review status. It becomes its status until another is set."""
+        return act(ctx, subject, analysis, actions.set_review_status, status, message)
+
+    @server.tool(annotations=_ADD, title="Comment on an analysis")
+    def add_comment(
+        ctx: Context,
+        subject: str,
+        analysis: str,
+        comment: Annotated[str, Field(min_length=1, max_length=10_000)],
+    ) -> dict[str, Any]:
+        """
+        Add a comment to an analysis's review messages, without changing its
+        review status. It is recorded as made by you, for the person you act for.
+        """
+        return act(ctx, subject, analysis, actions.add_comment, comment)
+
+    @server.tool(annotations=_ADD, title="Label an analysis")
+    def add_label(
+        ctx: Context,
+        subject: str,
+        analysis: str,
+        label: Annotated[str, Field(min_length=1, max_length=200)],
+        value: Annotated[
+            Optional[str | int | float | bool],
+            Field(description="The label's value (default: true)."),
+        ] = True,
+    ) -> dict[str, Any]:
+        """
+        Set a label on an analysis. It stays until it is removed with
+        remove_label: labellers will not change or remove it.
+        """
+        return act(
+            ctx, subject, analysis, actions.add_label, label, True if value is None else value
+        )
+
+    @server.tool(annotations=_REMOVE, title="Remove a label")
+    def remove_label(
+        ctx: Context,
+        subject: str,
+        analysis: str,
+        label: Annotated[str, Field(min_length=1, max_length=200)],
+    ) -> dict[str, Any]:
+        """Remove a label from an analysis, whoever set it."""
+        return act(ctx, subject, analysis, actions.remove_label, label)
 
     return server
 

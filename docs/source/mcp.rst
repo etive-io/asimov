@@ -35,15 +35,28 @@ gravitational-wave work, events).
     The end of an analysis's log files, and the telemetry events it recorded.
 ``get_review_status``, ``list_labels``
     An analysis's review status and messages, and the labels on analyses.
+``set_review_status``, ``add_comment``
+    Give an analysis a review status (with a message if wanted), or add a
+    comment. A comment is a review message without a status, as ``asimov review add``
+    makes: it shows in ``get_review_status`` and does not change the status.
+``add_label``, ``remove_label``
+    Set a label on an analysis, and remove one. A label set this way is *manual*:
+    it stays until it is removed, and labellers (see :doc:`labeller-plugins`) never
+    change it, even if they set a label with the same name.
 ``preview_blueprint``
     What applying a blueprint would do, and what would be refused. Changes
     nothing (see :doc:`blueprints`).
 ``apply_blueprint``
     Apply a blueprint. Returns what was changed and what was refused.
 
+Each of these changes is recorded in the :doc:`audit log <audit>` (kinds ``review``
+and ``label``), in the same transaction as the change. ``--read-only`` leaves out
+every tool which changes anything. Only ``remove_label`` removes anything: it is
+marked as destructive so that clients can ask first.
+
 Lists are paged (``limit`` and ``offset``), and log and telemetry results are
 capped, so a large project cannot flood the client. There is no tool which deletes
-anything.
+an analysis, a subject or a record.
 
 Who did it
 ----------
