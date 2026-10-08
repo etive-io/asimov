@@ -646,6 +646,44 @@ class Event:
 
         return set(ready_values)  # only want to return one version of each production!
 
+    #: The most analyses of other subjects one analysis shows in this subject's graph,
+    #: beyond which they are shown as a single node.
+    FOREIGN_NODES_PER_ANALYSIS = 10
+
+    def foreign_dependencies(self):
+        """
+        The analyses of other subjects which the analyses of this one need.
+
+        Only what this subject's analyses reach is read, so this does not cost
+        the size of the project (and what depends on this subject from
+        elsewhere is not found, because that would).
+
+        Returns
+        -------
+        list of (Analysis, list of Analysis)
+            Each analysis of this subject which needs analyses of other
+            subjects, with those, in name order.
+        """
+        from asimov.analysis import Analysis
+
+        found = []
+        for node in self.graph.nodes():
+            if not getattr(node, "_needs", None):
+                continue
+            try:
+                dependencies = [
+                    dependency
+                    for dependency in node.dependency_objects
+                    if isinstance(dependency, Analysis)
+                    and getattr(getattr(dependency, "event", None), "name", self.name)
+                    != self.name
+                ]
+            except Exception:
+                continue
+            if dependencies:
+                found.append((node, dependencies))
+        return found
+
     def build_report(self):
         for production in self.productions:
             production.build_report()
@@ -769,6 +807,52 @@ class Event:
                 edges_data = [{'from': node_mid_by_node[s], 'to': node_mid_by_node[t]}
                               for s, t in self.graph.edges()
                               if s in node_mid_by_node and t in node_mid_by_node]
+
+                # What these analyses need in other subjects, as dashed nodes
+                # which are not part of this subject (and so not counted).
+                ghost_ids = {}
+                for node, dependencies in self.foreign_dependencies():
+                    if node not in node_mid_by_node:
+                        continue
+                    if len(dependencies) > self.FOREIGN_NODES_PER_ANALYSIS:
+                        ghost_id = f'{node_mid_by_node[node]}_foreign_many'
+                        nodes_data.append({
+                            'id': ghost_id,
+                            'label': _escape_mermaid_label(
+                                f'{len(dependencies)} analyses in other subjects'),
+                            'status': 'unknown',
+                            'review': 'none',
+                            'isSubject': False,
+                            'foreign': True,
+                            'dataId': '',
+                        })
+                        edges_data.append({'from': ghost_id, 'to': node_mid_by_node[node]})
+                        continue
+                    for dependency in dependencies:
+                        other = dependency.event.name
+                        key = (other, dependency.name)
+                        if key not in ghost_ids:
+                            ghost_ids[key] = (
+                                f'{event_prefix}_foreign_{_safe_token(other)}_'
+                                f'{_safe_token(dependency.name)}'
+                            )
+                            pipeline_name = (dependency.pipeline.name
+                                             if getattr(dependency, 'pipeline', None) else '')
+                            label = _escape_mermaid_label(f'{other}/{dependency.name}')
+                            if pipeline_name:
+                                label += '<br/><small>' + _escape_mermaid_label(pipeline_name) + '</small>'
+                            nodes_data.append({
+                                'id': ghost_ids[key],
+                                'label': label,
+                                'status': getattr(dependency, 'status', None) or 'unknown',
+                                'review': 'none',
+                                'isSubject': False,
+                                'foreign': True,
+                                'dataId': '',
+                            })
+                        edges_data.append(
+                            {'from': ghost_ids[key], 'to': node_mid_by_node[node]}
+                        )
 
                 event_name_js = _json.dumps(self.name)
                 container_id_js = _json.dumps(container_id)
