@@ -24,6 +24,7 @@ import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
 from asimov.utils import update
+from asimov.needs_check import check_needs
 from asimov.strategies import (
     StrategyContext,
     StrategyError,
@@ -435,6 +436,45 @@ def _expand_strategies(documents, ledger, event):
             _record_group(ledger, identifier, record, "updated")
 
 
+def _has_analyses(content):
+    content = content or {}
+    return bool(content.get("productions") or content.get("analyses"))
+
+
+def _check_needs(ledger, plan, loaded=None):
+    """
+    Report what is wrong with the ``needs`` of the subjects which an apply
+    changed: cycles, and needs which name something that is not there (#231).
+
+    It is a report and not a refusal: what was applied stays applied, and a
+    need on a subject which does not exist yet may be put right by the next
+    blueprint. Nothing here may stop an apply.
+    """
+    touched = set()
+    for change in plan.changes:
+        record = change.record
+        if record.kind == "analysis" and "/" in record.target:
+            touched.add(record.target.split("/", 1)[0])
+        elif record.kind in ("event", "subject") and _has_analyses(record.content):
+            # A subject which brings analyses with it; a bare one has none to check.
+            touched.add(record.target)
+    touched.discard(PROJECT)
+    if not touched:
+        return
+    try:
+        findings = check_needs(ledger, touched, loaded)
+    except Exception as error:
+        logger.warning(f"Could not check the needs of {', '.join(sorted(touched))}: {error}")
+        return
+    for level, message in findings:
+        plan.add_problem(message, level)
+        if is_dry_run():
+            continue
+        colour = "red" if level == "error" else "yellow"
+        click.echo(click.style("●", fg=colour) + f" {message}")
+        (logger.error if level == "error" else logger.warning)(message)
+
+
 def apply_extension(ledger, identifier, record, documents, preexisting_subjects):
     """
     Add documents which a strategy made after the group was first applied.
@@ -499,7 +539,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
         # The outermost call: keep a record of what happens, and make it a
         # preview if that was asked for.
         with (preview(ledger) if dry_run else recording()) as plan:
-            apply_page(
+            loaded = apply_page(
                 file,
                 event=event,
                 ledger=ledger,
@@ -509,6 +549,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 update_unstarted=update_unstarted,
                 _extension=_extension,
             )
+            _check_needs(ledger, plan, loaded)
         return plan
 
     if _extension is not None:
@@ -1008,6 +1049,9 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 click.style("●", fg="green")
                 + " Successfully applied a configuration update"
             )
+
+    # The events loaded while applying, which the check of ``needs`` reuses.
+    return loaded_events
 
 
 def apply_via_plugin(event, hookname, **kwargs):
