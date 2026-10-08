@@ -17,10 +17,14 @@ def _name(analysis) -> str:
     return f"{subject}/{analysis.name}" if subject else analysis.name
 
 
-def _dangling(ledger, analysis) -> List[Finding]:
-    """The needs of one analysis which name something which is not there."""
+def _dangling(subject_names, analysis) -> List[Finding]:
+    """
+    The needs of one analysis which name something which is not there.
+
+    ``subject_names`` is a function giving the names of the subjects of the
+    project, which is only called if a need is found not to resolve.
+    """
     found = []
-    subjects = set(ledger.subject_names())
     for requirement in analysis.required_dependencies:
         if not analysis._is_qualified_requirement(requirement):
             continue
@@ -35,7 +39,7 @@ def _dangling(ledger, analysis) -> List[Finding]:
             )
             continue
         subject, name, _ = target
-        if subject not in subjects:
+        if subject not in subject_names():
             found.append(
                 (
                     "warning",
@@ -120,7 +124,15 @@ def check_needs(ledger, subjects: Iterable[str], loaded=None) -> List[Finding]:
         need which names an analysis which a subject that exists does not
         have; ``"warning"`` for a need on a subject which does not exist yet.
     """
-    known = set(ledger.subject_names())
+    names = []
+
+    def subject_names():
+        # Reading them costs a query on some ledgers, so once and only if needed.
+        if not names:
+            names.append(set(ledger.subject_names()))
+        return names[0]
+
+    known = subject_names()
     analyses = []
     for name in sorted(set(subjects)):
         if name not in known:
@@ -129,6 +141,6 @@ def check_needs(ledger, subjects: Iterable[str], loaded=None) -> List[Finding]:
         analyses.extend(subject.productions)
     findings = []
     for analysis in analyses:
-        findings.extend(_dangling(ledger, analysis))
+        findings.extend(_dangling(subject_names, analysis))
     findings.extend(_cycles(analyses))
     return findings

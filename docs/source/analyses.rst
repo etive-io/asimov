@@ -224,6 +224,20 @@ It can be used on its own or in a group with other conditions, which apply to th
 * As for ``subject/name``, the analysis waits for the analyses which match to finish, and an entry which matches nothing at all holds it back and is reported, unless it is ``optional``.
   Selecting from every subject reads every subject of the project each time asimov looks at the analysis, so use a named subject where you can.
 
+Mistakes in ``needs`` are reported when you apply
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+After a blueprint is applied, asimov checks the ``needs`` of the subjects it changed, and tells you about what can never work:
+
+* an **error** for a cycle (``needs form a cycle: EvA/a -> EvB/b -> EvA/a``), including one that passes through other subjects;
+* an **error** for a ``subject/name`` need where the subject exists but has no analysis of that name, which is nearly always a typo;
+* a **warning** for a need on a subject that does not exist yet, which a later blueprint may put right.
+
+This is a report, not a refusal: what was applied stays applied, and the exit code does not change.
+With ``asimov apply --dry-run`` the same problems are listed with the changes (under ``problems`` in the JSON output).
+A plain name in the same subject which matches nothing, and a property filter which matches nothing yet, are not part of this check; they are reported when the analysis is built or submitted, as before.
+Only the subjects the blueprint changed, and those their ``needs`` lead to, are read.
+
 .. _subject-analysis:
 
 A Blueprint for a subject analysis
