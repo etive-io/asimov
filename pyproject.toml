@@ -127,6 +127,14 @@ projecttestpipeline = "asimov.pipelines.testing:ProjectTestPipeline"
 [project.entry-points."asimov.hooks.telemetry"]
 prometheus = "asimov.telemetry:PrometheusPushgatewaySink"
 
+# Entry point group for blueprint strategies. A plugin registers a named
+# strategy here, and a blueprint selects it with ``strategy: {type: <name>}``;
+# the strategy expands the blueprint into a graph of analyses at apply time.
+# ``chain`` ships with asimov to test the machinery and as a template.
+# Example: my_strategy = "my_package.strategies:MyStrategy"
+[project.entry-points."asimov.strategies"]
+chain = "asimov.strategies_builtin:ChainStrategy"
+
 # Entry point group for labeller plugins
 # Labellers can automatically assign labels like "interest status" to analyses
 # during monitoring. See docs/source/labeller-plugins.rst for details.

@@ -3,11 +3,189 @@ Strategy expansion for asimov blueprints.
 
 This module provides functionality to expand strategy definitions in blueprints
 into multiple analyses, similar to GitHub Actions matrix strategies.
+
+There are two kinds of strategy:
+
+* A **matrix** strategy varies parameters across otherwise identical analyses
+  (``strategy: {waveform.approximant: [...]}``).
+* A **plugin** strategy (``strategy: {type: <name>, ...}``) is a named strategy
+  provided by a plugin, which expands the blueprint into a graph of analyses
+  which differ in role and depend on each other. See :class:`Strategy`.
 """
 
+import logging
+import sys
+from abc import ABC, abstractmethod
 from copy import deepcopy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import itertools
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
+
+logger = logging.getLogger(__name__)
+
+#: The entry-point group which plugins register their strategies in.
+ENTRY_POINT_GROUP = "asimov.strategies"
+
+
+class StrategyError(ValueError):
+    """A strategy could not be expanded."""
+
+
+class StrategyContext:
+    """
+    What a strategy may know about the project it expands a blueprint in.
+
+    This is read-only: strategies return documents, and asimov applies them
+    through the normal route, so existing validation, provenance and the
+    ledger are not the plugin's concern.
+
+    Parameters
+    ----------
+    ledger : asimov.ledger.Ledger, optional
+        The project's ledger. Without one the project is empty.
+    event : str, optional
+        The subject the blueprint is being applied to, if it is known.
+    logger : logging.Logger, optional
+        The logger to use; defaults to this module's.
+    """
+
+    def __init__(self, ledger=None, event=None, logger=None):
+        self._ledger = ledger
+        self.event = event
+        self.logger = logger or globals()["logger"]
+
+    def subjects(self) -> List[str]:
+        """The names of the subjects which exist in the project."""
+        names = getattr(self._ledger, "subject_names", None)
+        return list(names()) if names else []
+
+    def analyses(self, subject: Optional[str] = None) -> List[str]:
+        """
+        The names of the analyses which exist in a subject.
+
+        Parameters
+        ----------
+        subject : str, optional
+            The subject; defaults to the one the blueprint is applied to.
+        """
+        subject = subject or self.event
+        if self._ledger is None or subject is None:
+            return []
+        from asimov.cli.application import _raw_production_names
+
+        return sorted(_raw_production_names(self._ledger, subject))
+
+    def has_analysis(self, subject: str, name: str) -> bool:
+        """Whether an analysis of this name exists in a subject."""
+        return name in self.analyses(subject)
+
+    @property
+    def project(self) -> Dict[str, Any]:
+        """A copy of the project's settings."""
+        data = getattr(self._ledger, "data", None) or {}
+        return deepcopy(data.get("project", {})) if isinstance(data, dict) else {}
+
+
+class Strategy(ABC):
+    """
+    A strategy which a plugin provides, to expand a blueprint into a graph.
+
+    Register one in the ``asimov.strategies`` entry-point group::
+
+        [project.entry-points."asimov.strategies"]
+        round-robin = "my_package.strategies:RoundRobinStrategy"
+
+    and select it in a blueprint with ``strategy: {type: round-robin, ...}``.
+
+    Attributes
+    ----------
+    name : str
+        The name which blueprints select it by (the entry-point name).
+    """
+
+    name: str = ""
+
+    def validate(self, spec: Dict[str, Any]) -> None:
+        """
+        Raise early, at apply time, if the strategy's options are bad.
+
+        Parameters
+        ----------
+        spec : dict
+            The ``strategy:`` block of the blueprint, ``type`` included.
+        """
+
+    @abstractmethod
+    def expand(self, blueprint: Dict[str, Any], context: StrategyContext) -> List[Dict[str, Any]]:
+        """
+        Expand a blueprint into the documents to apply.
+
+        Parameters
+        ----------
+        blueprint : dict
+            The blueprint, ``strategy`` block included. It is a copy, which
+            may be changed.
+        context : StrategyContext
+            Read-only information about the project.
+
+        Returns
+        -------
+        list of dict
+            The analyses to apply, in the order to apply them. Each needs a
+            ``name``, which must be the same every time this is called for
+            the same blueprint (so that applying it again is safe), and may
+            have ``needs`` to depend on the others.
+        """
+
+    def extend(self, analysis, context: StrategyContext) -> List[Dict[str, Any]]:
+        """
+        Optionally, return further documents when one of the analyses finishes.
+
+        Not used yet; the default adds nothing.
+        """
+        return []
+
+
+def strategy_plugins() -> Dict[str, Any]:
+    """
+    The strategies which plugins have registered, by name.
+
+    A plugin which fails to load is reported and left out, so that a broken
+    plugin cannot break unrelated commands.
+    """
+    found = {}
+    for entry in entry_points(group=ENTRY_POINT_GROUP):
+        try:
+            found[entry.name] = entry.load()
+        except Exception as error:
+            logger.warning(f"Could not load the strategy plugin '{entry.name}': {error}")
+    return found
+
+
+def is_plugin_strategy(strategy: Any) -> bool:
+    """
+    Whether a ``strategy`` block selects a plugin strategy.
+
+    That is a mapping with a ``type`` whose value is a string. A matrix
+    strategy has only lists as values, and a value which is not a list is an
+    error there, so no matrix strategy can look like this.
+    """
+    return isinstance(strategy, dict) and isinstance(strategy.get("type"), str)
+
+
+def strategy_stamp(document: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    The ``{type, id}`` which core stamps on analyses emitted by a plugin
+    strategy, or None for any other document.
+    """
+    stamp = document.get("strategy") if isinstance(document, dict) else None
+    if isinstance(stamp, dict) and "type" in stamp and "id" in stamp:
+        return stamp
+    return None
 
 
 def set_nested_value(dictionary: Dict[str, Any], path: str, value: Any) -> None:
@@ -52,7 +230,9 @@ def set_nested_value(dictionary: Dict[str, Any], path: str, value: Any) -> None:
     current[keys[-1]] = value
 
 
-def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
+def expand_strategy(
+    blueprint: Dict[str, Any], context: Optional[StrategyContext] = None
+) -> List[Dict[str, Any]]:
     """
     Expand a blueprint with a strategy into multiple blueprints.
     
@@ -63,7 +243,10 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     ----------
     blueprint : dict
         The blueprint document, which may contain a 'strategy' field
-        
+    context : StrategyContext, optional
+        What a plugin strategy may know about the project. Not used by a
+        matrix strategy.
+
     Returns
     -------
     list
@@ -103,7 +286,10 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     if "strategy" not in blueprint:
         return [blueprint]
-    
+
+    if is_plugin_strategy(blueprint["strategy"]):
+        return expand_plugin_strategy(blueprint, context)
+
     # Create a copy to avoid modifying the original
     blueprint = deepcopy(blueprint)
     strategy = blueprint.pop("strategy")
@@ -167,3 +353,93 @@ def expand_strategy(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
         expanded_blueprints.append(new_blueprint)
     
     return expanded_blueprints
+
+
+def expand_plugin_strategy(
+    blueprint: Dict[str, Any], context: Optional[StrategyContext] = None
+) -> List[Dict[str, Any]]:
+    """
+    Expand a blueprint with the plugin strategy which its ``strategy.type`` names.
+
+    Everything the plugin returns is checked before any of it is used, so a
+    mistake in a plugin is reported with nothing applied. Core then stamps
+    ``strategy: {type, id}`` on each analysis, where ``id`` is the name of the
+    blueprint, so the analyses of one expansion can be found again.
+
+    Parameters
+    ----------
+    blueprint : dict
+        The blueprint, with a ``strategy`` block which has a ``type``.
+    context : StrategyContext, optional
+        What the plugin may know about the project.
+
+    Returns
+    -------
+    list of dict
+        The analyses to apply.
+
+    Raises
+    ------
+    StrategyError
+        If the type is not installed, or the plugin fails or returns
+        something which cannot be applied.
+    """
+    context = context or StrategyContext()
+    spec = deepcopy(blueprint["strategy"])
+    kind = spec["type"]
+
+    identifier = blueprint.get("name")
+    if not isinstance(identifier, str) or not identifier:
+        raise StrategyError(
+            f"The strategy '{kind}' needs the blueprint to have a name, which identifies the group."
+        )
+
+    available = strategy_plugins()
+    if kind not in available:
+        installed = ", ".join(sorted(available)) or "none"
+        raise StrategyError(
+            f"Unknown strategy type '{kind}'. The installed strategies are: {installed}."
+        )
+
+    try:
+        plugin = available[kind]()
+        plugin.name = getattr(plugin, "name", "") or kind
+        plugin.validate(deepcopy(spec))
+        documents = plugin.expand(deepcopy(blueprint), context)
+    except StrategyError:
+        raise
+    except Exception as error:
+        raise StrategyError(f"The strategy '{kind}' could not be expanded: {error}") from error
+
+    if not isinstance(documents, (list, tuple)) or not documents:
+        raise StrategyError(f"The strategy '{kind}' did not return any analyses to apply.")
+
+    seen = set()
+    emitted = []
+    for document in documents:
+        if not isinstance(document, dict):
+            raise StrategyError(
+                f"The strategy '{kind}' returned a {type(document).__name__}, not a document."
+            )
+        document = deepcopy(document)
+        document_kind = document.pop("kind", "analysis")
+        if str(document_kind).lower() != "analysis":
+            raise StrategyError(
+                f"The strategy '{kind}' returned a document of kind '{document_kind}'; "
+                "only analyses can be applied from a strategy so far."
+            )
+        name = document.get("name")
+        if not isinstance(name, str) or not name:
+            raise StrategyError(f"The strategy '{kind}' returned an analysis with no name.")
+        if name in seen:
+            raise StrategyError(
+                f"The strategy '{kind}' returned more than one analysis named '{name}'."
+            )
+        if "pipeline" not in document:
+            # Everything which applying needs is checked now, so that a
+            # mistake is found before any of the analyses have been applied.
+            raise StrategyError(f"The strategy '{kind}' returned the analysis '{name}' with no pipeline.")
+        seen.add(name)
+        document["strategy"] = {"type": kind, "id": identifier}
+        emitted.append(document)
+    return emitted
