@@ -18,6 +18,7 @@ subjects throughout. There are no tools which delete anything.
 The server needs the ``mcp`` package: ``pip install 'asimov[mcp]'``.
 """
 
+import collections
 import contextlib
 import os
 import sys
@@ -39,11 +40,12 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     ) from error
 
 import asimov
-from asimov import actions, jobs, reading
+from asimov import access, actions, jobs, reading
 from asimov.cli.application import apply_page
-from asimov.context import ProjectContext
+from asimov.context import ProjectContext, get_active_context
 from asimov.preview import recording
 from asimov.principal import Principal, acting_as
+from asimov.registry import AmbiguousProject, ProjectRegistry, SingleProjectRegistry, UnknownProject
 
 __all__ = ["create_server", "serve", "untrusted", "INSTRUCTIONS", "NOTE"]
 
@@ -67,7 +69,7 @@ NOTE = (
 )
 
 INSTRUCTIONS = f"""\
-Tools to inspect an asimov project: its subjects (what analyses are of, such as \
+Tools to inspect an asimov project (or, if there are several, the project you name): its subjects (what analyses are of, such as \
 gravitational-wave events) and their analyses, and to apply blueprints to it.
 
 Use preview_blueprint before apply_blueprint: it says what would change, and what \
@@ -81,6 +83,13 @@ Limit = Annotated[
     int, Field(ge=1, le=MAX_LIMIT, description="The most to return.")
 ]
 Offset = Annotated[int, Field(ge=0, description="How many to skip, to get the next page.")]
+Project = Annotated[
+    Optional[str],
+    Field(
+        description="The project. Leave it out when there is only one; "
+        "list_projects says which there are."
+    ),
+]
 
 _READ = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False)
 _PREVIEW = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False)
@@ -156,12 +165,18 @@ def _no_prompts(*args, **kwargs):
 
 def create_server(project, acting_for=None, read_only=False):
     """
-    Make an MCP server for the project in ``project``.
+    Make an MCP server for a project, or for the projects in a registry.
+
+    Every tool takes an optional ``project``. It can be left out when there is
+    only one project. Each call checks that the agent may do what it asks to
+    the project (see :mod:`asimov.access`), and a project it may not read is
+    reported as not existing.
 
     Parameters
     ----------
-    project : str
-        The project's directory.
+    project : str or asimov.registry.ProjectRegistry
+        The directory of the project to serve, or a registry of the projects
+        to serve.
     acting_for : Principal, optional
         Who the agent acts for. Defaults to the local user.
     read_only : bool
@@ -174,27 +189,86 @@ def create_server(project, acting_for=None, read_only=False):
     Raises
     ------
     asimov.context.NoProjectError
-        If there is no project there.
+        If ``project`` is a directory and there is no project there.
     """
-    context = ProjectContext.from_directory(project)
+    if isinstance(project, ProjectRegistry):
+        registry = project
+    else:
+        # Check now, as this has always done, that there is a project there.
+        ProjectContext.from_directory(project)
+        registry = SingleProjectRegistry(project)
     acting_for = acting_for or Principal.local_user()
-    # Tools run in worker threads, and a project is one ledger.
-    lock = threading.Lock()
+    # Tools run in worker threads, and a project is one ledger: one call at a
+    # time for each project, but calls for different projects run together.
+    locks = collections.defaultdict(threading.Lock)
+    locks_guard = threading.Lock()
     server = MCPServer("asimov", instructions=INSTRUCTIONS, version=asimov.__version__)
 
+    def readable_names(principal):
+        names = []
+        for entry in registry.list():
+            try:
+                access.authorize(principal, entry, access.READ)
+            except access.AccessDenied:
+                continue
+            names.append(entry.name)
+        return names
+
+    def entry_for(name, principal, action):
+        """The project's entry, if the agent may do ``action`` to it."""
+        try:
+            entry = registry.get(name)
+            access.authorize(principal, entry, access.READ)
+        except (UnknownProject, AmbiguousProject, access.AccessDenied):
+            # What may not be read looks the same as what isn't there.
+            names = readable_names(principal)
+            listing = ", ".join(names) if names else "none"
+            if name is None:
+                raise ToolError(f"Say which project: the projects are {listing}.")
+            raise ToolError(
+                f"There is no project called {name!r}. The projects are: {listing}."
+            )
+        if action != access.READ:
+            try:
+                access.authorize(principal, entry, action)
+            except access.AccessDenied as error:
+                raise ToolError(str(error))
+        return entry
+
     @contextlib.contextmanager
-    def session(ctx):
+    def session(ctx, project=None, action=access.READ):
         """The project's ledger, for one call, with the agent attributed."""
         agent = Principal.agent(_client_name(ctx), acting_for=acting_for)
+        entry = entry_for(project, agent, action)
+        with locks_guard:
+            lock = locks[entry.name]
         with lock:
+            try:
+                context = entry.context()
+            except Exception as error:
+                raise ToolError(f"The project {entry.name!r} could not be opened: {error}")
             try:
                 with context.activate(), acting_as(agent), contextlib.redirect_stdout(
                     sys.stderr
                 ), mock.patch("click.prompt", _no_prompts):
                     yield context.ledger
             finally:
-                # The next call opens the ledger afresh, and sees what others did.
+                # Nothing is held between calls, so the next sees what others did.
                 context.reload_ledger()
+
+    @server.tool(annotations=_READ, title="List projects")
+    def list_projects(ctx: Context) -> dict[str, Any]:
+        """List the projects you can use, with the groups which own each."""
+        agent = Principal.agent(_client_name(ctx), acting_for=acting_for)
+        wanted = set(readable_names(agent))
+        return {
+            "note": NOTE,
+            "projects": [
+                {"name": e.name, "groups": list(e.groups)}
+                for e in registry.list()
+                if e.name in wanted
+            ],
+        }
 
     def subject_of(ledger, name):
         try:
@@ -217,9 +291,10 @@ def create_server(project, acting_for=None, read_only=False):
         name_contains: Annotated[
             Optional[str], Field(description="Only subjects whose name contains this.")
         ] = None,
+        project: Project = None,
     ) -> dict[str, Any]:
         """List the project's subjects, with how many analyses each has and in what state."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             names = reading.subject_names(ledger)
             if name_contains:
                 names = [n for n in names if name_contains.lower() in n.lower()]
@@ -234,9 +309,9 @@ def create_server(project, acting_for=None, read_only=False):
             }
 
     @server.tool(annotations=_READ, title="Get a subject")
-    def get_subject(ctx: Context, subject: str) -> dict[str, Any]:
+    def get_subject(ctx: Context, subject: str, project: Project = None) -> dict[str, Any]:
         """Get a subject's settings and a summary of each of its analyses."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             detail = reading.subject_detail(subject_of(ledger, subject))
             detail["settings"] = _mark_prose(detail["settings"], f"subject:{subject}")
             return {"note": NOTE, **detail}
@@ -255,6 +330,7 @@ def create_server(project, acting_for=None, read_only=False):
         ] = None,
         limit: Limit = DEFAULT_LIMIT,
         offset: Offset = 0,
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         List analyses, across the project or for one subject.
@@ -262,7 +338,7 @@ def create_server(project, acting_for=None, read_only=False):
         Without ``subject`` the subjects are read one by one until there are
         enough matches, so ``total`` is only given when every subject was read.
         """
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             if subject:
                 subjects = [subject_of(ledger, subject)]
                 names = None
@@ -297,9 +373,9 @@ def create_server(project, acting_for=None, read_only=False):
             }
 
     @server.tool(annotations=_READ, title="Get an analysis")
-    def get_analysis(ctx: Context, subject: str, analysis: str) -> dict[str, Any]:
+    def get_analysis(ctx: Context, subject: str, analysis: str, project: Project = None) -> dict[str, Any]:
         """Get everything the ledger holds about one analysis."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             found = analysis_of(ledger, subject, analysis)
             detail = _mark_prose(
                 reading.analysis_detail(found), f"analysis:{subject}/{analysis}"
@@ -319,9 +395,10 @@ def create_server(project, acting_for=None, read_only=False):
                 description="The most of each log file to return, taken from its end.",
             ),
         ] = DEFAULT_LOG_BYTES,
+        project: Project = None,
     ) -> dict[str, Any]:
         """Get the end of each log file an analysis has written."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             found = analysis_of(ledger, subject, analysis)
             logs = reading.read_logs(found, max_bytes=max_bytes)
             for log in logs["files"]:
@@ -343,9 +420,10 @@ def create_server(project, acting_for=None, read_only=False):
             int,
             Field(ge=1, le=MAX_TELEMETRY, description="The most recent this many."),
         ] = DEFAULT_TELEMETRY,
+        project: Project = None,
     ) -> dict[str, Any]:
         """Get the telemetry events recorded for an analysis, oldest first."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             found = analysis_of(ledger, subject, analysis)
             try:
                 events = reading.read_telemetry(found, event_type=event_type, since=since)
@@ -361,9 +439,9 @@ def create_server(project, acting_for=None, read_only=False):
             return {"note": NOTE, "total": total, "returned": len(events), "events": events}
 
     @server.tool(annotations=_READ, title="Get an analysis's review status")
-    def get_review_status(ctx: Context, subject: str, analysis: str) -> dict[str, Any]:
+    def get_review_status(ctx: Context, subject: str, analysis: str, project: Project = None) -> dict[str, Any]:
         """Get an analysis's review status and the review messages behind it."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             review = reading.review_summary(analysis_of(ledger, subject, analysis))
             review["messages"] = _mark_prose(
                 review["messages"], f"review:{subject}/{analysis}"
@@ -381,9 +459,10 @@ def create_server(project, acting_for=None, read_only=False):
         ] = None,
         limit: Limit = DEFAULT_LIMIT,
         offset: Offset = 0,
+        project: Project = None,
     ) -> dict[str, Any]:
         """List the labels on analyses (only analyses which have some)."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.READ) as ledger:
             names = [subject] if subject else reading.subject_names(ledger)
             rows = []
             for name in names:
@@ -407,21 +486,21 @@ def create_server(project, acting_for=None, read_only=False):
         data.pop("principal", None)
         data["note"] = NOTE
         if log:
-            text = jobs.read_log(context.root, job.id, max_bytes=DEFAULT_LOG_BYTES)
+            text = jobs.read_log(get_active_context().root, job.id, max_bytes=DEFAULT_LOG_BYTES)
             data["log"] = untrusted(text, f"job:{job.id}") if text else None
         if data.get("error"):
             data["error"] = untrusted(data["error"], f"job:{job.id}.error")
         return data
 
     @server.tool(annotations=_READ, title="Get a build or submit job")
-    def get_job(ctx: Context, job_id: str) -> dict[str, Any]:
+    def get_job(ctx: Context, job_id: str, project: Project = None) -> dict[str, Any]:
         """
         Get the state of a job started by trigger_build or trigger_submit: whether
         it is running, what it did, why it failed, and the end of what it printed.
         """
-        with session(ctx):
+        with session(ctx, project, access.READ):
             try:
-                return job_view(jobs.get_job(context.root, job_id))
+                return job_view(jobs.get_job(get_active_context().root, job_id))
             except jobs.JobError as error:
                 raise ToolError(str(error))
 
@@ -430,16 +509,17 @@ def create_server(project, acting_for=None, read_only=False):
         ctx: Context,
         active: Annotated[bool, Field(description="Only jobs which are still running.")] = False,
         limit: Limit = 20,
+        project: Project = None,
     ) -> dict[str, Any]:
         """List jobs started by trigger_build and trigger_submit, newest first."""
-        with session(ctx):
-            found = jobs.list_jobs(context.root, limit=limit, active=active)
+        with session(ctx, project, access.READ):
+            found = jobs.list_jobs(get_active_context().root, limit=limit, active=active)
             return {"note": NOTE, "jobs": [job_view(job, log=False) for job in found]}
 
     if read_only:
         return server
 
-    def blueprint_run(ctx, blueprint, subject, update, dry_run):
+    def blueprint_run(ctx, blueprint, subject, update, dry_run, project=None):
         """Preview or apply a blueprint, returning what was or would be done."""
         if len(blueprint.encode("utf-8")) > MAX_BLUEPRINT_BYTES:
             raise ToolError(f"The blueprint is larger than {MAX_BLUEPRINT_BYTES} bytes.")
@@ -463,7 +543,7 @@ def create_server(project, acting_for=None, read_only=False):
             path = os.path.join(scratch, "blueprint.yaml")
             with open(path, "w") as blueprint_file:
                 blueprint_file.write(blueprint)
-            with session(ctx) as ledger:
+            with session(ctx, project, access.READ if dry_run else access.WRITE) as ledger:
                 if dry_run:
                     try:
                         plan = apply_page(
@@ -504,6 +584,7 @@ def create_server(project, acting_for=None, read_only=False):
         update: Annotated[
             bool, Field(description="Update what exists rather than add new records.")
         ] = False,
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         Say what applying a blueprint would do, and change nothing.
@@ -513,7 +594,7 @@ def create_server(project, acting_for=None, read_only=False):
         is updated, which values would change) and what would be refused.
         Use this before apply_blueprint.
         """
-        return blueprint_run(ctx, blueprint, subject, update, dry_run=True)
+        return blueprint_run(ctx, blueprint, subject, update, dry_run=True, project=project)
 
     @server.tool(annotations=_APPLY, title="Apply a blueprint")
     def apply_blueprint(
@@ -525,6 +606,7 @@ def create_server(project, acting_for=None, read_only=False):
         update: Annotated[
             bool, Field(description="Update what exists rather than add new records.")
         ] = False,
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         Apply a blueprint to the project.
@@ -534,17 +616,17 @@ def create_server(project, acting_for=None, read_only=False):
         asimov, so use preview_blueprint first. Returns what was changed, with
         the id of the audit record of each change, and what was refused.
         """
-        return blueprint_run(ctx, blueprint, subject, update, dry_run=False)
+        return blueprint_run(ctx, blueprint, subject, update, dry_run=False, project=project)
 
 
-    def trigger(ctx, action, subject, dryrun, max_submit=None):
+    def trigger(ctx, action, subject, dryrun, max_submit=None, project=None):
         """Start a job and say which one it is, without waiting for it."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.EXECUTE) as ledger:
             if subject is not None:
                 subject_of(ledger, subject)
             try:
                 job = jobs.start_job(
-                    context, action, subject=subject, dryrun=dryrun, max_submit=max_submit
+                    get_active_context(), action, subject=subject, dryrun=dryrun, max_submit=max_submit
                 )
             except jobs.JobError as error:
                 raise ToolError(str(error))
@@ -562,13 +644,14 @@ def create_server(project, acting_for=None, read_only=False):
         dryrun: Annotated[
             bool, Field(description="Print what would be done without doing it.")
         ] = False,
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         Create the run configuration for analyses which are ready. This runs in a
         separate process and returns at once with a job: use get_job to follow it.
         Only one job runs at a time.
         """
-        return trigger(ctx, "build", subject, dryrun)
+        return trigger(ctx, "build", subject, dryrun, project=project)
 
     @server.tool(annotations=_START, title="Submit analyses")
     def trigger_submit(
@@ -584,6 +667,7 @@ def create_server(project, acting_for=None, read_only=False):
             Optional[int],
             Field(ge=1, le=1000, description="Submit at most this many analyses."),
         ] = None,
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         Submit analyses which are ready to the scheduler. This runs in a separate
@@ -593,11 +677,11 @@ def create_server(project, acting_for=None, read_only=False):
         are submitted, so say which subject, or set max_submit, unless you mean
         that. Only one job runs at a time.
         """
-        return trigger(ctx, "submit", subject, dryrun, max_submit)
+        return trigger(ctx, "submit", subject, dryrun, max_submit, project=project)
 
-    def act(ctx, subject, analysis, change, *args):
+    def act(ctx, project, subject, analysis, change, *args):
         """Make a change to an analysis and say what record was made of it."""
-        with session(ctx) as ledger:
+        with session(ctx, project, access.WRITE) as ledger:
             found = analysis_of(ledger, subject, analysis)
             try:
                 record = change(ledger, found, *args)
@@ -620,9 +704,10 @@ def create_server(project, acting_for=None, read_only=False):
         message: Annotated[
             Optional[str], Field(max_length=10_000, description="Why, if you want to say.")
         ] = None,
+        project: Project = None,
     ) -> dict[str, Any]:
         """Give an analysis a review status. It becomes its status until another is set."""
-        return act(ctx, subject, analysis, actions.set_review_status, status, message)
+        return act(ctx, project, subject, analysis, actions.set_review_status, status, message)
 
     @server.tool(annotations=_ADD, title="Comment on an analysis")
     def add_comment(
@@ -630,12 +715,13 @@ def create_server(project, acting_for=None, read_only=False):
         subject: str,
         analysis: str,
         comment: Annotated[str, Field(min_length=1, max_length=10_000)],
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         Add a comment to an analysis's review messages, without changing its
         review status. It is recorded as made by you, for the person you act for.
         """
-        return act(ctx, subject, analysis, actions.add_comment, comment)
+        return act(ctx, project, subject, analysis, actions.add_comment, comment)
 
     @server.tool(annotations=_ADD, title="Label an analysis")
     def add_label(
@@ -647,13 +733,14 @@ def create_server(project, acting_for=None, read_only=False):
             Optional[str | int | float | bool],
             Field(description="The label's value (default: true)."),
         ] = True,
+        project: Project = None,
     ) -> dict[str, Any]:
         """
         Set a label on an analysis. It stays until it is removed with
         remove_label: labellers will not change or remove it.
         """
         return act(
-            ctx, subject, analysis, actions.add_label, label, True if value is None else value
+            ctx, project, subject, analysis, actions.add_label, label, True if value is None else value
         )
 
     @server.tool(annotations=_REMOVE, title="Remove a label")
@@ -662,16 +749,20 @@ def create_server(project, acting_for=None, read_only=False):
         subject: str,
         analysis: str,
         label: Annotated[str, Field(min_length=1, max_length=200)],
+        project: Project = None,
     ) -> dict[str, Any]:
         """Remove a label from an analysis, whoever set it."""
-        return act(ctx, subject, analysis, actions.remove_label, label)
+        return act(ctx, project, subject, analysis, actions.remove_label, label)
 
     return server
 
 
 def serve(project, acting_for=None, read_only=False):
     """
-    Serve the project in ``project`` over standard input and output.
+    Serve a project, or the projects in a registry, over standard input and output.
+
+    ``project`` is a project's directory or a
+    :class:`~asimov.registry.ProjectRegistry`, as for :func:`create_server`.
 
     Standard output belongs to the protocol while this runs. Nothing else may
     write to it, so what the tools would print is sent to standard error.

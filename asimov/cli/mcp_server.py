@@ -19,6 +19,14 @@ from asimov.principal import Principal
     help="The project's directory (default: the current one).",
 )
 @click.option(
+    "--registry",
+    "registry_path",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Serve the projects in this registry file (see 'asimov registry') instead of one "
+    "project. Tools then take a 'project' argument.",
+)
+@click.option(
     "--read-only",
     is_flag=True,
     help="Only offer tools which read the project.",
@@ -28,7 +36,7 @@ from asimov.principal import Principal
     default=None,
     help="The person the client acts for (default: the local user).",
 )
-def mcp_server(project, read_only, acting_for):
+def mcp_server(project, registry_path, read_only, acting_for):
     """Serve the project over MCP."""
     try:
         from asimov.mcp_server import serve
@@ -36,8 +44,12 @@ def mcp_server(project, read_only, acting_for):
         raise click.ClickException(str(error))
     person = Principal.person(acting_for) if acting_for else None
     from asimov.context import NoProjectError
+    from asimov.registry import FileRegistry
 
+    if registry_path and project:
+        raise click.UsageError("Give --project or --registry, not both.")
+    served = FileRegistry(registry_path) if registry_path else (project or ".")
     try:
-        serve(project or ".", acting_for=person, read_only=read_only)
+        serve(served, acting_for=person, read_only=read_only)
     except NoProjectError as error:
         raise click.ClickException(str(error))
