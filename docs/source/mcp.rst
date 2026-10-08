@@ -43,6 +43,14 @@ gravitational-wave work, events).
     Set a label on an analysis, and remove one. A label set this way is *manual*:
     it stays until it is removed, and labellers (see :doc:`labeller-plugins`) never
     change it, even if they set a label with the same name.
+``trigger_build``, ``trigger_submit``
+    Build the configuration for ready analyses, and submit them to the scheduler.
+    Both return at once with a *job* (see below). ``trigger_submit`` takes the
+    ``dryrun`` and ``max_submit`` options of ``asimov manage submit``.
+``get_job``, ``list_jobs``
+    How a job is getting on, what it did, and the end of what it printed; and the
+    recent jobs. These only read the job's record, so they are quick however busy
+    the scheduler is, and are available with ``--read-only``.
 ``preview_blueprint``
     What applying a blueprint would do, and what would be refused. Changes
     nothing (see :doc:`blueprints`).
@@ -57,6 +65,36 @@ marked as destructive so that clients can ask first.
 Lists are paged (``limit`` and ``offset``), and log and telemetry results are
 capped, so a large project cannot flood the client. There is no tool which deletes
 an analysis, a subject or a record.
+
+Build and submit jobs
+---------------------
+
+Submitting talks to the scheduler, which can be slow, and submissions are paced
+(``submit_interval``), so a tool call which waited for it could hang the client,
+and a client which retried could submit twice. ``trigger_build`` and
+``trigger_submit`` therefore start a separate worker process
+(``python -m asimov.jobs run``), which does what ``asimov manage build`` or
+``asimov manage submit`` does, and return straight away with the job's id.
+
+A job is a file in the project, ``.asimov/jobs/<id>.json``, with its status
+(``queued``, ``running``, ``succeeded`` or ``failed``), who it runs as, when it
+started and finished, what it did (for submit, how many analyses it submitted)
+and why it failed, if it did. What it printed is in ``<id>.log``.
+
+* **One at a time.** Only one job runs in a project at once: a second
+  ``trigger_*`` while one runs is refused, and the error names the running job.
+* **Scheduler limits still apply.** The ``[scheduler]`` settings ``max_queued``,
+  ``max_submit_per_pass`` and ``submit_interval`` work in the worker as they do
+  on the command line. By default they set no limit, so
+  ``trigger_submit`` without a ``subject`` submits every ready analysis in the
+  project: set ``max_submit_per_pass`` if you give an agent this tool.
+* **Time limit.** A worker is stopped after an hour, and the job is marked as
+  failed.
+* **Dead workers.** If a worker is killed, or the machine restarts, the job is
+  marked as failed the next time it is read, and the project can run jobs again.
+* **Audited.** Starting a job is recorded in the :doc:`audit log <audit>` (kind
+  ``job``), under the agent and the person it acts for. The worker runs as them
+  too.
 
 Who did it
 ----------
