@@ -29,6 +29,9 @@ from asimov.strategies import (
     StrategyError,
     expand_strategy,
     is_plugin_strategy,
+    plugin_info,
+    read_group,
+    write_group,
 )
 from copy import deepcopy
 from datetime import datetime
@@ -276,6 +279,20 @@ class _StrategyGroup:
         )
 
 
+def _record_group(ledger, identifier, record, outcome):
+    """Store the record of a group, and audit it (or, in a dry run, plan it)."""
+    with ledger.transaction():
+        write_group(ledger, identifier, record)
+        ledger.save()
+        _audited(
+            ledger,
+            "strategygroup",
+            f"{PROJECT}/{identifier}",
+            record,
+            outcome=outcome,
+        )
+
+
 def _expand_strategies(documents, ledger, event):
     """
     Expand the plugin strategies in the documents of a blueprint.
@@ -310,8 +327,23 @@ def _expand_strategies(documents, ledger, event):
 
         blueprint_event = document.get("event")
         known_event = event or blueprint_event
+        strategy_type = document["strategy"]["type"]
+        identifier = document.get("name")
+
+        # A group is named by its blueprint, and the name is unique in the
+        # project: it is how the group is found again (to add to it, or to
+        # change it), so a second blueprint of that name is not another group.
+        previous = read_group(ledger, identifier) if isinstance(identifier, str) else None
+        if previous is not None and previous.get("type") != strategy_type:
+            raise StrategyError(
+                f"'{identifier}' is already the name of a group made by the "
+                f"'{previous.get('type')}' strategy. Group names are unique in the project: "
+                "use another name for this one."
+            )
+
         emitted = expand_strategy(
-            deepcopy(document), StrategyContext(ledger=ledger, event=known_event)
+            deepcopy(document),
+            StrategyContext(ledger=ledger, event=known_event, group=previous),
         )
 
         # Which subject each analysis is for. One which names none is for the
@@ -337,7 +369,20 @@ def _expand_strategies(documents, ledger, event):
                     )
                 emitted_document["event"] = default_event
 
-        existing = set(StrategyContext(ledger=ledger).subjects())
+        if (
+            previous is not None
+            and previous.get("event")
+            and default_event
+            and previous["event"] != default_event
+        ):
+            raise StrategyError(
+                f"The group '{identifier}' is for the subject '{previous['event']}', and this "
+                f"blueprint is for '{default_event}'. Group names are unique in the project: "
+                f"apply it to '{previous['event']}' again, or use another name."
+            )
+
+        preexisting = set(StrategyContext(ledger=ledger).subjects())
+        existing = set(preexisting)
         for emitted_document in emitted:
             kind = emitted_document["kind"]
             if kind in ("event", "subject"):
@@ -349,11 +394,41 @@ def _expand_strategies(documents, ledger, event):
                     "which does not exist and is not made before it by the strategy."
                 )
 
-        group = _StrategyGroup(document.get("name"), len(emitted))
+        # The subjects this group made: those it made before, and those it makes
+        # now. One which is already there was not made by the group.
+        made = sorted(
+            set((previous or {}).get("subjects", []))
+            | {
+                d["name"]
+                for d in emitted
+                if d["kind"] in ("event", "subject") and d["name"] not in preexisting
+            }
+        )
+        record = {
+            "type": strategy_type,
+            "blueprint": {k: v for k, v in document.items() if k != "kind"},
+            "event": default_event,
+            "subjects": made,
+            "plugin": (previous or {}).get("plugin") or plugin_info(strategy_type),
+        }
+        if previous is not None and "last extended with" in previous:
+            record["last extended with"] = previous["last extended with"]
+        if previous is None:
+            _record_group(ledger, identifier, record, "added")
+        elif {k: v for k, v in previous.items()} != record:
+            _record_group(ledger, identifier, record, "updated")
+
+        group = _StrategyGroup(identifier, len(emitted))
         for emitted_document in emitted:
             yield emitted_document, group
         if group.skipped:
             _say(group.summary())
+
+        # Documents added to a group which was made before are an extension of
+        # it, perhaps by a different version of the package.
+        if previous is not None and group.total > group.skipped:
+            record["last extended with"] = plugin_info(strategy_type)
+            _record_group(ledger, identifier, record, "updated")
 
 
 def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False, dry_run=False):

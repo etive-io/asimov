@@ -464,6 +464,28 @@ A ``strategy`` with a ``type`` which is a name is a plugin strategy; a ``strateg
   If a strategy fails, or returns something which cannot be applied, nothing from that blueprint is applied.
 * ``--name`` and ``--iterate`` do not rename the analyses of a strategy: their names are what make applying it again safe.
 
+Groups
+^^^^^^
+
+What one blueprint makes is a *group*, named by the blueprint.
+**The name of a group is unique in the project**: it is how asimov finds the group again, to add to it or to change it.
+So a second blueprint cannot use the name of a group which another strategy made, and a blueprint which made a group for one subject cannot be applied to another subject under the same name.
+Either is refused, with nothing applied; use another name.
+
+The group is recorded in the project, so that it can be added to later without the blueprint file.
+The record (see :func:`asimov.strategies.read_group`) holds:
+
+* the strategy ``type`` and the ``blueprint`` as it was last applied;
+* the ``subject`` its analyses are for when they do not name one;
+* the ``subjects`` the group made.
+  A subject which was already there when the group was applied is not listed, because the group did not make it;
+* the package and version that made the group (``plugin``), and, if documents were added to the group afterwards, the package and version that did (``last extended with``).
+  If the two differ, a different version of the strategy added to the group than made it.
+
+Applying a blueprint again with changes (a higher ``length`` or ``rounds``) updates the record to the new blueprint.
+The record can be read with ``asimov audit`` like any other change to the project, and a dry run plans it.
+A strategy is given the record of the group it made before as ``context.group`` (``None`` the first time), so it can tell what has changed.
+
 Writing a strategy
 ^^^^^^^^^^^^^^^^^^
 
@@ -495,7 +517,7 @@ Subclass :class:`asimov.strategies.Strategy`, and register it in the ``asimov.st
                 for n in range(1, rounds + 1)
             ]
 
-``context`` gives read-only information about the project (``context.subjects()``, ``context.analyses()``, ``context.event``, ``context.project`` and ``context.logger``).
+``context`` gives read-only information about the project (``context.subjects()``, ``context.analyses()``, ``context.event``, ``context.group``, ``context.project`` and ``context.logger``).
 A strategy returns documents and never changes the ledger: asimov applies them, so validation and provenance are the same as for any blueprint.
 The ``chain`` strategy, :class:`asimov.strategies_builtin.ChainStrategy`, is a small example.
 A plugin which cannot be loaded is reported and skipped, and does not stop other commands.
