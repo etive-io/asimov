@@ -1,5 +1,6 @@
 import functools
 import shlex
+import time
 import shutil
 import configparser
 import sys
@@ -16,7 +17,7 @@ from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
-from asimov.throttle import per_pass_limit
+from asimov.throttle import ACTIVE_STATES as RUNNING_STATES, per_pass_limit
 from asimov.telemetry import initialize_telemetry_sinks
 
 # Try to import crontab for Slurm cron support
@@ -403,6 +404,93 @@ def _settle_chain_pass(ctx, event, newly_finished, submitted):
     return reruns
 
 
+#: Exit codes of ``monitor --chain --until-idle``.
+EXIT_IDLE_COMPLETE = 0   # nothing is running or can start, and everything finished
+EXIT_IDLE_INCOMPLETE = 1  # nothing is running or can start, but not everything finished
+EXIT_GAVE_UP = 2         # --max-passes or --timeout was reached while work continued
+EXIT_NO_SCHEDULER = 3    # the scheduler could not be queried
+
+_DONE_STATES = frozenset({"finished", "uploaded", "complete"})
+#: Statuses which mean an analysis is deliberately not going to run.
+_INACTIVE_STATES = frozenset({"cancelled", "stop"})
+
+
+def _status_counts(event):
+    """Count the analyses by status, for the subjects and project analyses."""
+    counts = {}
+    analyses = [a for subject in ledger.get_event(event) for a in subject.productions]
+    if event is None:
+        analyses += list(ledger.project_analyses)
+    for analysis in analyses:
+        counts[analysis.status] = counts.get(analysis.status, 0) + 1
+    return counts
+
+
+def _summarise(counts):
+    return ", ".join(f"{n} {status}" for status, n in sorted(counts.items())) or "no analyses"
+
+
+def _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeout):
+    """
+    Run ``monitor --chain`` repeatedly, in the foreground, until it is idle.
+
+    The project is idle when a pass has nothing running or processing, and
+    neither started nor finished anything. What is left is then either
+    complete or blocked (failed, stuck, or waiting on something which will
+    never finish), which the summary and the exit code say.
+
+    Returns
+    -------
+    int
+        The exit code: ``EXIT_IDLE_COMPLETE``, ``EXIT_IDLE_INCOMPLETE``,
+        ``EXIT_GAVE_UP`` or ``EXIT_NO_SCHEDULER``.
+    """
+    started = time.monotonic()
+    passes = 0
+    while True:
+        passes += 1
+        click.secho(f"Pass {passes}", bold=True)
+        try:
+            result = ctx.invoke(
+                monitor, event=event, update=update, dry_run=dry_run,
+                chain=True, until_idle=False,
+            )
+        except SystemExit:
+            click.echo(click.style("●", fg="red") + " The scheduler could not be queried")
+            return EXIT_NO_SCHEDULER
+        result = result or {}
+        counts = _status_counts(event)
+        click.echo(f"After pass {passes}: {_summarise(counts)}")
+
+        working = any(counts.get(state) for state in RUNNING_STATES)
+        progressed = result.get("submitted", 0) or result.get("newly_finished", 0)
+        if not working and not progressed:
+            break
+        if dry_run:
+            # Nothing changes in a dry run, so another pass would be identical.
+            break
+        if max_passes is not None and passes >= max_passes:
+            click.echo(f"Stopping after {passes} passes with work still going")
+            return EXIT_GAVE_UP
+        if timeout is not None and time.monotonic() - started + interval > timeout:
+            click.echo(f"Stopping after {timeout:g} seconds with work still going")
+            return EXIT_GAVE_UP
+        time.sleep(interval)
+
+    unfinished = {
+        status: n for status, n in counts.items()
+        if status not in _DONE_STATES and status not in _INACTIVE_STATES
+    }
+    if unfinished:
+        click.echo(
+            click.style("●", fg="yellow")
+            + f" Idle after {passes} passes, but not everything finished: {_summarise(unfinished)}"
+        )
+        return EXIT_IDLE_INCOMPLETE
+    click.echo(click.style("●", fg="green") + f" Idle after {passes} passes: everything finished")
+    return EXIT_IDLE_COMPLETE
+
+
 def _as_monitor(command):
     """Run a command with changes attributed to the monitor, not a person."""
 
@@ -430,13 +518,41 @@ def _as_monitor(command):
     is_flag=True,
     help="Chain multiple asimov commands",
 )
+@click.option(
+    "--until-idle",
+    "until_idle",
+    is_flag=True,
+    default=False,
+    help="With --chain, keep running passes in the foreground until nothing is "
+    "running or can start. Exits 0 if everything finished, 1 if some did not, "
+    "2 if --max-passes or --timeout was reached.",
+)
+@click.option(
+    "--interval", default=30.0, show_default=True, type=click.FloatRange(min=0),
+    help="Seconds to wait between passes with --until-idle.",
+)
+@click.option(
+    "--max-passes", default=None, type=click.IntRange(min=1),
+    help="With --until-idle, the most passes to run.",
+)
+@click.option(
+    "--timeout", default=None, type=click.FloatRange(min=0),
+    help="With --until-idle, the most seconds to keep going for.",
+)
 @click.command()
 @click.pass_context
 @_as_monitor
-def monitor(ctx, event, update, dry_run, chain):
+def monitor(ctx, event, update, dry_run, chain, until_idle, interval, max_passes, timeout):
     """
     Monitor condor jobs' status, and collect logging information.
     """
+    if until_idle:
+        if not chain:
+            raise click.UsageError("--until-idle needs --chain")
+        sys.exit(
+            _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeout)
+        )
+
     from asimov import setup_file_logging
     setup_file_logging()
 
@@ -688,3 +804,5 @@ def monitor(ctx, event, update, dry_run, chain):
                         hook.load()(deepcopy(ledger)).run()
                     except Exception:
                         logger.warning("Unable to run the cbcflow hook")
+
+    return {"submitted": submitted, "newly_finished": newly_finished}

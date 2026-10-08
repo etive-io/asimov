@@ -127,6 +127,23 @@ A pass in which nothing finished runs build and submit once, as before, and a dr
 The ``max_submit_per_pass`` limit is shared by all of the runs in a pass, so repeating them cannot submit more than the limit allows.
 Repeating costs about one more build and one more submit, so it is only done when something has finished.
 
+Running to the end in the foreground (``--until-idle``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``asimov monitor --chain --until-idle`` makes passes one after another, in the foreground, instead of leaving them to a scheduler.
+It is for a project which runs on a machine without a scheduler, for a batch job, and for tests.
+
+A pass has nothing more to do when no analysis is running or processing, and the pass neither submitted nor finished anything.
+The command then stops and says what is left:
+
+* exit code ``0``: everything finished (cancelled and stopped analyses are not counted as unfinished);
+* exit code ``1``: it is idle, but some analyses did not finish, for example one is stuck and another waits on it;
+* exit code ``2``: ``--max-passes`` or ``--timeout`` was reached while work was still going;
+* exit code ``3``: the scheduler could not be queried.
+
+``--interval`` (default 30 seconds) is the wait between passes, ``--max-passes`` the most passes to make, and ``--timeout`` the most seconds to keep going for.
+A dry run makes a single pass, because nothing changes for a second one to find.
+
 monitor_analysis
 ^^^^^^^^^^^^^^^
 
