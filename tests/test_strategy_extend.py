@@ -194,7 +194,7 @@ class OtherKindTests(ExtendCase):
 class MonitorTests(ExtendCase):
     """The monitor calls it for what finishes, and what is added starts in the pass."""
 
-    def run_monitor(self):
+    def run_monitor(self, *args):
         def fake_monitor(analysis, **kwargs):
             if analysis.status == "running":
                 analysis.status = "finished"
@@ -219,7 +219,7 @@ class MonitorTests(ExtendCase):
              patch.object(monitor_cli, "get_job_list", return_value=MagicMock()), \
              patch.object(monitor_cli, "monitor_analysis", fake_monitor), \
              patch.object(monitor_cli, "per_pass_limit", return_value=None):
-            return CliRunner().invoke(monitor_cli.monitor, ["--chain"])
+            return CliRunner().invoke(monitor_cli.monitor, ["--chain", *args])
 
     def set_running(self, name):
         ledger = self.reopen()
@@ -239,8 +239,8 @@ class MonitorTests(ExtendCase):
 
     def test_a_dry_run_extends_nothing(self):
         self.set_running("fit-1")
-        with provided():
-            result = CliRunner().invoke(monitor_cli.monitor, ["--chain", "--dry-run"])
+        result = self.run_monitor("--dry-run")
+        self.assertEqual(result.exception, None, result.output)
         self.assertEqual(self.names(), ["fit-1"])
 
 
