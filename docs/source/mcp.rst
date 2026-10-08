@@ -16,7 +16,8 @@ project's directory:
 
     $ claude mcp add asimov -- asimov mcp-server --project /path/to/project
 
-Use ``--read-only`` to offer only the tools which read the project, and
+Use ``--read-only`` to offer only the tools which read the project,
+``--registry FILE`` to serve several projects (see `Several projects`_), and
 ``--acting-for NAME`` to say which person the client acts for (the default is the
 local user).
 
@@ -26,6 +27,8 @@ Tools
 Everything is described in terms of *subjects* (what analyses are of: for
 gravitational-wave work, events).
 
+``list_projects``
+    The projects you can use (see `Several projects`_).
 ``list_subjects``, ``get_subject``
     The project's subjects, and one subject's settings and analyses.
 ``list_analyses``, ``get_analysis``
@@ -65,6 +68,38 @@ marked as destructive so that clients can ask first.
 Lists are paged (``limit`` and ``offset``), and log and telemetry results are
 capped, so a large project cannot flood the client. There is no tool which deletes
 an analysis, a subject or a record.
+
+Several projects
+----------------
+
+To serve every project in a :doc:`registry <registry>` from one server, give it the
+registry file instead of a project directory:
+
+.. code-block:: console
+
+    $ asimov mcp-server --registry /etc/asimov/registry.yaml
+
+Every tool then takes an optional ``project`` argument, and ``list_projects`` says
+which projects the agent can use. With one project (a directory, or a registry
+with a single entry) ``project`` can be left out, which is why the tools take it
+from the start; with several, leaving it out is an error which lists them.
+
+Each call is for one project: it runs against that project's ledger, and a call for
+one project doesn't wait for a call for another. Jobs (see below) belong to the
+project they were started in, so ``get_job`` for a job in another project says there
+is no such job.
+
+Before each call the server asks :func:`asimov.access.authorize` whether the agent
+(acting for the person who started the server) may do what the tool does to the
+project: ``read`` for tools which look (and for ``preview_blueprint``), ``write``
+for ``apply_blueprint`` and the review, comment and label tools, and ``execute``
+for ``trigger_build`` and ``trigger_submit``. A project the agent may not read is
+reported as not existing, as in the REST API.
+
+.. warning::
+
+    The policy asimov starts with allows everything, so an agent served a registry
+    can use every project in it. See :doc:`registry`.
 
 Build and submit jobs
 ---------------------
