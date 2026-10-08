@@ -384,7 +384,11 @@ def apply_labellers(analysis, context=None):
                 )
                 
                 # Merge labels into the labels dict
+                manual = analysis.meta.get('manual labels', [])
                 for key, value in labels.items():
+                    if key in manual:
+                        # Set by hand: it stays until it is removed.
+                        continue
                     analysis.meta['labels'][key] = value
                     all_labels[key] = value
                     

@@ -157,6 +157,97 @@ class TestSqlite(TestReading, TestApplying):
     engine = "sqlite"
 
 
+ANALYSIS = "kind: analysis\nname: a1\npipeline: simpletestpipeline\nstatus: ready\n"
+
+
+class TestChanging(McpTestCase):
+    def setUp(self):
+        super().setUp()
+        self.subject = self.data("list_subjects")["subjects"][0]["name"]
+        self.data("apply_blueprint", blueprint=ANALYSIS, subject=self.subject)
+
+    def tool(self, name, **arguments):
+        return self.data(name, subject=self.subject, analysis="a1", **arguments)
+
+    def audit(self, kind):
+        ctx = ProjectContext.from_directory(self.root)
+        with ctx.activate():
+            records = ctx.ledger.audit_log(kind=kind)
+        return records
+
+    def test_changing_tools_absent_when_read_only(self):
+        tools = self.tools(read_only=True)
+        for name in ("set_review_status", "add_comment", "add_label", "remove_label"):
+            self.assertNotIn(name, tools)
+
+    def test_comment_is_a_review_message_without_a_status(self):
+        self.tool("set_review_status", status="approved")
+        self.tool("add_comment", comment="The sky map looks fine.")
+        review = self.tool("get_review_status")
+        self.assertEqual(review["status"], "APPROVED")
+        self.assertEqual(len(review["messages"]), 2)
+        self.assertIsNone(review["messages"][1]["status"])
+        self.assertIn("sky map", review["messages"][1]["message"])
+        self.assertIn("untrusted-data", review["messages"][1]["message"])
+
+    def test_bad_status_is_an_error(self):
+        result = self.call(
+            "set_review_status", subject=self.subject, analysis="a1", status="great"
+        )
+        self.assertTrue(result.is_error)
+        self.assertEqual(self.tool("get_review_status")["messages"], [])
+
+    def test_changes_are_audited_for_the_user(self):
+        self.tool("add_comment", comment="hello")
+        records = self.audit("review")
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].action, "comment")
+        self.assertEqual(records[0].target, f"{self.subject}/a1")
+        self.assertEqual(records[0].principal_obj.kind, "agent")
+        self.assertEqual(records[0].principal_obj.acting_for.kind, "person")
+
+    def test_label_stays_until_removed(self):
+        self.tool("add_label", label="interesting", value=True)
+        labels = self.data("list_labels", subject=self.subject)["analyses"]
+        self.assertEqual(labels[0]["labels"], {"interesting": True})
+        self.tool("remove_label", label="interesting")
+        self.assertEqual(self.data("list_labels", subject=self.subject)["analyses"], [])
+        self.assertEqual(len(self.audit("label")), 2)
+
+    def test_removing_a_missing_label_is_an_error(self):
+        result = self.call(
+            "remove_label", subject=self.subject, analysis="a1", label="nope"
+        )
+        self.assertTrue(result.is_error)
+
+    def test_labeller_does_not_overwrite_a_manual_label(self):
+        from asimov import labellers
+
+        class Always(labellers.Labeller):
+            name = "always"
+
+            def label(self, analysis, context):
+                return {"interesting": False, "other": 1}
+
+        self.tool("add_label", label="interesting", value=True)
+        ctx = ProjectContext.from_directory(self.root)
+        with ctx.activate():
+            found = ctx.ledger.get_event(self.subject)[0].productions[0]
+            labellers.LABELLER_REGISTRY["always"] = Always()
+            try:
+                labellers.apply_labellers(found, None)
+            finally:
+                del labellers.LABELLER_REGISTRY["always"]
+            self.assertEqual(found.meta["labels"], {"interesting": True, "other": 1})
+        close = getattr(ctx.ledger, "close", None)
+        if close:
+            close()
+
+
+class TestChangingSqlite(TestChanging):
+    engine = "sqlite"
+
+
 @unittest.skipIf(sys.platform == "win32", "stdio test uses POSIX paths")
 class TestStdio(McpTestCase):
     def test_real_server_process(self):
