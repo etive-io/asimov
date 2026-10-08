@@ -248,6 +248,91 @@ class TestChangingSqlite(TestChanging):
     engine = "sqlite"
 
 
+class TestJobs(McpTestCase):
+    def tearDown(self):
+        from asimov import jobs
+
+        for job in jobs.list_jobs(self.root, active=True):
+            if job.pid and job.pid != os.getpid():
+                try:
+                    os.kill(job.pid, 9)
+                except OSError:
+                    pass
+
+    def wait(self, job_id):
+        import time
+
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            job = self.data("get_job", job_id=job_id)
+            if job["status"] not in ("queued", "running"):
+                return job
+            time.sleep(0.2)
+        self.fail("the job did not finish")
+
+    def test_read_only_can_follow_jobs_but_not_start_them(self):
+        tools = self.tools(read_only=True)
+        self.assertIn("get_job", tools)
+        self.assertIn("list_jobs", tools)
+        self.assertNotIn("trigger_build", tools)
+        self.assertNotIn("trigger_submit", tools)
+
+    def test_trigger_returns_at_once_and_the_job_finishes(self):
+        started = self.data("trigger_build")
+        self.assertIn(started["status"], ("queued", "running"))
+        self.assertIn(started["id"], started["next"])
+        done = self.wait(started["id"])
+        self.assertEqual(done["status"], "succeeded", done)
+        self.assertIn("untrusted-data", done["log"])
+        self.assertNotIn("principal", done)
+        listed = self.data("list_jobs")["jobs"]
+        self.assertEqual([j["id"] for j in listed], [started["id"]])
+
+    def test_a_dry_submit_submits_nothing(self):
+        started = self.data("trigger_submit", dryrun=True, max_submit=3)
+        done = self.wait(started["id"])
+        self.assertEqual(done["status"], "succeeded", done)
+        self.assertEqual(done["result"], {"submitted": 0})
+        self.assertEqual(done["options"], {"dryrun": True, "max_submit": 3})
+
+    def test_unknown_subject_and_unknown_job_are_errors(self):
+        self.assertTrue(self.call("trigger_submit", subject="nope").is_error)
+        self.assertTrue(self.call("get_job", job_id="ab" * 16).is_error)
+        self.assertTrue(self.call("get_job", job_id="../x").is_error)
+
+    def test_a_second_job_is_refused_while_one_runs(self):
+        import sys
+        from unittest.mock import patch
+
+        from asimov import jobs
+
+        sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+        real = jobs.start_job
+
+        def slow(context, action, **kwargs):
+            return real(context, action, command=sleeper, **kwargs)
+
+        with patch.object(jobs, "start_job", slow):
+            first = self.data("trigger_build")
+            second = self.call("trigger_submit")
+        self.assertTrue(second.is_error)
+        self.assertIn(first["id"], second.content[0].text)
+
+    def test_the_start_is_audited_for_the_user(self):
+        started = self.data("trigger_build", dryrun=True)
+        self.wait(started["id"])
+        ctx = ProjectContext.from_directory(self.root)
+        with ctx.activate():
+            records = ctx.ledger.audit_log(kind="job")
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].principal_obj.kind, "agent")
+        self.assertEqual(records[0].principal_obj.acting_for.kind, "person")
+
+
+class TestJobsSqlite(TestJobs):
+    engine = "sqlite"
+
+
 @unittest.skipIf(sys.platform == "win32", "stdio test uses POSIX paths")
 class TestStdio(McpTestCase):
     def test_real_server_process(self):
