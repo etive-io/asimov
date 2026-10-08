@@ -249,15 +249,17 @@ class WhatAPluginReturnsTests(unittest.TestCase):
             "no name": lambda b, c: [{"pipeline": "x"}],
             "no pipeline": lambda b, c: [{"name": "a"}],
             "duplicate": lambda b, c: [PIPELINE("a"), PIPELINE("a")],
-            "not an analysis": lambda b, c: [{**PIPELINE("a"), "kind": "event"}],
+            "not allowed": lambda b, c: [{**PIPELINE("a"), "kind": "configuration"}],
         }
         for label, make in bad.items():
             with self.subTest(label), self.assertRaises(StrategyError):
                 self.expand(make)
 
-    def test_a_kind_of_analysis_is_accepted_and_removed(self):
-        documents = self.expand(lambda b, c: [{**PIPELINE("a"), "kind": "Analysis"}])
-        self.assertNotIn("kind", documents[0])
+    def test_the_kind_is_given_in_lower_case_and_is_analysis_if_left_out(self):
+        documents = self.expand(
+            lambda b, c: [{**PIPELINE("a"), "kind": "Analysis"}, PIPELINE("b")]
+        )
+        self.assertEqual([d["kind"] for d in documents], ["analysis", "analysis"])
 
     def test_the_blueprint_needs_a_name_to_identify_the_group(self):
         document = blueprint(type="chain")
@@ -352,7 +354,7 @@ class ApplyTests(AppliedStrategyCase):
         self.assertEqual(yaml.safe_load(open(".asimov/ledger.yml")), before)
         text = " ".join(str(call.args[0]) for call in echo.call_args_list)
         self.assertNotIn("an analysis already exists", text)
-        self.assertIn("3 of 3 analyses already existed", text)
+        self.assertIn("3 of 3 documents of 'fit' already existed", text)
 
     def test_raising_the_length_adds_only_the_new_analyses(self):
         self.apply(self.CHAIN.format(length=2))
@@ -364,7 +366,7 @@ class ApplyTests(AppliedStrategyCase):
         self.assertEqual(analyses["fit-001"].to_dict(), first)
         self.assertEqual(analyses["fit-004"].dependencies, ["fit-003"])
         text = " ".join(str(call.args[0]) for call in echo.call_args_list)
-        self.assertIn("2 of 4 analyses already existed", text)
+        self.assertIn("2 of 4 documents of 'fit' already existed", text)
 
     def test_an_analysis_which_is_not_from_a_strategy_is_still_an_error_when_repeated(self):
         plain = "kind: analysis\nname: plain\npipeline: simpletestpipeline\nstatus: ready\n"

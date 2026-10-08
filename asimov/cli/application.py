@@ -24,7 +24,12 @@ import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
 from asimov.utils import update
-from asimov.strategies import StrategyContext, expand_strategy, strategy_stamp
+from asimov.strategies import (
+    StrategyContext,
+    StrategyError,
+    expand_strategy,
+    is_plugin_strategy,
+)
 from copy import deepcopy
 from datetime import datetime
 import sys
@@ -249,6 +254,108 @@ def _update_event_in_database_ledger(ledger, event_obj, update_unstarted=False):
     ledger.save()
 
 
+class _StrategyGroup:
+    """The documents which one plugin strategy made from one blueprint."""
+
+    def __init__(self, identifier, total):
+        self.identifier = identifier
+        self.total = total
+        #: How many of them already existed, and so were left as they were.
+        self.skipped = 0
+
+    def skip(self, description):
+        """Note that a document was left alone, because the strategy made it before."""
+        logger.info(f"{description} already exists; it was made by this strategy, so it is left as it is")
+        self.skipped += 1
+
+    def summary(self):
+        return (
+            click.style("●", fg="yellow")
+            + f" {self.skipped} of {self.total} documents of '{self.identifier}' already existed"
+            + " (made by this strategy) and were left as they are"
+        )
+
+
+def _expand_strategies(documents, ledger, event):
+    """
+    Expand the plugin strategies in the documents of a blueprint.
+
+    Yields the documents which are to be applied, each with the
+    :class:`_StrategyGroup` it came from, or ``None`` if it is not from a
+    strategy. A document with a plugin strategy is replaced by what the
+    strategy makes of it, which can be documents of other kinds than its own
+    (a subject, and the analyses which are in it). A matrix strategy is not
+    expanded here: that is done when the analysis is applied.
+
+    Everything a strategy returns is checked before the first of it is yielded,
+    including that each analysis is for a subject which exists, or which the
+    strategy makes before it, so a mistake applies nothing from that blueprint.
+
+    Parameters
+    ----------
+    documents : iterable of dict
+        The documents of the blueprint.
+    ledger : Ledger
+        The project's.
+    event : str, optional
+        The subject which the analyses are for, if the command was given one.
+    """
+    for document in documents:
+        if not (
+            str(document.get("kind", "")).lower() == "analysis"
+            and is_plugin_strategy(document.get("strategy"))
+        ):
+            yield document, None
+            continue
+
+        blueprint_event = document.get("event")
+        known_event = event or blueprint_event
+        emitted = expand_strategy(
+            deepcopy(document), StrategyContext(ledger=ledger, event=known_event)
+        )
+
+        # Which subject each analysis is for. One which names none is for the
+        # subject of the command, or of the blueprint, or that which the user
+        # is asked for (once, for all of them). The command's subject replaces
+        # one which the strategy only copied from the blueprint.
+        default_event = known_event
+        for emitted_document in emitted:
+            if emitted_document["kind"] != "analysis":
+                continue
+            own = emitted_document.get("event")
+            if event and own in (None, blueprint_event):
+                emitted_document["event"] = event
+            elif own is None:
+                if default_event is None:
+                    count = sum(1 for d in emitted if d["kind"] == "analysis" and "event" not in d)
+                    default_event = str(
+                        click.prompt(
+                            f"Which event should these {count} analyses be applied to?"
+                            if count > 1
+                            else "Which event should these be applied to?"
+                        )
+                    )
+                emitted_document["event"] = default_event
+
+        existing = set(StrategyContext(ledger=ledger).subjects())
+        for emitted_document in emitted:
+            kind = emitted_document["kind"]
+            if kind in ("event", "subject"):
+                existing.add(emitted_document["name"])
+            elif kind == "analysis" and emitted_document["event"] not in existing:
+                raise StrategyError(
+                    f"The strategy '{document['strategy']['type']}' made the analysis "
+                    f"'{emitted_document['name']}' for the subject '{emitted_document['event']}', "
+                    "which does not exist and is not made before it by the strategy."
+                )
+
+        group = _StrategyGroup(document.get("name"), len(emitted))
+        for emitted_document in emitted:
+            yield emitted_document, group
+        if group.skipped:
+            _say(group.summary())
+
+
 def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False, dry_run=False):
     """
     Apply the documents in a blueprint to the project.
@@ -319,7 +426,7 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
     # so it empties the cache.
     loaded_events = {}
 
-    for document in quick_parse:
+    for document, group in _expand_strategies(quick_parse, ledger, event):
         if document["kind"] != "analysis":
             loaded_events.clear()
         doc_kind = {"subject": "event"}.get(
@@ -340,6 +447,11 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 event_exists = event_obj.name in ledger.events
             else:
                 event_exists = len(database.query("event", "name", event_obj.name)) > 0
+
+            if event_exists and group is not None:
+                # Made by the strategy before; applying it again leaves it be.
+                group.skip(f"The subject {event_obj.name}")
+                continue
 
             if event_exists and update_page is True and database is not None:
                 before = _event_snapshot(ledger, event_obj.name) if is_dry_run() else None
@@ -442,59 +554,50 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
         elif document["kind"] == "analysis":
             logger.info("Found an analysis")
             document.pop("kind")
-            
-            # Expand strategy if present. A plugin strategy may want to know
-            # which subject this is for, if that is already known.
-            known_event = event or document.get("event")
-            expanded_documents = expand_strategy(
-                document, StrategyContext(ledger=ledger, event=known_event)
-            )
-            
-            # Determine event once for all expanded analyses
-            if event:
-                event_s = event
+
+            if group is not None:
+                # Made by a plugin strategy, which has already been expanded,
+                # and has said which subject this is for.
+                expanded_documents = [document]
+                event_s = document["event"]
             else:
-                if "event" in document:
-                    event_s = document["event"]
+                # Expand a matrix strategy if present.
+                expanded_documents = expand_strategy(document)
+
+                # Determine event once for all expanded analyses
+                if event:
+                    event_s = event
                 else:
-                    num_analyses = len(expanded_documents)
-                    if num_analyses > 1:
-                        prompt = f"Which event should these {num_analyses} analyses be applied to?"
+                    if "event" in document:
+                        event_s = document["event"]
                     else:
-                        prompt = "Which event should these be applied to?"
-                    event_s = str(click.prompt(prompt))
-                    
+                        num_analyses = len(expanded_documents)
+                        if num_analyses > 1:
+                            prompt = f"Which event should these {num_analyses} analyses be applied to?"
+                        else:
+                            prompt = "Which event should these be applied to?"
+                        event_s = str(click.prompt(prompt))
+
             # Resolve name overrides before constructing the Event object.
             # Reading from the raw ledger dict is cheap; get_event() is expensive
             # (it instantiates Production objects and runs git/graph operations).
             if name is not None or iterate:
                 existing_names = _raw_production_names(ledger, event_s)
-            # Applying a plugin strategy's blueprint again must be safe, so an
-            # analysis it made before is skipped rather than reported as an
-            # error. (That is how a count can be raised and only the new
-            # analyses added.)
-            emitted_before = set()
-            if any(strategy_stamp(doc) for doc in expanded_documents):
-                emitted_before = _raw_production_names(ledger, event_s)
-            skipped = 0
             for expanded_doc in expanded_documents:
-                if strategy_stamp(expanded_doc) and (name is not None or iterate):
-                    # The names are what make applying it again safe, so they
-                    # are not changed.
-                    logger.warning(
-                        "--name and --iterate do not apply to the analyses of a strategy; "
-                        f"{expanded_doc['name']} keeps its name"
-                    )
+                effective_name, effective_iterate = name, iterate
+                if group is not None:
+                    # The names are what make applying it again safe, so
+                    # they are not changed, and one which was made before
+                    # is left as it is.
+                    if name is not None or iterate:
+                        logger.warning(
+                            "--name and --iterate do not apply to the analyses of a strategy; "
+                            f"{expanded_doc['name']} keeps its name"
+                        )
                     effective_name, effective_iterate = None, False
-                else:
-                    effective_name, effective_iterate = name, iterate
-                if strategy_stamp(expanded_doc) and expanded_doc.get("name") in emitted_before:
-                    logger.info(
-                        f"{expanded_doc['name']} already exists in {event_s}; "
-                        "it was made by this strategy, so it is left as it is"
-                    )
-                    skipped += 1
-                    continue
+                    if expanded_doc["name"] in _raw_production_names(ledger, event_s):
+                        group.skip(f"The analysis {event_s}/{expanded_doc['name']}")
+                        continue
                 if effective_name is not None:
                     expanded_doc["name"] = effective_name
                 elif effective_iterate:
@@ -543,13 +646,6 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                         + "an analysis already exists with this name"
                     )
                     logger.exception(e)
-
-            if skipped:
-                click.echo(
-                    click.style("●", fg="yellow")
-                    + f" {skipped} of {len(expanded_documents)} analyses already existed"
-                    + " (made by this strategy) and were left as they are"
-                )
 
         elif document["kind"].lower() == "postprocessing":
             # Handle a project analysis
@@ -626,11 +722,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 ledger.save()
                 logger.info(f"Added {analysis.name}")
             except ValueError as e:
-                _say(
-                    click.style("●", fg="red")
-                    + f" Could not apply {analysis.name} to project as "
-                    + "an analysis already exists with this name"
-                )
+                if group is not None:
+                    group.skip(f"The project analysis {analysis.name}")
+                else:
+                    _say(
+                        click.style("●", fg="red")
+                        + f" Could not apply {analysis.name} to project as "
+                        + "an analysis already exists with this name"
+                    )
                 logger.exception(e)
 
         elif document["kind"].lower() == "analysisbundle":

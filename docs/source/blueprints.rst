@@ -485,9 +485,10 @@ Subclass :class:`asimov.strategies.Strategy`, and register it in the ``asimov.st
                 raise StrategyError("rounds must be at least 1")
 
         def expand(self, blueprint, context):
-            # Return the analyses to apply, in order, as dictionaries. Each needs
-            # a ``name`` (the same every time, so that applying again is safe)
-            # and a ``pipeline``, and can have ``needs`` to depend on the others.
+            # Return the documents to apply, in order, as dictionaries. Each needs
+            # a ``name`` (the same every time, so that applying again is safe).
+            # An analysis needs a ``pipeline``, and can have ``needs`` to depend
+            # on the others.
             rounds = blueprint["strategy"].get("rounds", 1)
             return [
                 {**base(blueprint), "name": f"{blueprint['name']}-r{n:02d}"}
@@ -499,7 +500,25 @@ A strategy returns documents and never changes the ledger: asimov applies them, 
 The ``chain`` strategy, :class:`asimov.strategies_builtin.ChainStrategy`, is a small example.
 A plugin which cannot be loaded is reported and skipped, and does not stop other commands.
 
-Only analyses can be returned for now.
+What a strategy can return
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A strategy can return documents of more than one kind, so that one blueprint can describe a whole pattern, such as a subject for each stream and the analyses in each:
+
+* ``analysis``, which is the kind if ``kind`` is left out, and ``projectanalysis``;
+* ``subject`` (``event`` also works).
+  Return a subject before the analyses which are in it.
+
+It cannot return anything else, such as ``configuration``: a strategy does not change the settings of the project.
+
+An analysis says which subject it is for with ``event``.
+If it does not, it is for the subject you apply the blueprint to (``-e``), or which the blueprint names with ``event``, or, if there is neither, the one you are asked for (once, for all of them).
+A subject which the strategy names itself is not replaced by ``-e``.
+
+Everything is checked before the first document is applied, including that each analysis is for a subject which exists or which the strategy makes before it, so a mistake applies nothing from that blueprint.
+Applying the blueprint again leaves what the strategy made before as it is, subjects and project analyses as well as analyses, and says how many were left.
+A subject which already exists is never updated by a strategy.
+Analyses and project analyses are marked with the strategy which made them; subjects are not, because the settings of a subject are inherited by all of its analyses, which would then all look as if the strategy had made them.
 
 Waveform
 ========
