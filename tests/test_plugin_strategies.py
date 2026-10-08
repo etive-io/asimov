@@ -163,6 +163,36 @@ class ChainStrategyTests(unittest.TestCase):
         expand_strategy(document)
         self.assertEqual(yaml.dump(document), before)
 
+    def test_the_names_can_be_chosen_with_a_template(self):
+        documents = self.expand(length=3, names="{name}-r{n:02d}")
+        self.assertEqual([d["name"] for d in documents], ["fit-r01", "fit-r02", "fit-r03"])
+        self.assertEqual(documents[2]["needs"], ["fit-r02"])
+
+    def test_the_template_need_not_start_with_the_blueprints_name(self):
+        documents = self.expand(length=2, names="round-{n}")
+        self.assertEqual([d["name"] for d in documents], ["round-1", "round-2"])
+        self.assertEqual(documents[1]["needs"], ["round-1"])
+
+    def test_the_default_template_is_name_and_a_padded_number(self):
+        self.assertEqual(
+            [d["name"] for d in self.expand(length=2, names="{name}-{n:03d}")],
+            [d["name"] for d in self.expand(length=2)],
+        )
+
+    def test_the_template_is_in_the_group_not_the_stamp(self):
+        for document in self.expand(length=2, names="x-{n}"):
+            self.assertEqual(document["strategy"]["id"], "fit")
+
+    def test_a_template_which_cannot_give_different_names_is_refused(self):
+        for names in ("same", "{name}", "{name}-x"):
+            with self.subTest(names=names), self.assertRaisesRegex(StrategyError, "must use"):
+                self.expand(names=names)
+
+    def test_a_template_which_cannot_be_used_is_refused(self):
+        for names in ("{round}", "{n", "{0}", "{n:zz}", 3, ["a"]):
+            with self.subTest(names=names), self.assertRaises(StrategyError):
+                self.expand(names=names)
+
     def test_bad_options_are_refused(self):
         for options in ({"length": 0}, {"length": "3"}, {"length": True}, {"length": 2.5},
                         {"width": 2}):
@@ -343,6 +373,15 @@ class ApplyTests(AppliedStrategyCase):
             self.apply(plain)
         text = " ".join(str(call.args[0]) for call in echo.call_args_list)
         self.assertIn("an analysis already exists with this name", text)
+
+    def test_a_chosen_naming_is_applied_and_growing_it_adds_only_the_new_ones(self):
+        template = self.CHAIN.format(length=2) + '  names: "{name}-r{n}"\n'
+        self.apply(template)
+        self.assertEqual(sorted(self.analyses()), ["fit-r1", "fit-r2"])
+        self.apply(template.replace("length: 2", "length: 3"))
+        analyses = self.analyses()
+        self.assertEqual(sorted(analyses), ["fit-r1", "fit-r2", "fit-r3"])
+        self.assertEqual(analyses["fit-r3"].dependencies, ["fit-r2"])
 
     def test_name_and_iterate_do_not_rename_a_strategys_analyses(self):
         self.apply(self.CHAIN.format(length=2))

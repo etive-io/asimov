@@ -427,6 +427,9 @@ It is selected with ``type``, a name, and the other options are the plugin's own
       length: 3
 
 This makes ``fit-001``, ``fit-002`` (which needs ``fit-001``) and ``fit-003`` (which needs ``fit-002``).
+The names can be chosen with a template, ``names: "{name}-r{n:02d}"`` for ``fit-r01``, ``fit-r02`` and ``fit-r03``, where ``{name}`` is the name of the blueprint and ``{n}`` counts from 1.
+How the analyses are named is up to each strategy (a strategy for rounds, say, can offer a ``{round}`` of its own); ``chain`` offers a template.
+Changing a template and applying again makes new analyses under the new names and leaves the old ones as they are.
 A ``strategy`` with a ``type`` which is a name is a plugin strategy; a ``strategy`` whose values are lists is a matrix strategy, as before.
 
 * The analyses are applied in the usual way, so they are checked as if you had written them.
