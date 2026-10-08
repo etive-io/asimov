@@ -224,6 +224,16 @@ It can be used on its own or in a group with other conditions, which apply to th
 * As for ``subject/name``, the analysis waits for the analyses which match to finish, and an entry which matches nothing at all holds it back and is reported, unless it is ``optional``.
   Selecting from every subject reads every subject of the project each time asimov looks at the analysis, so use a named subject where you can.
 
+Needs in other subjects in the report
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In the HTML report (``asimov report html``) the graph of a subject shows what its analyses need in other subjects as dashed boxes named ``subject/name``, coloured by their status, with an arrow to the analysis which needs them.
+They are not part of the subject, so they are not counted in the totals, and they are only drawn while the analysis which needs them is.
+An analysis which needs more than ten analyses of other subjects (a ``subject: "*"`` selection, for example) shows one box saying how many.
+
+Only what a subject's analyses need is shown.
+What depends on a subject from elsewhere is not, because finding it would mean reading every other subject for each one: look at the graph of the subject which needs it.
+
 Mistakes in ``needs`` are reported when you apply
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

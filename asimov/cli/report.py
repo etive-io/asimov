@@ -835,7 +835,8 @@ def html(event, webdir):
         'classDef stopped    fill:#f6f8fa,stroke:#6c757d,color:#aaa',
         'classDef cancelled  fill:#f6f8fa,stroke:#6c757d,color:#aaa',
         'classDef manual     fill:#fff3cd,stroke:#fd7e14,color:#000',
-        'classDef unknown    fill:#fff,stroke:#e1e4e8,color:#000'
+        'classDef unknown    fill:#fff,stroke:#e1e4e8,color:#000',
+        'classDef foreign    stroke-dasharray:5 3'
     ].join('\\n    ');
 
     function isNodeVisible(n, filters) {
@@ -854,15 +855,25 @@ def html(event, webdir):
         var visibleEdges = graphData.edges.filter(function(e) {
             return visibleIds.has(e.from) && visibleIds.has(e.to);
         });
+        // A node for an analysis of another subject is only drawn for what it
+        // is needed by, which is in this subject.
+        var anchored = new Set();
+        visibleEdges.forEach(function(e) { anchored.add(e.from); anchored.add(e.to); });
+        visibleNodes = visibleNodes.filter(function(n) {
+            return !n.foreign || anchored.has(n.id);
+        });
         var lines = ['flowchart LR', '    ' + MERMAID_CLASSDEFS];
+        var foreignIds = [];
         visibleNodes.forEach(function(n) {
             var lbl = '"' + n.label + '"';
             var shape = n.isSubject ? ('{{' + lbl + '}}') : ('[' + lbl + ']');
             lines.push('    ' + n.id + shape + ':::' + n.status);
+            if (n.foreign) foreignIds.push(n.id);
         });
         visibleEdges.forEach(function(e) {
             lines.push('    ' + e.from + ' --> ' + e.to);
         });
+        if (foreignIds.length) lines.push('    class ' + foreignIds.join(',') + ' foreign');
         return lines.join('\\n');
     }
 
@@ -883,7 +894,9 @@ def html(event, webdir):
     var asimovContainerEvent = {};       // container id -> event name
 
     function hasVisibleNodes(gd) {
-        return gd.nodes.some(function(n) { return isNodeVisible(n, asimovActiveFilters); });
+        return gd.nodes.some(function(n) {
+            return !n.foreign && isNodeVisible(n, asimovActiveFilters);
+        });
     }
 
     // Returns true if the graph is now current for the generation it started in.
@@ -997,6 +1010,7 @@ def html(event, webdir):
         var stats = { total: 0, running: 0, finished: 0, stuck: 0, cancelled: 0 };
         for (var eventName in window.asimovGraphs) {
             window.asimovGraphs[eventName].nodes.forEach(function(n) {
+                if (n.foreign) return;   // an analysis of another subject is counted there
                 stats.total++;
                 if (n.status === 'running' || n.status === 'processing') stats.running++;
                 else if (n.status === 'finished' || n.status === 'uploaded') stats.finished++;
@@ -1031,7 +1045,7 @@ def html(event, webdir):
             if (window.asimovGraphs && window.asimovGraphs[eventName]) {
                 var gd = window.asimovGraphs[eventName];
                 hasVisible = gd.nodes.some(function(n) {
-                    return isNodeVisible(n, asimovActiveFilters);
+                    return !n.foreign && isNodeVisible(n, asimovActiveFilters);
                 });
             }
             // Also check legacy .asimov-analysis elements
