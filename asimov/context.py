@@ -248,6 +248,18 @@ class ProjectContext:
         """Forget the open ledger, so the next use reads it afresh."""
         self._ledger = None
 
+    def reload_ledger(self):
+        """
+        Close the open ledger, so the next use opens it afresh.
+
+        For a process which stays up while others change the project: it sees
+        their changes, and holds no database connection between uses.
+        """
+        ledger, self._ledger = self._ledger, None
+        close = getattr(ledger, "close", None)
+        if close is not None:
+            close()
+
     def _open_ledger(self):
         """
         Open the ledger which this project's own configuration names.

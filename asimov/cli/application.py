@@ -18,7 +18,7 @@ import yaml
 from asimov import LOGGER_LEVEL, logger
 from asimov.context import current_context
 from asimov.audit import PROJECT, append_audit, new_record
-from asimov.preview import changed_paths, current_plan, is_dry_run, preview
+from asimov.preview import changed_paths, current_plan, is_dry_run, preview, recording
 from asimov.principal import current_principal
 import asimov.event
 from asimov.analysis import ProjectAnalysis
@@ -58,7 +58,9 @@ def _audited(ledger, kind, target, content, outcome="added", diff=None):
     if is_dry_run():
         current_plan().add_change(record, diff)
         return
-    append_audit(ledger, record)
+    stored = append_audit(ledger, record)
+    if current_plan() is not None:
+        current_plan().add_change(stored, diff)
 
 
 # The colours messages are given, which say what they are about.
@@ -73,15 +75,17 @@ def _say(message):
     In a dry run nothing is said: a document which would be refused, or left
     out of a bundle, is noted in the plan (messages in red and yellow, as
     ``click.style`` makes them), and the rest, which says what was done,
-    would be untrue.
+    would be untrue. When a record is being kept of what is applied, the same
+    are noted in it, and the message is still said.
     """
+    plan = current_plan()
+    if plan is not None:
+        if _RED in message:
+            plan.refuse(click.unstyle(message).lstrip("● ").strip(), "refused")
+        elif _YELLOW in message:
+            plan.refuse(click.unstyle(message).lstrip("● ").strip(), "skipped")
     if not is_dry_run():
         click.echo(message)
-        return
-    if _RED in message:
-        current_plan().refuse(click.unstyle(message).lstrip("● ").strip(), "refused")
-    elif _YELLOW in message:
-        current_plan().refuse(click.unstyle(message).lstrip("● ").strip(), "skipped")
 
 
 def _event_snapshot(ledger, name):
@@ -270,12 +274,13 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
 
     Returns
     -------
-    asimov.preview.ApplyPlan or None
-        With ``dry_run``, the changes which would be made, in order, and what
-        would be refused, each change in the form of the audit record which
-        applying it would add. Nothing is written to the ledger, to the audit
-        log, to disk (no directories are made and nothing is cloned), or sent
-        to telemetry sinks. Otherwise ``None``.
+    asimov.preview.ApplyPlan
+        The changes made, in order, and what was refused, each change in the
+        form of the audit record which was written for it. With ``dry_run``,
+        the changes which would be made instead, each in the form of the audit
+        record which applying it would add: nothing is written to the ledger,
+        to the audit log, to disk (no directories are made and nothing is
+        cloned), or sent to telemetry sinks.
     """
     if update_unstarted:
         update_page = True
@@ -283,8 +288,10 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
     if ledger is None:
         ledger = get_ledger()
 
-    if dry_run:
-        with preview(ledger) as plan:
+    if current_plan() is None:
+        # The outermost call: keep a record of what happens, and make it a
+        # preview if that was asked for.
+        with (preview(ledger) if dry_run else recording()) as plan:
             apply_page(
                 file,
                 event=event,

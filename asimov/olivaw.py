@@ -22,6 +22,7 @@ import asimov.pipelines  # NoQA
 from asimov.cli import (  # NoQA
     application,
     audit as audit_cli,
+    mcp_server as mcp_cli,
     configuration,
     event,
     manage,
@@ -56,7 +57,7 @@ class ProjectAwareGroup(click.Group):
             return super().invoke(ctx)
 
         # Commands that can run outside of a project
-        commands_allowed_outside_project = {"init", "clone", "vocabulary"}
+        commands_allowed_outside_project = {"init", "clone", "vocabulary", "mcp-server"}
 
         # Add all registered plugin commands (they handle their own project checks if needed)
         commands_allowed_outside_project.update(self._plugin_commands)
@@ -109,6 +110,8 @@ olivaw.add_command(provenance.provenance)
 olivaw.add_command(provenance.package)
 # The audit trail
 olivaw.add_command(audit_cli.audit)
+# The MCP server
+olivaw.add_command(mcp_cli.mcp_server)
 
 
 @click.command()
