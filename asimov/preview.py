@@ -36,19 +36,25 @@ __all__ = [
     "current_plan",
     "is_dry_run",
     "preview",
+    "recording",
 ]
 
-# The plan being made in this thread or task, if a dry run is in progress.
+# The plan being made, or the record being kept of what is applied, in this
+# thread or task, if either is.
 _plan: ContextVar = ContextVar("asimov_apply_plan", default=None)
 
 
 def is_dry_run():
     """Whether a dry run is in progress in this thread or task."""
-    return _plan.get() is not None
+    plan = _plan.get()
+    return plan is not None and plan.dry_run
 
 
 def current_plan():
-    """The :class:`ApplyPlan` being made by the dry run in progress, or ``None``."""
+    """
+    The :class:`ApplyPlan` which is being filled in by a dry run, or which is
+    keeping a record of what is applied (see :func:`recording`), or ``None``.
+    """
     return _plan.get()
 
 
@@ -120,7 +126,8 @@ class PlannedChange:
 
     def to_dict(self):
         data = self.record.to_dict()
-        data.pop("id", None)
+        if data.get("id") is None:
+            data.pop("id", None)
         data["diff"] = self.diff
         return data
 
@@ -151,10 +158,15 @@ class ApplyPlan:
     """
     What applying a blueprint would do: the changes it would make, in order,
     and what it would refuse.
+
+    When it is the record of an apply which was made (``dry_run`` is false) it
+    holds the same things, as they happened: the changes which were made, with
+    the ``id`` of the audit record of each, and what was refused.
     """
 
     changes: List[PlannedChange] = dataclasses.field(default_factory=list)
     refused: List[Refusal] = dataclasses.field(default_factory=list)
+    dry_run: bool = True
 
     def add_change(self, record, diff=None):
         """Note a change which would be made."""
@@ -172,7 +184,7 @@ class ApplyPlan:
     def to_dict(self):
         """The plan as plain data."""
         return {
-            "dry_run": True,
+            "dry_run": self.dry_run,
             "changes": [change.to_dict() for change in self.changes],
             "refused": [refusal.to_dict() for refusal in self.refused],
         }
@@ -185,7 +197,7 @@ class ApplyPlan:
         -------
         list of str
         """
-        lines = ["Dry run: nothing was written."]
+        lines = ["Dry run: nothing was written." if self.dry_run else "Applied:"]
         for change in self.changes:
             record = change.record
             mark = "~" if record.outcome == "updated" else "+"
@@ -228,5 +240,27 @@ def preview(ledger):
     try:
         with ledger.dry_run():
             yield plan
+    finally:
+        _plan.reset(token)
+
+
+@contextlib.contextmanager
+def recording():
+    """
+    Keep a record of what is applied in the block.
+
+    Whatever applies a blueprint (:func:`asimov.cli.application.apply_page`)
+    adds each change it makes, and each document it refuses, to the plan
+    this yields. Unlike :func:`preview`, the changes are really made.
+
+    Yields
+    ------
+    ApplyPlan
+        With ``dry_run`` false.
+    """
+    plan = ApplyPlan(dry_run=False)
+    token = _plan.set(plan)
+    try:
+        yield plan
     finally:
         _plan.reset(token)

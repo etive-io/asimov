@@ -172,6 +172,7 @@ Advanced topics
    provenance
    principals
    audit
+   mcp
    build-process
    scheduler-integration
    dag-translation-examples

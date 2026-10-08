@@ -4,15 +4,14 @@ Analyses API blueprint.
 Provides CRUD operations for event analyses.
 """
 
-import json
 import logging
-import os
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from asimov.api.utils import get_ledger
 from asimov.api.auth import require_auth
 from asimov.api.models import AnalysisCreate, AnalysisUpdate
 from asimov.event import Production
+from asimov.reading import read_telemetry
 
 bp = Blueprint('analyses', __name__)
 logger = logging.getLogger(__name__)
@@ -92,36 +91,16 @@ def get_analysis_telemetry(event_name, analysis_name):
         return jsonify({'error': 'Analysis not found'}), 404
 
     try:
-        rundir = analysis.rundir
-    except Exception:
-        rundir = None
-
-    telemetry_events = []
-    path = os.path.join(rundir, "telemetry.jsonl") if rundir else None
-    if path and os.path.isfile(path):
-        try:
-            with open(path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        telemetry_events.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        except OSError:
-            logger.exception(
-                "Unexpected error reading telemetry for %s/%s", event_name, analysis_name
-            )
-            return jsonify({'error': 'Could not read telemetry'}), 500
-
-    event_type = request.args.get('event_type')
-    if event_type:
-        telemetry_events = [e for e in telemetry_events if e.get('event_type') == event_type]
-
-    since = request.args.get('since')
-    if since:
-        telemetry_events = [e for e in telemetry_events if e.get('timestamp', '') >= since]
+        telemetry_events = read_telemetry(
+            analysis,
+            event_type=request.args.get('event_type'),
+            since=request.args.get('since'),
+        )
+    except OSError:
+        logger.exception(
+            "Unexpected error reading telemetry for %s/%s", event_name, analysis_name
+        )
+        return jsonify({'error': 'Could not read telemetry'}), 500
 
     return jsonify({'telemetry': telemetry_events})
 
