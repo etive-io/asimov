@@ -155,25 +155,20 @@ def manage():
     """Perform management tasks such as job building and submission."""
     pass
 
-@click.option(
-    "--event",
-    "event",
-    default=None,
-    help="The event which the ledger should be returned for, optional.",
-)
-@click.option(
-    "--dryrun",
-    "-d",
-    "dryrun",
-    is_flag=True,
-    default=False,
-    help="Print all commands which will be executed without running them",
-)
-@manage.command()
-def build(event, dryrun):
+def build_analyses(event=None, dryrun=False):
     """
     Create the run configuration files for a given event for jobs which are ready to run.
     If no event is specified then all of the events will be processed.
+
+    This is what ``asimov manage build`` runs. It works on the active
+    project, and says what it does with ``click.echo``.
+
+    Parameters
+    ----------
+    event : str, optional
+        Only build this subject.
+    dryrun : bool
+        Print the commands which would be run without running them.
     """
     asimov.setup_file_logging()
     logger = asimov.logger.getChild("cli").getChild("manage.build")
@@ -328,12 +323,6 @@ def build(event, dryrun):
     help="The event which the ledger should be returned for, optional.",
 )
 @click.option(
-    "--update",
-    "update",
-    default=False,
-    help="Force the git repos to be pulled before submission occurs.",
-)
-@click.option(
     "--dryrun",
     "-d",
     "dryrun",
@@ -341,16 +330,16 @@ def build(event, dryrun):
     default=False,
     help="Print all commands which will be executed without running them",
 )
-@click.option(
-    "--max-submit",
-    "max_submit",
-    type=int,
-    default=None,
-    help="Submit at most this many analyses in this pass "
-    "(overrides [scheduler] max_submit_per_pass).",
-)
 @manage.command()
-def submit(event, update, dryrun, max_submit):
+def build(event, dryrun):
+    """
+    Create the run configuration files for a given event for jobs which are ready to run.
+    If no event is specified then all of the events will be processed.
+    """
+    build_analyses(event=event, dryrun=dryrun)
+
+
+def submit_analyses(event=None, update=False, dryrun=False, max_submit=None):
     """
     Submit the run configuration files for a given event for jobs which are ready to run.
     If no event is specified then all of the events will be processed.
@@ -358,6 +347,26 @@ def submit(event, update, dryrun, max_submit):
     Submissions are throttled by the [scheduler] max_queued,
     max_submit_per_pass and submit_interval settings: analyses which don't
     fit in the budget are left ready and picked up by a later pass.
+
+    This is what ``asimov manage submit`` runs. It works on the active
+    project, and says what it does with ``click.echo``.
+
+    Parameters
+    ----------
+    event : str, optional
+        Only submit this subject's analyses.
+    update : bool
+        Pull the git repositories before submitting.
+    dryrun : bool
+        Print the commands which would be run without running them.
+    max_submit : int, optional
+        Submit at most this many analyses (overrides
+        ``[scheduler] max_submit_per_pass``).
+
+    Returns
+    -------
+    int
+        How many analyses were submitted.
     """
     asimov.setup_file_logging()
     logger = asimov.logger.getChild("cli").getChild("manage.submit")
@@ -784,6 +793,51 @@ def submit(event, update, dryrun, max_submit):
     # pass and keeps to the per-pass limit across the runs. (It is ignored when
     # this is run from the command line.)
     return throttle.submitted
+
+
+@click.option(
+    "--event",
+    "event",
+    default=None,
+    help="The event which the ledger should be returned for, optional.",
+)
+@click.option(
+    "--update",
+    "update",
+    default=False,
+    help="Force the git repos to be pulled before submission occurs.",
+)
+@click.option(
+    "--dryrun",
+    "-d",
+    "dryrun",
+    is_flag=True,
+    default=False,
+    help="Print all commands which will be executed without running them",
+)
+@click.option(
+    "--max-submit",
+    "max_submit",
+    type=int,
+    default=None,
+    help="Submit at most this many analyses in this pass "
+    "(overrides [scheduler] max_submit_per_pass).",
+)
+@manage.command()
+def submit(event, update, dryrun, max_submit):
+    """
+    Submit the run configuration files for a given event for jobs which are ready to run.
+    If no event is specified then all of the events will be processed.
+
+    Submissions are throttled by the [scheduler] max_queued,
+    max_submit_per_pass and submit_interval settings: analyses which don't
+    fit in the budget are left ready and picked up by a later pass.
+    """
+    # The return value is read by ``asimov monitor --chain``.
+    return submit_analyses(
+        event=event, update=update, dryrun=dryrun, max_submit=max_submit
+    )
+
 
 @click.option(
     "--event",
