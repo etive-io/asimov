@@ -542,6 +542,33 @@ Applying the blueprint again leaves what the strategy made before as it is, subj
 A subject which already exists is never updated by a strategy.
 Analyses and project analyses are marked with the strategy which made them; subjects are not, because the settings of a subject are inherited by all of its analyses, which would then all look as if the strategy had made them.
 
+Adding to a group as it runs
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A strategy can also decide what comes next while the group runs, by overriding ``extend(analysis, context)``.
+``asimov monitor`` calls it once for each analysis of the group which has just finished.
+``context.event`` is the subject of that analysis, and ``context.group`` is the record of the group, so a strategy can see what it made and from which blueprint.
+It returns documents in the same way as ``expand``, and they are checked in the same way, with nothing applied if any of them is wrong.
+An analysis which does not name a subject is for the subject of the one which finished.
+
+.. code-block:: python
+
+    def extend(self, analysis, context):
+        number = int(analysis.name.rsplit("-", 1)[1])
+        if number >= 3:
+            return []
+        return [{"name": f"fit-{number + 1}", "pipeline": "bilby", "needs": [analysis.name]}]
+
+The documents are applied to the same group.
+Those which already exist are left as they are, so it is safe to return the same documents again, for example when the monitor runs twice.
+When something new is added, the record of the group notes the package and version that added it (``last extended with``), and it is audited.
+What is added is built and submitted in the same pass of ``monitor --chain``.
+
+A strategy which raises, or returns something which cannot be applied, is reported and adds nothing; it never stops the monitor.
+A group may not grow beyond ``max_group_analyses`` analyses, whatever the strategy returns.
+It is 500 unless the ``[strategy]`` section of the configuration says otherwise.
+A dry run of the monitor does not extend anything.
+
 Waveform
 ========
 

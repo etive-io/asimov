@@ -18,6 +18,7 @@ from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
 from asimov.monitor_helpers import monitor_analysis
 from asimov.throttle import ACTIVE_STATES as RUNNING_STATES, per_pass_limit
+from asimov.strategies import extend_group
 from asimov.telemetry import initialize_telemetry_sinks
 
 # Try to import crontab for Slurm cron support
@@ -678,6 +679,7 @@ def monitor(ctx, event, update, dry_run, chain, until_idle, interval, max_passes
             if production.status.lower() in ACTIVE_STATES
         ]
 
+        finished_now = []
         for production in on_deck:
             was_finished = production.finished
             monitor_analysis(
@@ -687,9 +689,18 @@ def monitor(ctx, event, update, dry_run, chain, until_idle, interval, max_passes
                 dry_run=dry_run,
                 analysis_path=f"{event.name}/{production.name}"
             )
-            newly_finished += int(production.finished and not was_finished)
+            if production.finished and not was_finished:
+                newly_finished += 1
+                finished_now.append(production)
 
         ledger.update_event(event)
+
+        # A plugin strategy may add to its group when one of its analyses
+        # finishes. This is after the event has been saved, so that what is
+        # added is not overwritten by the saved copy of the event.
+        if not dry_run:
+            for production in finished_now:
+                extend_group(ledger, production)
 
         # Auto-refresh combined summary pages (SubjectAnalysis) when stale and refreshable
         try:

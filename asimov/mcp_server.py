@@ -39,7 +39,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     ) from error
 
 import asimov
-from asimov import actions, reading
+from asimov import actions, jobs, reading
 from asimov.cli.application import apply_page
 from asimov.context import ProjectContext
 from asimov.preview import recording
@@ -85,6 +85,7 @@ Offset = Annotated[int, Field(ge=0, description="How many to skip, to get the ne
 _READ = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False)
 _PREVIEW = ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False)
 _APPLY = ToolAnnotations(destructiveHint=True, idempotentHint=False, openWorldHint=True)
+_START = ToolAnnotations(destructiveHint=False, idempotentHint=False, openWorldHint=True)
 _ADD = ToolAnnotations(destructiveHint=False, idempotentHint=False, openWorldHint=False)
 _REMOVE = ToolAnnotations(destructiveHint=True, idempotentHint=True, openWorldHint=False)
 
@@ -401,6 +402,40 @@ def create_server(project, acting_for=None, read_only=False):
                 "analyses": rows[offset : offset + limit],
             }
 
+    def job_view(job, log=True):
+        data = job.to_dict()
+        data.pop("principal", None)
+        data["note"] = NOTE
+        if log:
+            text = jobs.read_log(context.root, job.id, max_bytes=DEFAULT_LOG_BYTES)
+            data["log"] = untrusted(text, f"job:{job.id}") if text else None
+        if data.get("error"):
+            data["error"] = untrusted(data["error"], f"job:{job.id}.error")
+        return data
+
+    @server.tool(annotations=_READ, title="Get a build or submit job")
+    def get_job(ctx: Context, job_id: str) -> dict[str, Any]:
+        """
+        Get the state of a job started by trigger_build or trigger_submit: whether
+        it is running, what it did, why it failed, and the end of what it printed.
+        """
+        with session(ctx):
+            try:
+                return job_view(jobs.get_job(context.root, job_id))
+            except jobs.JobError as error:
+                raise ToolError(str(error))
+
+    @server.tool(annotations=_READ, title="List build and submit jobs")
+    def list_jobs(
+        ctx: Context,
+        active: Annotated[bool, Field(description="Only jobs which are still running.")] = False,
+        limit: Limit = 20,
+    ) -> dict[str, Any]:
+        """List jobs started by trigger_build and trigger_submit, newest first."""
+        with session(ctx):
+            found = jobs.list_jobs(context.root, limit=limit, active=active)
+            return {"note": NOTE, "jobs": [job_view(job, log=False) for job in found]}
+
     if read_only:
         return server
 
@@ -500,6 +535,65 @@ def create_server(project, acting_for=None, read_only=False):
         the id of the audit record of each change, and what was refused.
         """
         return blueprint_run(ctx, blueprint, subject, update, dry_run=False)
+
+
+    def trigger(ctx, action, subject, dryrun, max_submit=None):
+        """Start a job and say which one it is, without waiting for it."""
+        with session(ctx) as ledger:
+            if subject is not None:
+                subject_of(ledger, subject)
+            try:
+                job = jobs.start_job(
+                    context, action, subject=subject, dryrun=dryrun, max_submit=max_submit
+                )
+            except jobs.JobError as error:
+                raise ToolError(str(error))
+            return {
+                **job_view(job, log=False),
+                "next": f"Call get_job with job_id={job.id} to see how it is getting on.",
+            }
+
+    @server.tool(annotations=_START, title="Build analyses")
+    def trigger_build(
+        ctx: Context,
+        subject: Annotated[
+            Optional[str], Field(description="Only this subject (default: all).")
+        ] = None,
+        dryrun: Annotated[
+            bool, Field(description="Print what would be done without doing it.")
+        ] = False,
+    ) -> dict[str, Any]:
+        """
+        Create the run configuration for analyses which are ready. This runs in a
+        separate process and returns at once with a job: use get_job to follow it.
+        Only one job runs at a time.
+        """
+        return trigger(ctx, "build", subject, dryrun)
+
+    @server.tool(annotations=_START, title="Submit analyses")
+    def trigger_submit(
+        ctx: Context,
+        subject: Annotated[
+            Optional[str],
+            Field(description="Only this subject (default: every subject with ready analyses)."),
+        ] = None,
+        dryrun: Annotated[
+            bool, Field(description="Print what would be done without submitting anything.")
+        ] = False,
+        max_submit: Annotated[
+            Optional[int],
+            Field(ge=1, le=1000, description="Submit at most this many analyses."),
+        ] = None,
+    ) -> dict[str, Any]:
+        """
+        Submit analyses which are ready to the scheduler. This runs in a separate
+        process and returns at once with a job: use get_job to follow it. The
+        project's scheduler limits (max_queued, max_submit_per_pass,
+        submit_interval) apply. Without a subject, every subject's ready analyses
+        are submitted, so say which subject, or set max_submit, unless you mean
+        that. Only one job runs at a time.
+        """
+        return trigger(ctx, "submit", subject, dryrun, max_submit)
 
     def act(ctx, subject, analysis, change, *args):
         """Make a change to an analysis and say what record was made of it."""

@@ -216,3 +216,35 @@ status: restart
                 self.assertTrue(f"Unable to submit" in result.output)
             
 
+
+
+class TestPlainFunctions(unittest.TestCase):
+    """The commands are thin wrappers over functions which don't need click."""
+
+    def test_submit_command_returns_the_number_submitted(self):
+        # ``asimov monitor --chain`` reads this to keep to the per-pass limit.
+        with patch.object(manage, "submit_analyses", return_value=3) as submit:
+            result = manage.submit.callback(
+                event="S1", update=False, dryrun=True, max_submit=2
+            )
+        self.assertEqual(result, 3)
+        submit.assert_called_once_with(
+            event="S1", update=False, dryrun=True, max_submit=2
+        )
+
+    def test_build_command_calls_the_function(self):
+        with patch.object(manage, "build_analyses") as build:
+            manage.build.callback(event="S1", dryrun=True)
+        build.assert_called_once_with(event="S1", dryrun=True)
+
+    def test_functions_have_defaults(self):
+        import inspect
+
+        self.assertEqual(
+            {k: v.default for k, v in inspect.signature(manage.submit_analyses).parameters.items()},
+            {"event": None, "update": False, "dryrun": False, "max_submit": None},
+        )
+        self.assertEqual(
+            {k: v.default for k, v in inspect.signature(manage.build_analyses).parameters.items()},
+            {"event": None, "dryrun": False},
+        )
