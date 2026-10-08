@@ -15,6 +15,8 @@ There are two kinds of strategy:
 
 import logging
 import sys
+
+import yaml
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
@@ -29,6 +31,15 @@ logger = logging.getLogger(__name__)
 
 #: The entry-point group which plugins register their strategies in.
 ENTRY_POINT_GROUP = "asimov.strategies"
+
+#: The kinds of document which a strategy may return, as they are written in a
+#: blueprint (lower case). A strategy cannot change the project's configuration.
+ALLOWED_KINDS = frozenset({"analysis", "projectanalysis", "event", "subject"})
+
+#: The kinds which are marked with the strategy which made them. A subject is
+#: not, because the settings of a subject are inherited by every analysis in it,
+#: which would then look as if the strategy had made all of them.
+STAMPED_KINDS = frozenset({"analysis", "projectanalysis"})
 
 
 class StrategyError(ValueError):
@@ -51,12 +62,27 @@ class StrategyContext:
         The subject the blueprint is being applied to, if it is known.
     logger : logging.Logger, optional
         The logger to use; defaults to this module's.
+    group : dict, optional
+        The record of the group this blueprint made before, if it did; see
+        :func:`read_group`.
     """
 
-    def __init__(self, ledger=None, event=None, logger=None):
+    def __init__(self, ledger=None, event=None, logger=None, group=None):
         self._ledger = ledger
         self.event = event
         self.logger = logger or globals()["logger"]
+        self._group = group
+
+    @property
+    def group(self) -> Optional[Dict[str, Any]]:
+        """
+        The record of the group which this blueprint made before, or None if
+        this is the first time it is applied.
+
+        It has the ``blueprint`` it was made from, so a strategy can see what
+        has changed since, and ``subjects`` it made. See :func:`read_group`.
+        """
+        return deepcopy(self._group) if self._group is not None else None
 
     def subjects(self) -> List[str]:
         """The names of the subjects which exist in the project."""
@@ -135,10 +161,15 @@ class Strategy(ABC):
         Returns
         -------
         list of dict
-            The analyses to apply, in the order to apply them. Each needs a
-            ``name``, which must be the same every time this is called for
-            the same blueprint (so that applying it again is safe), and may
-            have ``needs`` to depend on the others.
+            The documents to apply, in the order to apply them (a subject
+            before the analyses which are in it). Each has a ``kind``, which
+            is ``analysis`` if left out, and may be ``analysis``,
+            ``projectanalysis`` or ``subject`` (``event`` also works). Each
+            needs a ``name``, which must be the same every time this is called
+            for the same blueprint (so that applying it again is safe).
+            Analyses need a ``pipeline``, may have ``needs`` to depend on the
+            others, and say which subject they are for in ``event``: if they
+            do not, it is the one the blueprint is applied to.
         """
 
     def extend(self, analysis, context: StrategyContext) -> List[Dict[str, Any]]:
@@ -164,6 +195,93 @@ def strategy_plugins() -> Dict[str, Any]:
         except Exception as error:
             logger.warning(f"Could not load the strategy plugin '{entry.name}': {error}")
     return found
+
+
+#: Where the records of groups are kept, in the ledger's project-level data.
+GROUPS_KEY = "strategy groups"
+
+
+def plugin_info(kind: str) -> Dict[str, str]:
+    """
+    Which package provides a strategy, and its version.
+
+    Parameters
+    ----------
+    kind : str
+        The name of the strategy.
+
+    Returns
+    -------
+    dict
+        ``name`` and ``version`` of the package which registers it; either is
+        ``"unknown"`` if that cannot be found.
+    """
+    for entry in entry_points(group=ENTRY_POINT_GROUP):
+        if entry.name == kind:
+            dist = getattr(entry, "dist", None)
+            return {
+                "name": str(getattr(dist, "name", None) or "unknown"),
+                "version": str(getattr(dist, "version", None) or "unknown"),
+            }
+    return {"name": "unknown", "version": "unknown"}
+
+
+def read_group(ledger, identifier: str) -> Optional[Dict[str, Any]]:
+    """
+    The record of a group of documents which a strategy made.
+
+    A group is what one blueprint made. Its name is the name of the blueprint,
+    which is unique in the project. The record has:
+
+    ``type``
+        The strategy which made it.
+    ``blueprint``
+        The blueprint as it was last applied.
+    ``event``
+        The subject its analyses are for when they don't name one, if there is one.
+    ``subjects``
+        The subjects the group made. A subject which already existed is not
+        listed, because the group did not make it.
+    ``plugin``
+        The package and version which made the group, as ``{name, version}``.
+    ``last extended with``
+        The same, for the last time documents were added to the group
+        afterwards (absent until then). A group made by one version and added to
+        by another can be told by the two being different.
+
+    Parameters
+    ----------
+    ledger : Ledger
+    identifier : str
+        The name of the group.
+
+    Returns
+    -------
+    dict or None
+        A copy of the record, or None if there is no such group.
+    """
+    groups = (getattr(ledger, "data", None) or {}).get(GROUPS_KEY) or {}
+    stored = groups.get(identifier)
+    if not stored:
+        return None
+    record = deepcopy(stored)
+    if isinstance(record.get("blueprint"), str):
+        record["blueprint"] = yaml.safe_load(record["blueprint"])
+    return record
+
+
+def write_group(ledger, identifier: str, record: Dict[str, Any]) -> None:
+    """
+    Store the record of a group, replacing what was there. Call
+    ``ledger.save()`` to keep it.
+
+    The blueprint is stored as text. The database ledger merges what it saves
+    into what is already stored, so an option which a later blueprint leaves
+    out would otherwise stay; as text it is replaced, all of it.
+    """
+    stored = deepcopy(record)
+    stored["blueprint"] = yaml.safe_dump(record["blueprint"], sort_keys=True)
+    ledger.data.setdefault(GROUPS_KEY, {})[identifier] = stored
 
 
 def is_plugin_strategy(strategy: Any) -> bool:
@@ -363,8 +481,9 @@ def expand_plugin_strategy(
 
     Everything the plugin returns is checked before any of it is used, so a
     mistake in a plugin is reported with nothing applied. Core then stamps
-    ``strategy: {type, id}`` on each analysis, where ``id`` is the name of the
-    blueprint, so the analyses of one expansion can be found again.
+    ``strategy: {type, id}`` on each analysis (and project analysis), where
+    ``id`` is the name of the blueprint, so the analyses of one expansion can
+    be found again.
 
     Parameters
     ----------
@@ -376,7 +495,7 @@ def expand_plugin_strategy(
     Returns
     -------
     list of dict
-        The analyses to apply.
+        The documents to apply, in order, each with its ``kind``.
 
     Raises
     ------
@@ -412,7 +531,7 @@ def expand_plugin_strategy(
         raise StrategyError(f"The strategy '{kind}' could not be expanded: {error}") from error
 
     if not isinstance(documents, (list, tuple)) or not documents:
-        raise StrategyError(f"The strategy '{kind}' did not return any analyses to apply.")
+        raise StrategyError(f"The strategy '{kind}' did not return any documents to apply.")
 
     seen = set()
     emitted = []
@@ -422,24 +541,39 @@ def expand_plugin_strategy(
                 f"The strategy '{kind}' returned a {type(document).__name__}, not a document."
             )
         document = deepcopy(document)
-        document_kind = document.pop("kind", "analysis")
-        if str(document_kind).lower() != "analysis":
+        document_kind = str(document.get("kind", "analysis")).lower()
+        if document_kind not in ALLOWED_KINDS:
+            allowed = ", ".join(sorted(ALLOWED_KINDS))
             raise StrategyError(
-                f"The strategy '{kind}' returned a document of kind '{document_kind}'; "
-                "only analyses can be applied from a strategy so far."
+                f"The strategy '{kind}' returned a document of kind "
+                f"'{document.get('kind')}'; it can return: {allowed}."
             )
+        document["kind"] = document_kind
         name = document.get("name")
         if not isinstance(name, str) or not name:
-            raise StrategyError(f"The strategy '{kind}' returned an analysis with no name.")
-        if name in seen:
-            raise StrategyError(
-                f"The strategy '{kind}' returned more than one analysis named '{name}'."
-            )
-        if "pipeline" not in document:
+            raise StrategyError(f"The strategy '{kind}' returned a {document_kind} with no name.")
+
+        stamped = document_kind in STAMPED_KINDS
+        if stamped and "pipeline" not in document:
             # Everything which applying needs is checked now, so that a
-            # mistake is found before any of the analyses have been applied.
-            raise StrategyError(f"The strategy '{kind}' returned the analysis '{name}' with no pipeline.")
-        seen.add(name)
-        document["strategy"] = {"type": kind, "id": identifier}
+            # mistake is found before any of the documents have been applied.
+            raise StrategyError(
+                f"The strategy '{kind}' returned the {document_kind} '{name}' with no pipeline."
+            )
+
+        # A name is unique among documents of its kind; an analysis's name only
+        # has to be different from those in the same subject.
+        scope = document.get("event") if document_kind == "analysis" else None
+        identity = ("event" if document_kind == "subject" else document_kind, scope, name)
+        if identity in seen:
+            raise StrategyError(
+                f"The strategy '{kind}' returned more than one {document_kind} named '{name}'."
+            )
+        seen.add(identity)
+
+        if stamped:
+            document["strategy"] = {"type": kind, "id": identifier}
+        else:
+            document.pop("strategy", None)
         emitted.append(document)
     return emitted

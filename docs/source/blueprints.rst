@@ -464,6 +464,28 @@ A ``strategy`` with a ``type`` which is a name is a plugin strategy; a ``strateg
   If a strategy fails, or returns something which cannot be applied, nothing from that blueprint is applied.
 * ``--name`` and ``--iterate`` do not rename the analyses of a strategy: their names are what make applying it again safe.
 
+Groups
+^^^^^^
+
+What one blueprint makes is a *group*, named by the blueprint.
+**The name of a group is unique in the project**: it is how asimov finds the group again, to add to it or to change it.
+So a second blueprint cannot use the name of a group which another strategy made, and a blueprint which made a group for one subject cannot be applied to another subject under the same name.
+Either is refused, with nothing applied; use another name.
+
+The group is recorded in the project, so that it can be added to later without the blueprint file.
+The record (see :func:`asimov.strategies.read_group`) holds:
+
+* the strategy ``type`` and the ``blueprint`` as it was last applied;
+* the ``subject`` its analyses are for when they do not name one;
+* the ``subjects`` the group made.
+  A subject which was already there when the group was applied is not listed, because the group did not make it;
+* the package and version that made the group (``plugin``), and, if documents were added to the group afterwards, the package and version that did (``last extended with``).
+  If the two differ, a different version of the strategy added to the group than made it.
+
+Applying a blueprint again with changes (a higher ``length`` or ``rounds``) updates the record to the new blueprint.
+The record can be read with ``asimov audit`` like any other change to the project, and a dry run plans it.
+A strategy is given the record of the group it made before as ``context.group`` (``None`` the first time), so it can tell what has changed.
+
 Writing a strategy
 ^^^^^^^^^^^^^^^^^^
 
@@ -485,21 +507,40 @@ Subclass :class:`asimov.strategies.Strategy`, and register it in the ``asimov.st
                 raise StrategyError("rounds must be at least 1")
 
         def expand(self, blueprint, context):
-            # Return the analyses to apply, in order, as dictionaries. Each needs
-            # a ``name`` (the same every time, so that applying again is safe)
-            # and a ``pipeline``, and can have ``needs`` to depend on the others.
+            # Return the documents to apply, in order, as dictionaries. Each needs
+            # a ``name`` (the same every time, so that applying again is safe).
+            # An analysis needs a ``pipeline``, and can have ``needs`` to depend
+            # on the others.
             rounds = blueprint["strategy"].get("rounds", 1)
             return [
                 {**base(blueprint), "name": f"{blueprint['name']}-r{n:02d}"}
                 for n in range(1, rounds + 1)
             ]
 
-``context`` gives read-only information about the project (``context.subjects()``, ``context.analyses()``, ``context.event``, ``context.project`` and ``context.logger``).
+``context`` gives read-only information about the project (``context.subjects()``, ``context.analyses()``, ``context.event``, ``context.group``, ``context.project`` and ``context.logger``).
 A strategy returns documents and never changes the ledger: asimov applies them, so validation and provenance are the same as for any blueprint.
 The ``chain`` strategy, :class:`asimov.strategies_builtin.ChainStrategy`, is a small example.
 A plugin which cannot be loaded is reported and skipped, and does not stop other commands.
 
-Only analyses can be returned for now.
+What a strategy can return
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A strategy can return documents of more than one kind, so that one blueprint can describe a whole pattern, such as a subject for each stream and the analyses in each:
+
+* ``analysis``, which is the kind if ``kind`` is left out, and ``projectanalysis``;
+* ``subject`` (``event`` also works).
+  Return a subject before the analyses which are in it.
+
+It cannot return anything else, such as ``configuration``: a strategy does not change the settings of the project.
+
+An analysis says which subject it is for with ``event``.
+If it does not, it is for the subject you apply the blueprint to (``-e``), or which the blueprint names with ``event``, or, if there is neither, the one you are asked for (once, for all of them).
+A subject which the strategy names itself is not replaced by ``-e``.
+
+Everything is checked before the first document is applied, including that each analysis is for a subject which exists or which the strategy makes before it, so a mistake applies nothing from that blueprint.
+Applying the blueprint again leaves what the strategy made before as it is, subjects and project analyses as well as analyses, and says how many were left.
+A subject which already exists is never updated by a strategy.
+Analyses and project analyses are marked with the strategy which made them; subjects are not, because the settings of a subject are inherited by all of its analyses, which would then all look as if the strategy had made them.
 
 Waveform
 ========
