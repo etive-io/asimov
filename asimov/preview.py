@@ -154,6 +154,29 @@ class Refusal:
 
 
 @dataclasses.dataclass
+class Problem:
+    """
+    Something wrong with the graph of analyses which a blueprint leaves, which
+    is reported but does not stop it being applied.
+
+    Parameters
+    ----------
+    message : str
+        What is wrong.
+    level : str
+        ``"error"`` for what can never work (a cycle, or a need which names an
+        analysis which a subject which exists does not have), ``"warning"``
+        for what may be put right by a later blueprint.
+    """
+
+    message: str
+    level: str = "warning"
+
+    def to_dict(self):
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass
 class ApplyPlan:
     """
     What applying a blueprint would do: the changes it would make, in order,
@@ -167,6 +190,7 @@ class ApplyPlan:
     changes: List[PlannedChange] = dataclasses.field(default_factory=list)
     refused: List[Refusal] = dataclasses.field(default_factory=list)
     dry_run: bool = True
+    problems: List[Problem] = dataclasses.field(default_factory=list)
 
     def add_change(self, record, diff=None):
         """Note a change which would be made."""
@@ -175,6 +199,15 @@ class ApplyPlan:
     def refuse(self, message, level="refused"):
         """Note something which would not be applied."""
         self.refused.append(Refusal(message, level))
+
+    def add_problem(self, message, level="warning"):
+        """Note something wrong with the graph of analyses which results."""
+        self.problems.append(Problem(message, level))
+
+    @property
+    def errors(self):
+        """The problems which can never work."""
+        return [problem for problem in self.problems if problem.level == "error"]
 
     @property
     def empty(self):
@@ -187,6 +220,7 @@ class ApplyPlan:
             "dry_run": self.dry_run,
             "changes": [change.to_dict() for change in self.changes],
             "refused": [refusal.to_dict() for refusal in self.refused],
+            "problems": [problem.to_dict() for problem in self.problems],
         }
 
     def render(self):
@@ -211,7 +245,9 @@ class ApplyPlan:
                     )
         for refusal in self.refused:
             lines.append(f"  ! {refusal.message}")
-        if self.empty and not self.refused:
+        for problem in self.problems:
+            lines.append(f"  ! {problem.level}: {problem.message}")
+        if self.empty and not self.refused and not self.problems:
             lines.append("  Nothing would change.")
         return lines
 
