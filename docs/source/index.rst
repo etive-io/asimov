@@ -173,6 +173,7 @@ Advanced topics
    principals
    audit
    mcp
+   registry
    build-process
    scheduler-integration
    dag-translation-examples
