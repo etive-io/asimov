@@ -257,7 +257,8 @@ class DryRunTests(DocumentsCase):
         self.assertEqual(self.subjects(), ["Base"])
         targets = [change.record.target for change in plan.changes]
         self.assertEqual(
-            sorted(targets), sorted(["S1", "S2", "S1/fit-S1", "S2/fit-S2", "S1/combine"])
+            sorted(targets),
+            sorted(["@project/scan", "S1", "S2", "S1/fit-S1", "S2/fit-S2", "S1/combine"]),
         )
 
     def test_a_dry_run_of_what_exists_is_noted_as_skipped(self):

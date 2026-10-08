@@ -15,6 +15,8 @@ There are two kinds of strategy:
 
 import logging
 import sys
+
+import yaml
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
@@ -60,12 +62,27 @@ class StrategyContext:
         The subject the blueprint is being applied to, if it is known.
     logger : logging.Logger, optional
         The logger to use; defaults to this module's.
+    group : dict, optional
+        The record of the group this blueprint made before, if it did; see
+        :func:`read_group`.
     """
 
-    def __init__(self, ledger=None, event=None, logger=None):
+    def __init__(self, ledger=None, event=None, logger=None, group=None):
         self._ledger = ledger
         self.event = event
         self.logger = logger or globals()["logger"]
+        self._group = group
+
+    @property
+    def group(self) -> Optional[Dict[str, Any]]:
+        """
+        The record of the group which this blueprint made before, or None if
+        this is the first time it is applied.
+
+        It has the ``blueprint`` it was made from, so a strategy can see what
+        has changed since, and ``subjects`` it made. See :func:`read_group`.
+        """
+        return deepcopy(self._group) if self._group is not None else None
 
     def subjects(self) -> List[str]:
         """The names of the subjects which exist in the project."""
@@ -178,6 +195,93 @@ def strategy_plugins() -> Dict[str, Any]:
         except Exception as error:
             logger.warning(f"Could not load the strategy plugin '{entry.name}': {error}")
     return found
+
+
+#: Where the records of groups are kept, in the ledger's project-level data.
+GROUPS_KEY = "strategy groups"
+
+
+def plugin_info(kind: str) -> Dict[str, str]:
+    """
+    Which package provides a strategy, and its version.
+
+    Parameters
+    ----------
+    kind : str
+        The name of the strategy.
+
+    Returns
+    -------
+    dict
+        ``name`` and ``version`` of the package which registers it; either is
+        ``"unknown"`` if that cannot be found.
+    """
+    for entry in entry_points(group=ENTRY_POINT_GROUP):
+        if entry.name == kind:
+            dist = getattr(entry, "dist", None)
+            return {
+                "name": str(getattr(dist, "name", None) or "unknown"),
+                "version": str(getattr(dist, "version", None) or "unknown"),
+            }
+    return {"name": "unknown", "version": "unknown"}
+
+
+def read_group(ledger, identifier: str) -> Optional[Dict[str, Any]]:
+    """
+    The record of a group of documents which a strategy made.
+
+    A group is what one blueprint made. Its name is the name of the blueprint,
+    which is unique in the project. The record has:
+
+    ``type``
+        The strategy which made it.
+    ``blueprint``
+        The blueprint as it was last applied.
+    ``event``
+        The subject its analyses are for when they don't name one, if there is one.
+    ``subjects``
+        The subjects the group made. A subject which already existed is not
+        listed, because the group did not make it.
+    ``plugin``
+        The package and version which made the group, as ``{name, version}``.
+    ``last extended with``
+        The same, for the last time documents were added to the group
+        afterwards (absent until then). A group made by one version and added to
+        by another can be told by the two being different.
+
+    Parameters
+    ----------
+    ledger : Ledger
+    identifier : str
+        The name of the group.
+
+    Returns
+    -------
+    dict or None
+        A copy of the record, or None if there is no such group.
+    """
+    groups = (getattr(ledger, "data", None) or {}).get(GROUPS_KEY) or {}
+    stored = groups.get(identifier)
+    if not stored:
+        return None
+    record = deepcopy(stored)
+    if isinstance(record.get("blueprint"), str):
+        record["blueprint"] = yaml.safe_load(record["blueprint"])
+    return record
+
+
+def write_group(ledger, identifier: str, record: Dict[str, Any]) -> None:
+    """
+    Store the record of a group, replacing what was there. Call
+    ``ledger.save()`` to keep it.
+
+    The blueprint is stored as text. The database ledger merges what it saves
+    into what is already stored, so an option which a later blueprint leaves
+    out would otherwise stay; as text it is replaced, all of it.
+    """
+    stored = deepcopy(record)
+    stored["blueprint"] = yaml.safe_dump(record["blueprint"], sort_keys=True)
+    ledger.data.setdefault(GROUPS_KEY, {})[identifier] = stored
 
 
 def is_plugin_strategy(strategy: Any) -> bool:
