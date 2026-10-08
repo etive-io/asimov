@@ -16,6 +16,7 @@ There are two kinds of strategy:
 import logging
 import sys
 
+import click
 import yaml
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -176,7 +177,22 @@ class Strategy(ABC):
         """
         Optionally, return further documents when one of the analyses finishes.
 
-        Not used yet; the default adds nothing.
+        Called by ``asimov monitor`` once for each analysis of the group which
+        has just finished. ``context.group`` is the record of the group, and
+        ``context.event`` the subject of the analysis which finished. The
+        documents are checked as ``expand`` is, and applied to the same group;
+        ones which already exist are left as they are, so returning the same
+        documents again is safe. The default adds nothing.
+
+        A group may not grow beyond ``[strategy] max_group_analyses`` analyses
+        (500 unless set), whatever the strategy returns.
+
+        Parameters
+        ----------
+        analysis : asimov.analysis.Analysis
+            The analysis which finished.
+        context : StrategyContext
+            Read-only information about the project.
         """
         return []
 
@@ -473,6 +489,63 @@ def expand_strategy(
     return expanded_blueprints
 
 
+def _check_documents(kind, identifier, documents, allow_empty=False):
+    """
+    Check the documents which a plugin returned, and stamp them.
+
+    Everything is checked before any of it is used, so a mistake in a plugin is
+    reported with nothing applied. Core stamps ``strategy: {type, id}`` on each
+    analysis (and project analysis), where ``id`` is the name of the group.
+    """
+    if not isinstance(documents, (list, tuple)) or (not documents and not allow_empty):
+        raise StrategyError(f"The strategy '{kind}' did not return any documents to apply.")
+
+    seen = set()
+    emitted = []
+    for document in documents:
+        if not isinstance(document, dict):
+            raise StrategyError(
+                f"The strategy '{kind}' returned a {type(document).__name__}, not a document."
+            )
+        document = deepcopy(document)
+        document_kind = str(document.get("kind", "analysis")).lower()
+        if document_kind not in ALLOWED_KINDS:
+            allowed = ", ".join(sorted(ALLOWED_KINDS))
+            raise StrategyError(
+                f"The strategy '{kind}' returned a document of kind "
+                f"'{document.get('kind')}'; it can return: {allowed}."
+            )
+        document["kind"] = document_kind
+        name = document.get("name")
+        if not isinstance(name, str) or not name:
+            raise StrategyError(f"The strategy '{kind}' returned a {document_kind} with no name.")
+
+        stamped = document_kind in STAMPED_KINDS
+        if stamped and "pipeline" not in document:
+            # Everything which applying needs is checked now, so that a
+            # mistake is found before any of the documents have been applied.
+            raise StrategyError(
+                f"The strategy '{kind}' returned the {document_kind} '{name}' with no pipeline."
+            )
+
+        # A name is unique among documents of its kind; an analysis's name only
+        # has to be different from those in the same subject.
+        scope = document.get("event") if document_kind == "analysis" else None
+        identity = ("event" if document_kind == "subject" else document_kind, scope, name)
+        if identity in seen:
+            raise StrategyError(
+                f"The strategy '{kind}' returned more than one {document_kind} named '{name}'."
+            )
+        seen.add(identity)
+
+        if stamped:
+            document["strategy"] = {"type": kind, "id": identifier}
+        else:
+            document.pop("strategy", None)
+        emitted.append(document)
+    return emitted
+
+
 def expand_plugin_strategy(
     blueprint: Dict[str, Any], context: Optional[StrategyContext] = None
 ) -> List[Dict[str, Any]]:
@@ -530,50 +603,125 @@ def expand_plugin_strategy(
     except Exception as error:
         raise StrategyError(f"The strategy '{kind}' could not be expanded: {error}") from error
 
-    if not isinstance(documents, (list, tuple)) or not documents:
-        raise StrategyError(f"The strategy '{kind}' did not return any documents to apply.")
+    return _check_documents(kind, identifier, documents)
 
-    seen = set()
-    emitted = []
-    for document in documents:
-        if not isinstance(document, dict):
-            raise StrategyError(
-                f"The strategy '{kind}' returned a {type(document).__name__}, not a document."
-            )
-        document = deepcopy(document)
-        document_kind = str(document.get("kind", "analysis")).lower()
-        if document_kind not in ALLOWED_KINDS:
-            allowed = ", ".join(sorted(ALLOWED_KINDS))
-            raise StrategyError(
-                f"The strategy '{kind}' returned a document of kind "
-                f"'{document.get('kind')}'; it can return: {allowed}."
-            )
-        document["kind"] = document_kind
-        name = document.get("name")
-        if not isinstance(name, str) or not name:
-            raise StrategyError(f"The strategy '{kind}' returned a {document_kind} with no name.")
 
-        stamped = document_kind in STAMPED_KINDS
-        if stamped and "pipeline" not in document:
-            # Everything which applying needs is checked now, so that a
-            # mistake is found before any of the documents have been applied.
+#: The most analyses one group may have, unless ``[strategy] max_group_analyses`` says otherwise.
+DEFAULT_MAX_GROUP_ANALYSES = 500
+
+
+def _max_group_analyses():
+    from asimov import config
+
+    try:
+        value = int(config.get("strategy", "max_group_analyses", fallback=DEFAULT_MAX_GROUP_ANALYSES))
+    except Exception:
+        return DEFAULT_MAX_GROUP_ANALYSES
+    return value if value > 0 else DEFAULT_MAX_GROUP_ANALYSES
+
+
+def _group_analyses(ledger, identifier):
+    """The ``(subject, name)`` of every analysis which a group made."""
+    found = set()
+    for name in ledger.subject_names():
+        for analysis in ledger.get_event(name)[0].productions:
+            stamp = strategy_stamp(getattr(analysis, "meta", None) or {})
+            if stamp and stamp["id"] == identifier:
+                found.add((name, analysis.name))
+    for analysis in ledger.project_analyses:
+        stamp = strategy_stamp(getattr(analysis, "meta", None) or {})
+        if stamp and stamp["id"] == identifier:
+            found.add((None, analysis.name))
+    return found
+
+
+def extend_group(ledger, analysis):
+    """
+    Let the strategy which made an analysis add to its group, now it has finished.
+
+    Does nothing for an analysis which no plugin strategy made, or whose
+    strategy does not override :meth:`Strategy.extend`. A strategy which fails,
+    or returns something which cannot be applied, is reported and nothing is
+    applied: it never stops the monitor.
+
+    Parameters
+    ----------
+    ledger : Ledger
+    analysis : asimov.analysis.Analysis
+        An analysis which has just finished.
+
+    Returns
+    -------
+    int
+        How many new documents were applied.
+    """
+    stamp = strategy_stamp(getattr(analysis, "meta", None) or {})
+    if not stamp:
+        return 0
+    kind, identifier = stamp["type"], stamp["id"]
+    plugin_class = strategy_plugins().get(kind)
+    if plugin_class is None or getattr(plugin_class, "extend", None) is Strategy.extend:
+        return 0
+
+    record = read_group(ledger, identifier)
+    if record is None:
+        logger.warning(f"'{analysis.name}' was made by the group '{identifier}', which has no record")
+        return 0
+
+    subject = getattr(getattr(analysis, "event", None), "name", None)
+    context = StrategyContext(ledger=ledger, event=subject, group=record)
+    try:
+        plugin = plugin_class()
+        plugin.name = getattr(plugin, "name", "") or kind
+        returned = plugin.extend(analysis, context)
+        if returned is None:
+            returned = []
+        documents = _check_documents(kind, identifier, returned, allow_empty=True)
+        if not documents:
+            return 0
+
+        existing_subjects = set(context.subjects())
+        known = set(existing_subjects)
+        fresh = []
+        for document in documents:
+            document_kind = document["kind"]
+            if document_kind in ("event", "subject"):
+                if document["name"] not in existing_subjects:
+                    fresh.append(document)
+                known.add(document["name"])
+                continue
+            if document_kind == "analysis":
+                document.setdefault("event", subject)
+                if document["event"] not in known:
+                    raise StrategyError(
+                        f"The strategy '{kind}' made the analysis '{document['name']}' for the "
+                        f"subject '{document['event']}', which does not exist and is not made "
+                        "before it by the strategy."
+                    )
+                if document["name"] not in context.analyses(document["event"]):
+                    fresh.append(document)
+            elif document["name"] not in {a.name for a in ledger.project_analyses}:
+                fresh.append(document)
+        if not fresh:
+            return 0
+
+        limit = _max_group_analyses()
+        count = len(_group_analyses(ledger, identifier))
+        added = sum(1 for d in fresh if d["kind"] in STAMPED_KINDS)
+        if count + added > limit:
             raise StrategyError(
-                f"The strategy '{kind}' returned the {document_kind} '{name}' with no pipeline."
+                f"The group '{identifier}' has {count} analyses and would have {count + added}, "
+                f"which is more than the {limit} allowed ([strategy] max_group_analyses)"
             )
 
-        # A name is unique among documents of its kind; an analysis's name only
-        # has to be different from those in the same subject.
-        scope = document.get("event") if document_kind == "analysis" else None
-        identity = ("event" if document_kind == "subject" else document_kind, scope, name)
-        if identity in seen:
-            raise StrategyError(
-                f"The strategy '{kind}' returned more than one {document_kind} named '{name}'."
-            )
-        seen.add(identity)
+        from asimov.cli.application import apply_extension
 
-        if stamped:
-            document["strategy"] = {"type": kind, "id": identifier}
-        else:
-            document.pop("strategy", None)
-        emitted.append(document)
-    return emitted
+        apply_extension(ledger, identifier, record, fresh, existing_subjects)
+        return len(fresh)
+    except Exception as error:
+        logger.warning(f"The strategy '{kind}' could not extend '{identifier}' after '{analysis.name}': {error}", exc_info=logger.isEnabledFor(logging.DEBUG))
+        click.echo(
+            click.style("●", fg="red")
+            + f" The strategy '{kind}' could not extend '{identifier}' after '{analysis.name}': {error}"
+        )
+        return 0

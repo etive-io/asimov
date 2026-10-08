@@ -435,7 +435,32 @@ def _expand_strategies(documents, ledger, event):
             _record_group(ledger, identifier, record, "updated")
 
 
-def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False, dry_run=False):
+def apply_extension(ledger, identifier, record, documents, preexisting_subjects):
+    """
+    Add documents which a strategy made after the group was first applied.
+
+    The documents have been checked and stamped (see
+    :func:`asimov.strategies.extend_group`). They are applied as the group's
+    own, so those which already exist are left as they are, and the group's
+    record notes the subjects it made and which version of the package added to it.
+    """
+    apply_page(None, ledger=ledger, _extension=(identifier, deepcopy(documents)))
+    made = sorted(
+        set(record.get("subjects", []))
+        | {
+            d["name"]
+            for d in documents
+            if d["kind"] in ("event", "subject") and d["name"] not in preexisting_subjects
+        }
+    )
+    updated = dict(record)
+    updated["subjects"] = made
+    updated["last extended with"] = plugin_info(record["type"])
+    if updated != record:
+        _record_group(ledger, identifier, updated, "updated")
+
+
+def apply_page(file, event=None, ledger=None, update_page=False, name=None, iterate=False, update_unstarted=False, dry_run=False, _extension=None):
     """
     Apply the documents in a blueprint to the project.
 
@@ -482,10 +507,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 name=name,
                 iterate=iterate,
                 update_unstarted=update_unstarted,
+                _extension=_extension,
             )
         return plan
 
-    if file.startswith("http://") or file.startswith("https://"):
+    if _extension is not None:
+        # Documents which a strategy added to its group: already checked and stamped.
+        data = None
+    elif file.startswith("http://") or file.startswith("https://"):
         r = requests.get(file)
         if r.status_code == 200:
             data = r.text
@@ -496,9 +525,13 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
         with open(file, "r") as apply_file:
             data = apply_file.read()
 
-    quick_parse = yaml.safe_load_all(
-        data
-    )  # Load as a dictionary so we can identify the object type it contains
+    if _extension is not None:
+        identifier, extra_documents = _extension
+        extension_group = _StrategyGroup(identifier, len(extra_documents))
+    else:
+        quick_parse = yaml.safe_load_all(
+            data
+        )  # Load as a dictionary so we can identify the object type it contains
 
     # Events loaded for applying analyses, by name. Loading an event builds every
     # analysis in it, so doing that once per analysis made applying a large
@@ -508,7 +541,12 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
     # so it empties the cache.
     loaded_events = {}
 
-    for document, group in _expand_strategies(quick_parse, ledger, event):
+    if _extension is not None:
+        documents_and_groups = ((d, extension_group) for d in extra_documents)
+    else:
+        documents_and_groups = _expand_strategies(quick_parse, ledger, event)
+
+    for document, group in documents_and_groups:
         if document["kind"] != "analysis":
             loaded_events.clear()
         doc_kind = {"subject": "event"}.get(
