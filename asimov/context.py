@@ -172,9 +172,15 @@ class ProjectContext:
         Who acts on this project when nothing more specific says so (see
         :func:`asimov.principal.current_principal`). Left unset, the
         principal is the local user.
+    ledger_settings : dict, optional
+        The ``engine`` and ``location`` of the ledger, in place of those in
+        the project's own configuration. A project registry uses this to say
+        where a project's ledger is (see :mod:`asimov.registry`).
     """
 
-    def __init__(self, root, config=None, ledger=None, project=None, principal=None):
+    def __init__(
+        self, root, config=None, ledger=None, project=None, principal=None, ledger_settings=None
+    ):
         self._root = os.path.abspath(root)
         self.config = config if config is not None else read_config(self._root)
         if not self.config.has_section("project"):
@@ -183,6 +189,7 @@ class ProjectContext:
         self.project = project
         self.principal = principal
         self._ledger = ledger
+        self.ledger_settings = dict(ledger_settings or {})
         self._storage = None
         self._scheduler = None
 
@@ -271,6 +278,8 @@ class ProjectContext:
         project_file.read(os.path.join(self.root, ".asimov", f"{_PACKAGE}.conf"))
         engine = project_file.get("ledger", "engine", fallback="yamlfile")
         location = project_file.get("ledger", "location", fallback=None)
+        engine = self.ledger_settings.get("engine", engine)
+        location = self.ledger_settings.get("location", location)
 
         if engine == "yamlfile":
             from asimov.ledger import YAMLLedger
