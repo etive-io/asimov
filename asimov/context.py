@@ -249,6 +249,9 @@ class ProjectContext:
         if self._ledger is None:
             self._ledger = self._open_ledger()
             self._ledger._context = self
+            from asimov import features
+
+            features.warn_unknown(self._ledger)
         return self._ledger
 
     def reset_ledger(self):

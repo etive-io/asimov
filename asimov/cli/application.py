@@ -24,6 +24,7 @@ import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
 from asimov.utils import update
+from asimov import features
 from asimov.needs_check import check_needs
 from asimov.strategies import (
     StrategyContext,
@@ -441,6 +442,34 @@ def _has_analyses(content):
     return bool(content.get("productions") or content.get("analyses"))
 
 
+def _new_features(ledger, used):
+    """
+    Note which compatibility features this apply makes the project use for the
+    first time, and warn about them (once: afterwards the ledger records them).
+
+    Nothing is recorded in a dry run, which only says it would.
+    """
+    findings = []
+    try:
+        new = features.missing(ledger, used)
+        for name in new:
+            findings.append(
+                (
+                    "warning",
+                    f"This project now uses {features.describe(name)}. A version of asimov "
+                    "without this feature will misread such a ledger: use this version, or a "
+                    "newer one, wherever the project is monitored.",
+                )
+            )
+        if new and not is_dry_run():
+            with ledger.transaction():
+                features.record(ledger, new)
+                ledger.save()
+    except Exception as error:
+        logger.warning(f"Could not record the features this project uses: {error}")
+    return findings
+
+
 def _check_needs(ledger, plan, loaded=None):
     """
     Report what is wrong with the ``needs`` of the subjects which an apply
@@ -461,11 +490,13 @@ def _check_needs(ledger, plan, loaded=None):
     touched.discard(PROJECT)
     if not touched:
         return
+    used = set()
     try:
-        findings = check_needs(ledger, touched, loaded)
+        findings = check_needs(ledger, touched, loaded, features=used)
     except Exception as error:
         logger.warning(f"Could not check the needs of {', '.join(sorted(touched))}: {error}")
         return
+    findings = list(findings) + _new_features(ledger, used)
     for level, message in findings:
         plan.add_problem(message, level)
         if is_dry_run():

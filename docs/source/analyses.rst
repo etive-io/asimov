@@ -196,7 +196,7 @@ This works in either direction, so a step in one subject can need a step in anot
 * Two parts always mean ``subject/name``; a third part is reserved for naming analyses in other projects.
 * In ``resolved_dependencies``, which is used to tell whether an analysis is stale, a dependency in the same subject is still its bare name, and one in another subject is ``subject/name``.
 * A version of asimov without this feature ignores such an entry, so it would start the analysis without waiting.
-  Do not run a ledger which uses it with an older version.
+  Do not run a ledger which uses it with an older version: see :ref:`ledger-features`.
 
 Selecting analyses in other subjects
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -233,6 +233,23 @@ An analysis which needs more than ten analyses of other subjects (a ``subject: "
 
 Only what a subject's analyses need is shown.
 What depends on a subject from elsewhere is not, because finding it would mean reading every other subject for each one: look at the graph of the subject which needs it.
+
+.. _ledger-features:
+
+Older versions of asimov
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+A few features change what a ledger *means*, not only what it holds, and a version of asimov that does not have them reads the ledger wrongly, and starts analyses early without saying so:
+
+* ``cross-subject-needs``: ``needs`` that name an analysis of another subject (``subject/name``) or select analyses by subject (``subject:``);
+* ``subject-analysis-needs``: a subject analysis with both ``analyses:`` (what it combines) and ``needs:`` (what it waits on).
+
+The first time a blueprint makes a project use one of them, asimov says so, and records it in the ledger (under ``asimov:`` and ``features:``, with the version that recorded it).
+With ``asimov apply --dry-run`` it says that it would.
+This is only a warning, and nothing is refused: it is for you to make sure that every place where the project is monitored or submitted from runs this version of asimov or a newer one.
+
+A version that has this record warns when it opens a ledger that depends on a feature which it does not know, because the ledger was written by a newer version.
+A version from before this record cannot do that, which is why the warning is given when you apply.
 
 Mistakes in ``needs`` are reported when you apply
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
