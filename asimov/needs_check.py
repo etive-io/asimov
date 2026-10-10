@@ -101,7 +101,33 @@ def _cycles(start: Iterable) -> List[Finding]:
     return found
 
 
-def check_needs(ledger, subjects: Iterable[str], loaded=None) -> List[Finding]:
+def features_of(analysis) -> set:
+    """The compatibility features (see :mod:`asimov.features`) which an analysis uses."""
+    from copy import deepcopy
+
+    from asimov.analysis import SubjectAnalysis
+
+    found = set()
+    # Older versions read ``analyses:`` too, but take ``needs:`` as what a
+    # subject analysis combines when it has any: only both together are misread.
+    # (Straight after being applied, the analysis is not yet a SubjectAnalysis,
+    # but still has ``analyses`` in its metadata.)
+    combines = (isinstance(analysis, SubjectAnalysis) and getattr(analysis, "_analysis_spec", None)) or (
+        getattr(analysis, "meta", None) or {}
+    ).get("analyses")
+    if combines and getattr(analysis, "_needs", None):
+        found.add("subject-analysis-needs")
+    if getattr(analysis, "_needs", None):
+        try:
+            requirements = analysis._process_dependencies(deepcopy(analysis._needs))
+        except Exception:
+            requirements = []
+        if any(analysis._is_qualified_requirement(r) for r in requirements):
+            found.add("cross-subject-needs")
+    return found
+
+
+def check_needs(ledger, subjects: Iterable[str], loaded=None, features=None) -> List[Finding]:
     """
     Find what is wrong with the ``needs`` of the analyses in some subjects.
 
@@ -116,6 +142,9 @@ def check_needs(ledger, subjects: Iterable[str], loaded=None) -> List[Finding]:
     loaded : dict, optional
         Subjects which are already built, by name, which are used instead of
         reading them again.
+    features : set, optional
+        If given, the compatibility features which these analyses use are added
+        to it (see :mod:`asimov.features`).
 
     Returns
     -------
@@ -141,6 +170,8 @@ def check_needs(ledger, subjects: Iterable[str], loaded=None) -> List[Finding]:
         analyses.extend(subject.productions)
     findings = []
     for analysis in analyses:
+        if features is not None:
+            features |= features_of(analysis)
         findings.extend(_dangling(subject_names, analysis))
     findings.extend(_cycles(analyses))
     return findings
