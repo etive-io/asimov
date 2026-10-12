@@ -47,8 +47,12 @@ class NeedsCheckCase(unittest.TestCase):
             handle.write("---\n".join(documents))
         return apply_page("blueprint.yaml", event=subject, ledger=self.ledger, **kwargs)
 
+    def needs_problems(self, plan):
+        """What is wrong with the needs. (The first use of a feature also warns about that.)"""
+        return [p for p in plan.problems if not p.message.startswith("This project now uses")]
+
     def messages(self, plan, level=None):
-        return [p.message for p in plan.problems if level in (None, p.level)]
+        return [p.message for p in self.needs_problems(plan) if level in (None, p.level)]
 
     def names(self, subject):
         return sorted(a.name for a in YAMLLedger(".asimov/ledger.yml").get_event(subject)[0].productions)
@@ -57,7 +61,7 @@ class NeedsCheckCase(unittest.TestCase):
 class CycleTests(NeedsCheckCase):
     def test_a_graph_without_a_cycle_has_no_problems(self):
         plan = self.apply(analysis("a"), analysis("b", ["a"]), subject="EvA")
-        self.assertEqual(plan.problems, [])
+        self.assertEqual(self.needs_problems(plan), [])
 
     def test_a_cycle_in_a_subject_is_an_error(self):
         plan = self.apply(analysis("a", ["b"]), analysis("b", ["a"]), subject="EvA")
@@ -82,7 +86,7 @@ class CycleTests(NeedsCheckCase):
     def test_a_chain_across_subjects_is_not_a_cycle(self):
         self.apply(analysis("a"), subject="EvA")
         plan = self.apply(analysis("b", ["EvA/a"]), subject="EvB")
-        self.assertEqual(plan.problems, [])
+        self.assertEqual(self.needs_problems(plan), [])
 
     def test_a_longer_cycle_is_reported_once(self):
         plan = self.apply(
@@ -108,7 +112,7 @@ class DanglingTests(NeedsCheckCase):
     def test_one_which_is_there_is_not_reported(self):
         self.apply(analysis("fit"), subject="EvB")
         plan = self.apply(analysis("a", ["EvB/fit"]), subject="EvA")
-        self.assertEqual(plan.problems, [])
+        self.assertEqual(self.needs_problems(plan), [])
 
     def test_an_optional_need_is_not_reported(self):
         plan = self.apply(
@@ -116,11 +120,11 @@ class DanglingTests(NeedsCheckCase):
             "needs:\n  - name: EvB/typo\n    optional: true\n",
             subject="EvA",
         )
-        self.assertEqual(plan.problems, [])
+        self.assertEqual(self.needs_problems(plan), [])
 
     def test_a_plain_name_which_is_missing_is_not_this_checks_business(self):
         plan = self.apply(analysis("a", ["typo"]), subject="EvA")
-        self.assertEqual(plan.problems, [])
+        self.assertEqual(self.needs_problems(plan), [])
 
     def test_it_is_still_applied(self):
         self.apply(analysis("a", ["EvB/typo"]), subject="EvA")
@@ -163,7 +167,7 @@ class WhereItLooksTests(NeedsCheckCase):
     def test_a_check_which_fails_does_not_fail_the_apply(self):
         with patch("asimov.cli.application.check_needs", side_effect=RuntimeError("boom")):
             plan = self.apply(analysis("a"), subject="EvA")
-        self.assertEqual(plan.problems, [])
+        self.assertEqual(self.needs_problems(plan), [])
         self.assertEqual(self.names("EvA"), ["a"])
 
 
