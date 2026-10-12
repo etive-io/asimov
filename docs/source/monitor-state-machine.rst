@@ -144,6 +144,18 @@ The command then stops and says what is left:
 ``--interval`` (default 30 seconds) is the wait between passes, ``--max-passes`` the most passes to make, and ``--timeout`` the most seconds to keep going for.
 A dry run makes a single pass, because nothing changes for a second one to find.
 
+Each pass asks the scheduler which jobs are running, instead of using the list which asimov keeps for a while (``cache_time``, fifteen minutes unless set), because the passes are seconds apart and a job started by an earlier pass would not be in an old list: it would be taken for one which had been evicted, and a pipeline would be rescued while it was still running.
+
+With ``type = local`` in the ``[scheduler]`` section, jobs are processes of the command itself, so ``--until-idle`` is how a project without a cluster runs to the end:
+
+.. code-block:: console
+
+    $ asimov configuration update scheduler/type local
+    $ asimov monitor --chain --until-idle
+
+The local scheduler only knows the processes which its own run of asimov started.
+Run by itself, ``asimov monitor`` in a different command does not see a job which another command started, and takes it for evicted until its results appear.
+
 monitor_analysis
 ^^^^^^^^^^^^^^^
 
