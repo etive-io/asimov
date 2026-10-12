@@ -405,6 +405,9 @@ def _settle_chain_pass(ctx, event, newly_finished, submitted):
     return reruns
 
 
+#: In the context's ``meta``: ask the scheduler for the jobs on every pass.
+FRESH_JOB_LIST = "asimov.monitor.fresh_job_list"
+
 #: Exit codes of ``monitor --chain --until-idle``.
 EXIT_IDLE_COMPLETE = 0   # nothing is running or can start, and everything finished
 EXIT_IDLE_INCOMPLETE = 1  # nothing is running or can start, but not everything finished
@@ -448,6 +451,7 @@ def _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeo
     """
     started = time.monotonic()
     passes = 0
+    ctx.meta[FRESH_JOB_LIST] = True
     while True:
         passes += 1
         click.secho(f"Pass {passes}", bold=True)
@@ -590,7 +594,10 @@ def monitor(ctx, event, update, dry_run, chain, until_idle, interval, max_passes
 
     try:
         # Get the job listing using the new scheduler API
-        job_list = get_job_list()
+        # Passes of --until-idle follow one another within seconds, and the
+        # list of jobs is kept for a while: what an earlier pass submitted
+        # would not be in it, and would be taken for evicted and rescued.
+        job_list = get_job_list(cache_time=0 if ctx.meta.get(FRESH_JOB_LIST) else None)
     except RuntimeError as e:
         click.echo(click.style(f"Could not query the scheduler: {e}", bold=True))
         click.echo(

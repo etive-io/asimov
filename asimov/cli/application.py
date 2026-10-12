@@ -456,9 +456,8 @@ def _new_features(ledger, used):
             findings.append(
                 (
                     "warning",
-                    f"This project now uses {features.describe(name)}. A version of asimov "
-                    "without this feature will misread such a ledger: use this version, or a "
-                    "newer one, wherever the project is monitored.",
+                    f"This project now uses {features.describe(name)}. Use this version of "
+                    "asimov, or a newer one, wherever the project is monitored.",
                 )
             )
         if new and not is_dry_run():

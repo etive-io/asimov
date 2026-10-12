@@ -7,12 +7,33 @@ the scheduler API in pipelines and other parts of asimov.
 
 import configparser
 import functools
+import threading
 from asimov import config, logger
 from asimov.scheduler import get_scheduler, JobDescription, JobList
 
 logger = logger.getChild("scheduler_utils")
 
 _active_config = config
+
+
+_LOCAL_SCHEDULER = None
+_LOCAL_SCHEDULER_LOCK = threading.Lock()
+
+
+def _shared_local_scheduler():
+    """
+    The one local scheduler of this process.
+
+    The local scheduler only knows the processes which it started itself, so a
+    pipeline which submits through one instance, and a list of jobs which asks
+    another, never see each other's jobs: everything that was running looked
+    like it had been evicted.
+    """
+    global _LOCAL_SCHEDULER
+    with _LOCAL_SCHEDULER_LOCK:
+        if _LOCAL_SCHEDULER is None:
+            _LOCAL_SCHEDULER = get_scheduler("local")
+        return _LOCAL_SCHEDULER
 
 
 def get_configured_scheduler(config=None):
@@ -70,7 +91,9 @@ def get_configured_scheduler(config=None):
                 exc,
             )
     # "local" requires no extra configuration
-    
+    if scheduler_type == "local":
+        return _shared_local_scheduler()
+
     return get_scheduler(scheduler_type, **kwargs)
 
 
