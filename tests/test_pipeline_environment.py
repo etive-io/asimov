@@ -19,11 +19,22 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.test_dir = tempfile.mkdtemp()
+        # rundir is deliberately not created: asimov must leave that to the pipeline.
+        self.rundir = os.path.join(self.test_dir, "rundir")
+        self.env_dir = os.path.join(
+            self.test_dir, ".asimov", "environments", "test_event", "test_production"
+        )
+        patcher = patch(
+            "asimov.pipeline.resolve_path",
+            side_effect=lambda p: os.path.join(self.test_dir, p),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         
         # Create a mock production
         self.mock_production = MagicMock()
         self.mock_production.name = "test_production"
-        self.mock_production.rundir = self.test_dir
+        self.mock_production.rundir = self.rundir
         self.mock_production.meta = {}
         
         # Create mock event
@@ -44,13 +55,18 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
         pipeline.before_config(dryrun=False)
         
         # Check that environment files were created
-        self.assertTrue(os.path.exists(os.path.join(self.test_dir, 'environment.json')))
+        self.assertTrue(os.path.exists(os.path.join(self.env_dir, 'environment.json')))
         
         # Check that metadata was updated
         self.assertIn('environment', self.mock_production.meta)
         self.assertIn('files', self.mock_production.meta['environment'])
         self.assertTrue(self.mock_production.meta['environment']['captured_at'])
     
+    def test_before_config_does_not_create_rundir(self):
+        """The run directory must be left for the pipeline to create."""
+        Pipeline(self.mock_production).before_config(dryrun=False)
+        self.assertFalse(os.path.exists(self.rundir))
+
     def test_before_config_dryrun_does_not_capture(self):
         """Test that before_config in dryrun mode doesn't capture environment."""
         pipeline = Pipeline(self.mock_production)
@@ -59,7 +75,7 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
         pipeline.before_config(dryrun=True)
         
         # Check that no environment files were created
-        self.assertFalse(os.path.exists(os.path.join(self.test_dir, 'environment.json')))
+        self.assertFalse(os.path.exists(os.path.join(self.env_dir, 'environment.json')))
         
         # Check that metadata was not updated
         self.assertNotIn('environment', self.mock_production.meta)
@@ -72,7 +88,7 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
         pipeline._capture_environment()
         
         # Check that environment.json was created
-        json_file = os.path.join(self.test_dir, 'environment.json')
+        json_file = os.path.join(self.env_dir, 'environment.json')
         self.assertTrue(os.path.exists(json_file))
         
         # Verify JSON content
@@ -82,20 +98,14 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
             self.assertIn('environment_type', metadata)
             self.assertIn('python_version', metadata)
     
-    def test_capture_environment_handles_missing_rundir(self):
-        """Test that capture handles missing rundir gracefully."""
+    def test_capture_environment_without_rundir(self):
+        """Capture doesn't depend on the analysis having a rundir."""
         self.mock_production.rundir = None
-        pipeline = Pipeline(self.mock_production)
-        
-        # Should not raise an exception
-        try:
-            pipeline._capture_environment()
-        except Exception as e:
-            self.fail(f"_capture_environment raised exception: {e}")
-        
-        # No environment metadata should be added
-        self.assertNotIn('environment', self.mock_production.meta)
-    
+        Pipeline(self.mock_production)._capture_environment()
+
+        self.assertTrue(os.path.exists(os.path.join(self.env_dir, 'environment.json')))
+        self.assertTrue(self.mock_production.meta['environment']['captured_at'])
+
     def test_capture_environment_with_conda(self):
         """Test environment capture in a conda environment."""
         with patch.dict(os.environ, {'CONDA_DEFAULT_ENV': 'test-env'}):
@@ -105,7 +115,7 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
                 pipeline._capture_environment()
                 
                 # Check that conda file was created
-                conda_file = os.path.join(self.test_dir, 'environment-conda.txt')
+                conda_file = os.path.join(self.env_dir, 'environment-conda.txt')
                 self.assertTrue(os.path.exists(conda_file))
                 
                 # Verify content

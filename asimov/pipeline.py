@@ -145,38 +145,48 @@ class Pipeline:
         if not dryrun:
             self._capture_environment()
     
+    def _environment_dir(self):
+        """
+        The directory the captured environment is staged in.
+
+        This is deliberately not the analysis run directory: pipelines
+        expect to create ``rundir`` themselves (and some fail if it already
+        exists), so asimov must not create it ahead of them.
+        """
+        subject = getattr(self.production.event, "name", None) or "project-analyses"
+        return resolve_path(
+            os.path.join(".asimov", "environments", subject, self.production.name)
+        )
+
     def _capture_environment(self):
         """
-        Capture the current software environment and save it to the working directory.
-        
+        Capture the current software environment and stage it under
+        ``.asimov/environments``.
+
         This method captures the software environment (conda/pip packages) and saves
-        the information to the analysis working directory for reproducibility.
+        the information for reproducibility. The files are copied into the results
+        store by :meth:`_store_environment_files` once the analysis completes.
         """
         from .environment import capture_and_save_environment
-        
-        # Get the working directory for this analysis
-        rundir = self.production.rundir
-        
-        if rundir:
-            try:
-                # Capture and save the environment
-                created_files = capture_and_save_environment(rundir)
-                
-                # Store the paths to environment files in the production metadata
-                if 'environment' not in self.production.meta:
-                    self.production.meta['environment'] = {}
-                
-                self.production.meta['environment']['files'] = created_files
-                self.production.meta['environment']['captured_at'] = True
-                
-                self.logger.info(
-                    f"Captured environment for {self.production.name}: {list(created_files.keys())}"
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to capture environment for {self.production.name}: {e}"
-                )
-    
+
+        try:
+            created_files = capture_and_save_environment(self._environment_dir())
+
+            # Store the paths to environment files in the production metadata
+            if 'environment' not in self.production.meta:
+                self.production.meta['environment'] = {}
+
+            self.production.meta['environment']['files'] = created_files
+            self.production.meta['environment']['captured_at'] = True
+
+            self.logger.info(
+                f"Captured environment for {self.production.name}: {list(created_files.keys())}"
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to capture environment for {self.production.name}: {e}"
+            )
+
     def _store_environment_files(self):
         """
         Store the captured environment files in the results store.

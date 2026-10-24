@@ -42,7 +42,7 @@ Accessing Environment Information
 
 The environment files are stored in two locations:
 
-1. **Working Directory**: In the analysis run directory (``rundir``), you can find the environment files immediately after building.
+1. **Staging directory**: ``.asimov/environments/<subject>/<analysis>/`` in the project, immediately after building. This is deliberately outside the analysis run directory (``rundir``), which asimov leaves for the pipeline to create.
 
 2. **Results Store**: After the analysis is uploaded, the environment files are stored in the results store and can be retrieved using asimov's storage API.
 
