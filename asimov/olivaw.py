@@ -21,6 +21,7 @@ import asimov.pipelines  # NoQA
 # Import CLI bits from elsewhere
 from asimov.cli import (  # NoQA
     application,
+    analysis as analysis_cli,
     audit as audit_cli,
     mcp_server as mcp_cli,
     registry as registry_cli,
@@ -102,6 +103,7 @@ olivaw.add_command(monitor.stop)
 olivaw.add_command(monitor.monitor)
 olivaw.add_command(event.event)
 olivaw.add_command(production.production)
+olivaw.add_command(analysis_cli.analysis)
 # Review commands
 olivaw.add_command(review.review)
 olivaw.add_command(vocabulary.vocabulary)

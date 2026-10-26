@@ -56,6 +56,30 @@ class Ledger:
     #: The ``ProjectContext`` this ledger belongs to, if it was opened by one.
     _context = None
 
+    def delete_analysis(self, subject, name):
+        """
+        Remove one analysis of a subject from the ledger.
+
+        Parameters
+        ----------
+        subject : str
+            The name of the subject.
+        name : str
+            The name of the analysis.
+        """
+        raise NotImplementedError
+
+    def delete_project_analysis(self, name):
+        """
+        Remove one project analysis from the ledger.
+
+        Parameters
+        ----------
+        name : str
+            The name of the project analysis.
+        """
+        raise NotImplementedError
+
     @contextlib.contextmanager
     def transaction(self):
         """
@@ -282,6 +306,40 @@ class YAMLLedger(Ledger):
                 dict_to_save = analysis.to_dict().copy()
                 dict_to_save["status"] = analysis.status
                 self.data["project analyses"][i] = dict_to_save
+        self._invalidate_project_analyses_cache()
+        self.save()
+
+    def delete_analysis(self, subject, name):
+        """
+        Remove one analysis of a subject from the ledger.
+
+        It is kept under ``trash``, as a deleted event is.
+        """
+        entry = self.events[subject]
+        kept, removed = [], None
+        for production in entry.get("productions", []):
+            if name in production and removed is None:
+                removed = production
+            else:
+                kept.append(production)
+        if removed is None:
+            raise ValueError(f"'{name}' is not an analysis of '{subject}'")
+        entry["productions"] = kept
+        trash = self.data.setdefault("trash", {}).setdefault("analyses", {})
+        trash[f"{subject}/{name}"] = removed[name]
+        self._invalidate_events_cache()
+        self.save()
+
+    def delete_project_analysis(self, name):
+        """
+        Remove one project analysis from the ledger (keeping it under ``trash``).
+        """
+        analyses = self.data.get("project analyses", [])
+        found = [a for a in analyses if a.get("name") == name]
+        if not found:
+            raise ValueError(f"'{name}' is not a project analysis")
+        self.data["project analyses"] = [a for a in analyses if a.get("name") != name]
+        self.data.setdefault("trash", {}).setdefault("project analyses", {})[name] = found[0]
         self._invalidate_project_analyses_cache()
         self.save()
 
@@ -1192,6 +1250,26 @@ class DatabaseLedger(Ledger):
                 self.db.insert_project_analysis(data)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
+        self._invalidate_project_analyses_cache()
+
+    def delete_analysis(self, subject, name):
+        """
+        Delete one analysis of a subject from the database.
+        """
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            self.db.delete_production(subject, name)
+        else:
+            raise NotImplementedError("Delete not implemented for TinyDB backend")
+        self._invalidate_events_cache()
+
+    def delete_project_analysis(self, name):
+        """
+        Delete one project analysis from the database.
+        """
+        if isinstance(self.db, asimov.database.AsimovSQLDatabase):
+            self.db.delete_project_analysis(name)
+        else:
+            raise NotImplementedError("Delete not implemented for TinyDB backend")
         self._invalidate_project_analyses_cache()
 
     def delete_event(self, event_name):
