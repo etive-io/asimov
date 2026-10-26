@@ -24,6 +24,11 @@ FEATURES: Dict[str, str] = {
         "analyses by subject (subject:). A version without this feature ignores "
         "them, and starts the analysis without waiting"
     ),
+    "command-pipeline": (
+        "analyses with a 'command:' (and no 'pipeline:'), run by the built-in command "
+        "pipeline. A version without this feature cannot construct them, and on the "
+        "database ledger skips them when it loads the project"
+    ),
     "subject-analysis-needs": (
         "subject analyses which have both 'analyses:' (what they combine) and 'needs:' "
         "(what they wait on). A version without this feature reads 'needs:' as what "

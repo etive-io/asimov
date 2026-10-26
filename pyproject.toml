@@ -115,6 +115,7 @@ packages = [
 "asimov.cli" = ["report-theme/*", "static/*.js"]
 
 [project.entry-points."asimov.pipelines"]
+command = "asimov.pipelines.command:CommandPipeline"
 simpletestpipeline = "asimov.pipelines.testing:SimpleTestPipeline"
 simpletestpipelineb = "asimov.pipelines.testing:SimpleTestPipelineB"
 simpletestpipelinec = "asimov.pipelines.testing:SimpleTestPipelineC"

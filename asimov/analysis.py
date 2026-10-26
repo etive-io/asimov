@@ -1492,6 +1492,11 @@ class SimpleAnalysis(Analysis):
     @classmethod
     def from_dict(cls, parameters, subject=None, ledger=None):
         parameters = deepcopy(parameters)
+        # An analysis which has a command and names no pipeline is run by the
+        # command pipeline. This is decided here, before the pipeline is looked
+        # up for its defaults, its metadata or a ``pipeline:`` filter.
+        if "command" in parameters and "pipeline" not in parameters:
+            parameters["pipeline"] = "command"
         # Check that pars is a dictionary
         if not {"pipeline", "name"} <= parameters.keys():
             raise ValueError(
