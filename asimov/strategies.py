@@ -14,6 +14,7 @@ There are two kinds of strategy:
 """
 
 import logging
+import os
 import sys
 
 import click
@@ -210,6 +211,12 @@ def strategy_plugins() -> Dict[str, Any]:
             found[entry.name] = entry.load()
         except Exception as error:
             logger.warning(f"Could not load the strategy plugin '{entry.name}': {error}")
+    # (As with the testing pipelines, the toy strategy is only there when testing,
+    # and then only when asked for, so that tests of "no strategies" are unaffected.)
+    if os.environ.get("ASIMOV_TESTING") and os.environ.get("ASIMOV_TOY_STRATEGY"):
+        from asimov.pipelines.testing.strategy import ToyRoundsStrategy
+
+        found.setdefault(ToyRoundsStrategy.name, ToyRoundsStrategy)
     return found
 
 
