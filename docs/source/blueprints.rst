@@ -486,6 +486,30 @@ Applying a blueprint again with changes (a higher ``length`` or ``rounds``) upda
 The record can be read with ``asimov audit`` like any other change to the project, and a dry run plans it.
 A strategy is given the record of the group it made before as ``context.group`` (``None`` the first time), so it can tell what has changed.
 
+Working with a group
+^^^^^^^^^^^^^^^^^^^^
+
+The analyses of a group are found by the id they are marked with, never by a pattern in their names::
+
+    asimov analysis list --group fit                  # status of each, and a summary line
+    asimov analysis set --group fit --status stop     # one status for the whole group
+    asimov analysis delete --group fit                # remove the group's analyses
+    asimov analysis rerun SUBJECT NAME --downstream   # reset this one, and all that depend on it
+
+``list`` ends with a summary such as ``96 analyses: 41 finished, 3 running, 52 waiting``; without ``--group`` it lists every analysis.
+
+``rerun --downstream`` resets the analysis and every analysis which depends on it, directly or through others and in any subject, to ``ready`` with no job id, so that the monitor runs them again, each after what it needs.
+``--clean`` also calls each pipeline's ``clean()`` to remove what it produced.
+It does not reset analyses which are not downstream, and it stops without changing anything if any of the ones it would reset is running.
+
+Each command says what it would change and asks before it goes on (``--yes`` skips the question).
+``--dry-run`` says what it would change, and changes nothing.
+``set`` accepts ``ready``, ``wait``, ``stuck``, ``stop``, ``stopped`` and ``cancelled``: use ``stop`` for analyses which are running, so that the monitor cancels their jobs;
+``stopped`` only records that they are stopped.
+``delete`` refuses while any analysis of the group is running unless given ``--force``.
+On a YAML ledger a deleted analysis is kept under ``trash``.
+Every change is written to the audit trail (``asimov audit show``).
+
 Writing a strategy
 ^^^^^^^^^^^^^^^^^^
 

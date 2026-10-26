@@ -945,6 +945,55 @@ class AsimovSQLDatabase(AsimovDatabase):
                 analysis.meta = data["meta"]
             return True
 
+    def delete_production(self, event_name: str, production_name: str) -> bool:
+        """
+        Delete one production of an event.
+
+        Raises
+        ------
+        ValueError
+            If there is no such production.
+        """
+        with self.get_session() as session:
+            rows = (
+                session.query(ProductionModel)
+                .filter(
+                    and_(
+                        ProductionModel.event_name == event_name,
+                        ProductionModel.name == production_name,
+                    )
+                )
+                .all()
+            )
+            if not rows:
+                raise ValueError(
+                    f"Production '{production_name}' not found for event '{event_name}'"
+                )
+            for row in rows:
+                session.delete(row)
+            return True
+
+    def delete_project_analysis(self, name: str) -> bool:
+        """
+        Delete a project analysis.
+
+        Raises
+        ------
+        ValueError
+            If there is no such project analysis.
+        """
+        with self.get_session() as session:
+            rows = (
+                session.query(ProjectAnalysisModel)
+                .filter(ProjectAnalysisModel.name == name)
+                .all()
+            )
+            if not rows:
+                raise ValueError(f"Project analysis '{name}' not found")
+            for row in rows:
+                session.delete(row)
+            return True
+
     def delete_event(self, name: str) -> bool:
         """
         Delete an event from the database.
