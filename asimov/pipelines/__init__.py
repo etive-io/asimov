@@ -27,6 +27,13 @@ if os.environ.get('ASIMOV_TESTING'):
     known_pipelines["subjecttestpipeline"] = SubjectTestPipeline
     known_pipelines["projecttestpipeline"] = ProjectTestPipeline
 
+# The command pipeline is part of asimov. (It is also in the entry points, so it
+# is listed with the others; this keeps it available whatever the installed
+# metadata says.)
+from asimov.pipelines.command import CommandPipeline  # noqa: E402
+
+known_pipelines["command"] = CommandPipeline
+
 for pipeline in discovered_pipelines:
     try:
         known_pipelines[pipeline.name] = pipeline.load()

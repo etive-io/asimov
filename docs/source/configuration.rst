@@ -72,6 +72,19 @@ a submission because it is busy, the pass stops and the analysis is left ready r
 been accepted, and retrying it would queue a duplicate DAG. The number of active analyses is counted from the ledger, so a finished analysis only frees
 its slot once ``asimov monitor`` has recorded that it finished.
 
+``[pipelines.command]``
+-----------------------
+
+Controls the built-in :ref:`command pipeline <command-pipeline>`, which runs a ``command`` from the ledger.
+
+``enabled``
+   Whether analyses with a ``command`` may be built and submitted. Off unless set to ``true``.
+   ``asimov init`` sets it in the new project's own ``.asimov/asimov.conf``.
+
+``allowed_executables``
+   Comma-separated patterns (``*``, ``?``) for the first word of a command, exactly as written. Unset
+   allows any executable.
+
 ``[general]``: event repositories
 -----------------------------------
 

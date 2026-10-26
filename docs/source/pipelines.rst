@@ -26,6 +26,9 @@ Bilby and RIFT support were removed from asimov core in the 0.7 release; support
 provided directly by the upstream ``bilby_pipe``/``RIFT`` packages rather than a bundled interface
 (see :ref:`Bilby<bilby-pipelines>` and :ref:`RIFT<rift-pipelines>` for details).
 
+Not every step needs an interface: an analysis with a ``command`` is run by the built-in
+:ref:`command pipeline <command-pipeline>`.
+
 Adding new pipelines
 --------------------
 

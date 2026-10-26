@@ -156,6 +156,14 @@ def create_project(
         else:
             config.set("slurm", "user", user)
 
+    # The command pipeline runs what a blueprint says, so it is off unless a
+    # project turns it on. Whoever makes a project can already run anything from
+    # their shell, so a new project has it on; the configuration which ships
+    # with asimov, and so every project which has none, does not.
+    if not config.has_section("pipelines.command"):
+        config.add_section("pipelines.command")
+    config.set("pipelines.command", "enabled", "true")
+
     # Write asimov.conf before creating the ledger. This used to be the
     # other way round, which was fine while ledger creation just meant
     # writing a small YAML file - but creating the SQLite database (real

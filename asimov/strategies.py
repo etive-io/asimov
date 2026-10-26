@@ -521,7 +521,11 @@ def _check_documents(kind, identifier, documents, allow_empty=False):
             raise StrategyError(f"The strategy '{kind}' returned a {document_kind} with no name.")
 
         stamped = document_kind in STAMPED_KINDS
-        if stamped and "pipeline" not in document:
+        # (An analysis with a command and no pipeline is run by the command pipeline.)
+        has_pipeline = "pipeline" in document or (
+            document_kind == "analysis" and "command" in document
+        )
+        if stamped and not has_pipeline:
             # Everything which applying needs is checked now, so that a
             # mistake is found before any of the documents have been applied.
             raise StrategyError(

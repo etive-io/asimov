@@ -108,6 +108,10 @@ def features_of(analysis) -> set:
     from asimov.analysis import SubjectAnalysis
 
     found = set()
+    pipeline = getattr(analysis, "pipeline", None)
+    pipeline_name = pipeline if isinstance(pipeline, str) else getattr(pipeline, "name", "")
+    if (getattr(analysis, "meta", None) or {}).get("command") or str(pipeline_name).lower() == "command":
+        found.add("command-pipeline")
     # Older versions read ``analyses:`` too, but take ``needs:`` as what a
     # subject analysis combines when it has any: only both together are misread.
     # (Straight after being applied, the analysis is not yet a SubjectAnalysis,

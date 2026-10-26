@@ -157,6 +157,7 @@ Users' guide
    pipelines/rift
    pipelines/bayeswave
    pipelines/pesummary
+   pipelines/command
 
 Advanced topics
 ---------------
