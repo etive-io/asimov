@@ -1550,7 +1550,24 @@ def html(event, webdir):
 </div>
     """
     
-    cards = summary + filters + search_box
+    # The analyses which strategies made, as groups (above the subjects, since
+    # the subjects' area is laid out by Isotope, which would overlap them)
+    group_section = ""
+    try:
+        from asimov.report_groups import groups_html
+        from asimov.strategies import read_group
+
+        group_section = groups_html(
+            events,
+            current_ledger.project_analyses,
+            lambda identifier: read_group(current_ledger, identifier),
+        )
+    except Exception as error:
+        import logging
+
+        logging.getLogger(__name__).error(f"Failed to render the strategy groups: {error}")
+
+    cards = summary + filters + search_box + group_section
     cards += """
 <div class='container-fluid'><div class='row'><div class='col-12 col-md-3 col-xl-2  asimov-sidebar'>
 """

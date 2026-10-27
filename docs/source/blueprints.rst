@@ -510,6 +510,30 @@ Each command says what it would change and asks before it goes on (``--yes`` ski
 On a YAML ledger a deleted analysis is kept under ``trash``.
 Every change is written to the audit trail (``asimov audit show``).
 
+Groups in the report
+^^^^^^^^^^^^^^^^^^^^
+
+``asimov report html`` has a panel for each group, above the subjects: the name of the group, its strategy, how many of its analyses are in each status (click a status to pick out those analyses in the matrix), and a list of its analyses.
+Analyses which no strategy made are not in any group.
+
+If the blueprint names two metadata keys under ``report``, the panel also has a matrix with one cell for each analysis, placed by the two keys and coloured by status::
+
+    kind: analysis
+    name: globalfit
+    strategy:
+      type: round-robin
+      rounds: 12
+    report:
+      rows: stream
+      columns: round
+
+The keys are those which the strategy sets on the analyses it makes (``round`` and ``stream`` here), and nothing in the strategy needs to know about the report.
+A key may be dotted to reach into a mapping (``likelihood.minimum frequency``).
+A combination which no analysis has is left empty, and an analysis which lacks either key is not in the grid (the panel says how many).
+Hover over a cell for the analysis and its status; click it for the same details, logs included, as on the subject's card.
+Numbers are put in order as numbers, and names with numbers in them in numerical order (``r2`` before ``r10``).
+Without ``report`` the panel has the summary and the list only.
+
 Writing a strategy
 ^^^^^^^^^^^^^^^^^^
 

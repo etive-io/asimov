@@ -62,6 +62,8 @@ class ToyRoundsStrategy(Strategy):
 
         def step(subject, r, needs):
             return {
+                "round": r,
+                "stream": subject,
                 "kind": "analysis",
                 "name": f"step-r{r}",
                 "event": subject,

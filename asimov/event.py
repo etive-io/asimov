@@ -974,6 +974,7 @@ Object.assign(window.asimovNodeMap, {node_map_js});
 
                     card += f"""<div id="{data_id}" style="display:none;"
                          data-name="{node.name}"
+                         data-analysis-key="{html.escape(self.name + '/' + node.name, quote=True)}"
                          data-status="{status}"
                          data-status-badge="{status_badge}"
                          data-pipeline="{pipeline_name}"
