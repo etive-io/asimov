@@ -25,8 +25,10 @@ class TestPipelineEnvironmentCapture(unittest.TestCase):
             self.test_dir, ".asimov", "environments", "test_event", "test_production"
         )
         patcher = patch(
-            "asimov.pipeline.resolve_path",
-            side_effect=lambda p: os.path.join(self.test_dir, p),
+            "asimov.pipeline.config.get",
+            side_effect=lambda section, key, *a, **k: self.test_dir
+            if (section, key) == ("project", "root")
+            else None,
         )
         patcher.start()
         self.addCleanup(patcher.stop)

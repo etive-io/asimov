@@ -153,8 +153,12 @@ class Pipeline:
         exists), so asimov must not create it ahead of them.
         """
         subject = getattr(self.production.event, "name", None) or "project-analyses"
-        return resolve_path(
-            os.path.join(".asimov", "environments", subject, self.production.name)
+        return os.path.join(
+            config.get("project", "root"),
+            ".asimov",
+            "environments",
+            subject,
+            self.production.name,
         )
 
     def _capture_environment(self):
