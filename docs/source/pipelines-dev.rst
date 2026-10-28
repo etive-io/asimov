@@ -420,7 +420,9 @@ Automatic environment capture
 
 ``Pipeline.before_config`` now captures the current software environment (the conda/pip
 package list) by default, via a new ``Pipeline._capture_environment`` method, and records the
-resulting files under ``production.meta['environment']['files']``. ``Pipeline.store_results``
+resulting files under ``production.meta['environment']['files']``. The files are staged in
+``.asimov/environments/<subject>/<analysis>/``, not in ``rundir``, so asimov never creates the
+run directory ahead of your pipeline. ``Pipeline.store_results``
 now also calls a new ``Pipeline._store_environment_files`` method to place these files into
 the results store alongside the analysis' other outputs.
 
