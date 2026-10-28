@@ -1,3 +1,21 @@
+0.8.1
+=====
+
+This is a bug-fix release for the v0.8 series.
+
+Bug Fixes
+---------
+
+**Run Directory No Longer Created Before the Pipeline Builds**
+  Since 0.8.0, ``asimov manage build`` captured the software environment into the analysis
+  run directory, creating it ahead of the pipeline. Pipelines which create the run directory
+  themselves, and fail if it already exists, therefore stopped working (#288). The environment
+  files are now staged in ``.asimov/environments/<subject>/<analysis>/`` instead, and asimov
+  no longer creates the run directory. They are still copied into the results store when the
+  analysis completes, so ``environment.files`` in the analysis metadata and the provenance
+  records are otherwise unchanged. Ledgers built with 0.8.0 may hold ``environment.files``
+  paths inside the run directory; these are skipped if they no longer exist.
+
 0.8.0
 =====
 
