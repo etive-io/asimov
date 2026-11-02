@@ -189,7 +189,11 @@ def build_analyses(event=None, dryrun=False):
 
     click.echo("Loading events...")
     events = ledger.get_event(event)
-    click.echo(f"Building {len(events)} event(s)")
+    # (What the subjects are called, if their type says; otherwise what it always said.)
+    from asimov.subject_types import noun_of
+
+    noun = noun_of(events)
+    click.echo(f"Building {len(events)} {noun[0] + '(s)' if noun else 'event(s)'}")
     # Coalesce ledger writes: each one rewrites the whole ledger.
     with ledger.batch_saves():
         for analysis in ledger.project_analyses:

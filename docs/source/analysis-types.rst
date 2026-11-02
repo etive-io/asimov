@@ -1,7 +1,7 @@
 .. _analysis-types:
 
-Analysis types
-==============
+Analysis types and subject types
+================================
 
 An analysis has a *type*, which is the class asimov builds it from.
 Until analysis types, every analysis of a subject was a gravitational-wave one, whatever its domain: it had a likelihood, a waveform and data in its metadata, and asimov looked for PSDs for it.
@@ -139,3 +139,41 @@ The gravitational-wave type is made of the same hooks: its defaults, its migrati
 
 ``Production.from_dict`` (and so everything which builds an analysis) chooses the type; asking a class directly (``SimpleAnalysis.from_dict``) builds that class.
 Constructing ``Production(...)`` directly, as the REST API does, builds a gravitational-wave analysis.
+
+.. _subject-types:
+
+Subject types
+-------------
+
+A *subject* is, by default, an :class:`asimov.event.Event`, "a specific gravitational wave event or trigger".
+A plugin can provide a type for its own domain, and a subject says which with ``type:``:
+
+.. code-block:: yaml
+
+    kind: subject
+    name: stream-north
+    type: fit-component
+
+A subject type is a subclass of ``Event``, registered by name in the ``asimov.subject_types`` entry-point group:
+
+.. code-block:: toml
+
+    [project.entry-points."asimov.subject_types"]
+    fit-component = "my_package.subjects:FitComponent"
+
+.. code-block:: python
+
+    from asimov.event import Event
+
+    class FitComponent(Event):
+        subject_noun = "component"
+
+For now a subject type is about *display*.
+``subject_noun`` (and ``subject_noun_plural``, if the plural is not just an "s") says what its subjects are called, and the report and ``asimov manage build`` use it where they would say "subjects" and "events": the heading of the list of subjects in the report, its search box, and "Building 3 component(s)".
+It is used only if every subject being shown has a type which says, and the same thing; otherwise the report and the commands say what they always have.
+The commands are still ``asimov event`` and ``asimov production``: what they are called is a separate question.
+
+A subject of a type still has the git repository and the working directory of an event, and the same metadata.
+Nothing is stored but ``type:``, in the metadata of the subject, so a ledger needs no migration, and a version of asimov without subject types loads the subject as an ordinary event with ``type`` as one more key of metadata.
+So does this version, with a warning, if the plugin which provides the type is not installed, so that one missing plugin cannot make a whole ledger unreadable.
+Applying a subject of a type which is not installed is an error, which names the types which are.

@@ -38,7 +38,8 @@ class ToyRoundsStrategy(Strategy):
         one is refused. Default false.
     typed : bool
         Make the analyses of the type ``toy-step``, which has a ``round`` and a
-        ``stream`` (see :mod:`asimov.pipelines.testing.types`). Default false.
+        ``stream``, and the components of the subject type ``toy-component`` (see
+        :mod:`asimov.pipelines.testing.types`). Default false.
     """
 
     name = "toy-rounds"
@@ -62,6 +63,11 @@ class ToyRoundsStrategy(Strategy):
             {"kind": "event", "name": subject, "interferometers": ["H1"]}
             for subject in components + ["shared"]
         ]
+        if spec.get("typed"):
+            # (The components are the toy subject type; ``shared`` is an ordinary subject.)
+            for document in documents:
+                if document["name"] in components:
+                    document["type"] = "toy-component"
 
         typed = bool(spec.get("typed"))
 
