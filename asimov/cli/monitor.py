@@ -10,7 +10,7 @@ import click
 from copy import deepcopy
 from pathlib import Path
 
-from asimov import condor, config, logger, LOGGER_LEVEL
+from asimov import condor, config, logger, retry, LOGGER_LEVEL
 from asimov.context import current_context, resolve_path
 from asimov.principal import Principal, acting_as
 from asimov.context import active_ledger as ledger
@@ -419,13 +419,26 @@ _DONE_STATES = frozenset({"finished", "uploaded", "complete"})
 _INACTIVE_STATES = frozenset({"cancelled", "stop"})
 
 
-def _status_counts(event):
-    """Count the analyses by status, for the subjects and project analyses."""
-    counts = {}
+def _analyses(event):
+    """The analyses of the subjects (and, for the whole project, the project analyses)."""
     analyses = [a for subject in ledger.get_event(event) for a in subject.productions]
     if event is None:
         analyses += list(ledger.project_analyses)
-    for analysis in analyses:
+    return analyses
+
+
+def _attempt_counts(event):
+    """How many failures are recorded for each analysis, by ``(subject, name)``."""
+    return {
+        (getattr(getattr(a, "event", None), "name", None), a.name): len(retry.attempts_made(a))
+        for a in _analyses(event)
+    }
+
+
+def _status_counts(event):
+    """Count the analyses by status, for the subjects and project analyses."""
+    counts = {}
+    for analysis in _analyses(event):
         counts[analysis.status] = counts.get(analysis.status, 0) + 1
     return counts
 
@@ -455,6 +468,7 @@ def _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeo
     while True:
         passes += 1
         click.secho(f"Pass {passes}", bold=True)
+        failures_before = _attempt_counts(event)
         try:
             result = ctx.invoke(
                 monitor, event=event, update=update, dry_run=dry_run,
@@ -467,8 +481,16 @@ def _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeo
         counts = _status_counts(event)
         click.echo(f"After pass {passes}: {_summarise(counts)}")
 
-        working = any(counts.get(state) for state in RUNNING_STATES)
-        progressed = result.get("submitted", 0) or result.get("newly_finished", 0)
+        # An analysis which failed and will be tried again, after its delay, is still work.
+        waiting = retry.pending(_analyses(event))
+        if waiting:
+            click.echo(f"  {waiting} waiting to be tried again")
+        working = waiting or any(counts.get(state) for state in RUNNING_STATES)
+        # An analysis which failed in this pass and is to be tried again will start in the next.
+        retried = any(
+            n > failures_before.get(key, 0) for key, n in _attempt_counts(event).items()
+        )
+        progressed = result.get("submitted", 0) or result.get("newly_finished", 0) or retried
         if not working and not progressed:
             break
         if dry_run:

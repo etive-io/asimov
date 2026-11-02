@@ -26,6 +26,7 @@ from .git import EventRepo
 status_map = {
     "cancelled": "light",
     "finished": "success",
+    "skipped": "light",
     "uploaded": "success",
     "processing": "primary",
     "running": "primary",
@@ -596,7 +597,7 @@ class Event:
             [
                 production
                 for production in self.productions
-                if (production.finished is False and production.status not in {"wait"})
+                if (production.finished is False and production.status not in {"wait", "skipped"})
             ]
         )
 
@@ -642,7 +643,12 @@ class Event:
             end for end in ends if not getattr(end, "foreign_dependencies_unfinished", None)
         ]
 
-        ready_values = {end for end in ends if end.status.lower() == "ready"}
+        # (One which failed is not started again until its delay is over: see asimov.retry.)
+        from asimov import retry
+
+        ready_values = {
+            end for end in ends if end.status.lower() == "ready" and not retry.deferred(end)
+        }
 
         return set(ready_values)  # only want to return one version of each production!
 

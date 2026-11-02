@@ -50,6 +50,7 @@ from .ini import RunConfiguration
 status_map = {
     "cancelled": "light",
     "finished": "success",
+    "skipped": "light",
     "uploaded": "success",
     "processing": "primary",
     "running": "primary",
@@ -418,6 +419,7 @@ class Analysis:
             for analysis in self.dependency_objects
             if self._is_foreign(analysis)
             and not analysis.finished
+            and str(analysis.status).lower() != "skipped"
             and analysis.status != "wait"
         ]
 

@@ -43,6 +43,7 @@ STATUS_CLASS = {
     "stopped": "stopped",
     "cancelled": "stopped",
     "manual": "wait",
+    "skipped": "stopped",
 }
 
 STYLE = """

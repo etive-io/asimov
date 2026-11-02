@@ -46,6 +46,7 @@ The following state handlers are provided in ``asimov.monitor_states``:
 * **ProcessingState**: Handles analyses in post-processing phase
 * **StuckState**: Handles analyses that are stuck and need intervention
 * **StoppedState**: Handles analyses that have been stopped
+* **SkippedState**: Handles analyses which failed and were given up on (see :ref:`retry-policy`)
 
 asimov also ships eight further built-in handlers, defined in ``asimov.custom_states`` and
 auto-registered on import:
@@ -155,6 +156,43 @@ With ``type = local`` in the ``[scheduler]`` section, jobs are processes of the 
 
 The local scheduler only knows the processes which its own run of asimov started.
 Run by itself, ``asimov monitor`` in a different command does not see a job which another command started, and takes it for evicted until its results appear.
+
+.. _retry-policy:
+
+When an analysis fails
+^^^^^^^^^^^^^^^^^^^^^^
+
+By default a failure leaves the analysis ``stuck``, and what needs it waits until a person acts.
+A *retry policy* makes the monitor try again, and ``on failure`` says what the analyses which need it do if it never works.
+Nothing changes unless a policy is set: on the analysis (and so, with the ``pipelines:`` defaults of the project, for a whole pipeline), or for the project in the ``[retry]`` section of ``asimov.conf``, in that order of precedence.
+
+.. code-block:: yaml
+
+    kind: analysis
+    name: fit
+    command: [gwaith_fit, --output, "{outputs.result}"]
+    outputs:
+      result: result.hdf
+    retry:
+      attempts: 4                 # in all, counting the first
+      deterministic attempts: 2   # when the command ran and failed
+      delay: 60                   # seconds before the next attempt
+      backoff: 2                  # times this for each attempt after
+    on failure: skip              # or halt, the default
+
+``attempts``
+   How many times it may be run, the first included. The default, ``1``, is no retry.
+``deterministic attempts``
+   The most attempts if the command ran and failed (default ``2``, and never more than ``attempts``). Trying again is unlikely to fix that, so it is tried fewer times than a failure which is plausibly not the analysis's fault: a held job, or one a pipeline reports as ``transient``.
+``delay`` and ``backoff``
+   Seconds to wait before the next attempt, and the factor by which that grows with each. The analysis is ``ready`` again at once, and is not started before its delay is over. ``monitor --until-idle`` keeps going while one is waiting.
+``on failure``
+   What happens after the last attempt. ``halt`` (the default) leaves it ``stuck``, and what needs it waits. ``skip`` makes it ``skipped``, which lets what needs it go ahead *without its outputs*: those are told when they are built (and the command pipeline says so if an input it asks for was one of them), and ``skipped inputs`` is recorded on them. A dependent which cannot do without the outputs will fail, so use ``skip`` where the workflow can tolerate a missing step.
+
+Each failure is recorded in the analysis's ``attempts`` (when, the kind, and why), which ``asimov production show`` prints, and after the last attempt a ``retries_exhausted`` telemetry event is emitted for any telemetry sink the project has enabled.
+Running an analysis again by hand (``asimov analysis rerun``, or setting it ``ready``) forgets its attempts.
+A pipeline can mark an exception it raises from ``resurrect()`` as transient by setting ``transient = True`` on it.
+``asimov monitor --until-idle`` exits with ``1`` if an analysis ended ``stuck`` or ``skipped``.
 
 monitor_analysis
 ^^^^^^^^^^^^^^^

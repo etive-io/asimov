@@ -39,6 +39,18 @@ def check_dependencies_satisfied(analysis, logger):
     logger: the logger to record any problems to
     """
     try:
+        from asimov import retry
+
+        for skipped in retry.note_skipped_inputs(analysis):
+            message = (
+                f"{analysis.name} needs {skipped}, which was skipped after failing: "
+                "its outputs are not there"
+            )
+            click.echo(click.style("●", fg="yellow") + f" {message}")
+            logger.warning(message)
+    except Exception as e:
+        logger.warning(f"Could not check for skipped inputs of {analysis.name}: {e}")
+    try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             analysis.validate_needs()

@@ -27,7 +27,7 @@ import shlex
 import stat
 from configparser import NoOptionError, NoSectionError
 
-from asimov import config
+from asimov import config, retry
 from asimov.pipeline import Pipeline, PipelineException
 from asimov.scheduler import JobDescription
 
@@ -255,9 +255,15 @@ class CommandPipeline(Pipeline):
         if not found:
             where = f"{{inputs.{name}.{label}}}" if label else f"{{inputs.{name}}}"
             needs = ", ".join(n for n, _ in providers) or "nothing"
+            skipped = retry.skipped_dependencies(self.production)
+            why = (
+                f" ({', '.join(skipped)} failed and was skipped, so its outputs are absent)"
+                if skipped
+                else ""
+            )
             raise CommandError(
                 f"{self.production.name} uses {where} but no analysis it needs provides it "
-                f"(it needs: {needs})."
+                f"(it needs: {needs}){why}."
             )
         return found
 
