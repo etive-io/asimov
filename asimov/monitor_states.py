@@ -237,6 +237,15 @@ class RunningState(MonitorState):
 
         elif job_status == "completed":
             pipe = analysis.pipeline
+            # The scheduler reporting a job as completed says that it exited,
+            # not that the analysis succeeded: an HTCondor DAG with failed nodes
+            # still ends as a completed DAGMan job. A pipeline which says
+            # explicitly that it is not complete is treated like a job which has
+            # left the queue incomplete, so that it can be rescued, rather than
+            # being marked as finished. (``is False``, because the base class's
+            # ``detect_completion`` returns None, which means "cannot tell".)
+            if pipe.detect_completion() is False:
+                return self._handle_no_condor_job(context)
             pipe.after_completion()
             context.update_ledger()
             click.echo(
@@ -318,7 +327,6 @@ class RunningState(MonitorState):
             )
             try:
                 pipe.resurrect()
-                return True
             except Exception as error:
                 outcome = _fail(context, retry.classify(error), str(error))
                 if outcome == retry.STUCK:
@@ -329,6 +337,15 @@ class RunningState(MonitorState):
                     )
                     return False
                 return True
+            # A resurrect which resubmits work has set a new job id. Save it,
+            # or the next cycle will look for the old one; and refresh the job
+            # list, which is cached for some time, or the new job will not be
+            # found and the work will be submitted again. These are outside the
+            # try so that only a failure of the rescue itself makes the
+            # analysis stuck.
+            context.update_ledger()
+            context.refresh_job_list()
+            return True
 
 
 class FinishedState(MonitorState):

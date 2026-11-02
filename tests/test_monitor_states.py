@@ -444,10 +444,32 @@ class TestRunningState(unittest.TestCase):
     def test_handle_completed_job(self, mock_echo):
         """Test handling a completed condor job."""
         self.job.status = "completed"
+        self.analysis.pipeline.detect_completion = Mock(return_value=True)
         result = self.state.handle(self.context)
         self.assertTrue(result)
         self.analysis.pipeline.after_completion.assert_called_once()
         self.context.refresh_job_list.assert_called_once()
+
+    @patch('asimov.monitor_states.click.echo')
+    def test_completed_job_which_is_incomplete_is_rescued_not_finished(self, mock_echo):
+        """A job the scheduler calls completed, whose outputs are missing, is not finished (#296)."""
+        self.job.status = "completed"
+        self.analysis.pipeline.detect_completion = Mock(return_value=False)
+        result = self.state.handle(self.context)
+        self.assertTrue(result)
+        self.analysis.pipeline.after_completion.assert_not_called()
+        self.analysis.pipeline.resurrect.assert_called_once()
+        self.assertEqual(self.analysis.status, "running")
+
+    @patch('asimov.monitor_states.click.echo')
+    def test_completed_job_of_a_pipeline_which_cannot_tell_is_finished(self, mock_echo):
+        """A pipeline whose detect_completion returns None (the base class) keeps the old behaviour."""
+        self.job.status = "completed"
+        self.analysis.pipeline.detect_completion = Mock(return_value=None)
+        result = self.state.handle(self.context)
+        self.assertTrue(result)
+        self.analysis.pipeline.after_completion.assert_called_once()
+        self.analysis.pipeline.resurrect.assert_not_called()
     
     @patch('asimov.monitor_states.click.echo')
     def test_handle_held_job(self, mock_echo):
@@ -552,6 +574,91 @@ class TestRunningStateProfilingPath(unittest.TestCase):
         self.state.handle(self.context)
 
         self.assertEqual(self.context.update_ledger.call_count, 2)
+
+
+class TestRunningStateResurrect(unittest.TestCase):
+    """What the monitor does with an analysis whose job has gone but which is not complete."""
+
+    def setUp(self):
+        self.analysis = Mock()
+        self.analysis.name = "test_analysis"
+        self.analysis.status = "running"
+        self.analysis.meta = {}
+        self.analysis.pipeline = Mock()
+        self.analysis.pipeline.detect_completion = Mock(return_value=False)
+
+        self.context = Mock(spec=MonitorContext)
+        self.context.analysis = self.analysis
+        self.context.job_id = "12345"
+        self.context.has_condor_job = Mock(return_value=False)
+        self.context.update_ledger = Mock()
+        self.context.refresh_job_list = Mock()
+        self.state = RunningState()
+
+    @patch('asimov.monitor_states.click.echo')
+    def test_ledger_is_saved_after_a_successful_resurrect(self, mock_echo):
+        """The job id a resurrect sets must be saved, or the work is resubmitted (#295)."""
+        result = self.state.handle(self.context)
+        self.assertTrue(result)
+        self.analysis.pipeline.resurrect.assert_called_once()
+        self.context.update_ledger.assert_called_once()
+        self.context.refresh_job_list.assert_called_once()
+        self.assertEqual(self.analysis.status, "running")
+
+    @patch('asimov.monitor_states.click.echo')
+    def test_a_failure_to_save_after_a_rescue_does_not_make_it_stuck(self, mock_echo):
+        """Only a failure of the rescue itself makes the analysis stuck."""
+        self.context.update_ledger = Mock(side_effect=OSError("disk full"))
+        with self.assertRaises(OSError):
+            self.state.handle(self.context)
+        self.analysis.pipeline.resurrect.assert_called_once()
+        self.assertEqual(self.analysis.status, "running")
+
+    @patch('asimov.monitor_states.click.echo')
+    def test_a_rescue_is_submitted_once_over_two_monitor_passes(self, mock_echo):
+        """The job a rescue submits is found by the next pass, so it is not submitted again."""
+        submitted = []
+
+        job_list = Mock()
+        job_list.jobs = {}  # the (cached) listing does not have the new job yet
+
+        def refresh():
+            for job_id in submitted:
+                job_list.jobs[job_id] = {"id": job_id, "status": 2}
+
+        job_list.refresh = Mock(side_effect=refresh)
+
+        analysis = Mock()
+        analysis.name = "dag"
+        analysis.status = "running"
+        analysis.meta = {"scheduler": {"job id": "1"}}
+
+        def resurrect():
+            submitted.append("2")
+            analysis.meta["scheduler"]["job id"] = "2"
+
+        analysis.pipeline = Mock()
+        analysis.pipeline.detect_completion = Mock(return_value=False)
+        analysis.pipeline.resurrect = Mock(side_effect=resurrect)
+
+        ledger = Mock()
+        for _ in range(2):  # two passes of the monitor, each with its own context
+            context = MonitorContext(
+                analysis=analysis, job_list=job_list, ledger=ledger,
+                dry_run=False, analysis_path="subject/dag",
+            )
+            self.assertTrue(RunningState().handle(context))
+
+        self.assertEqual(submitted, ["2"])
+        self.assertEqual(analysis.meta["scheduler"]["job id"], "2")
+
+    @patch('asimov.monitor_states.click.echo')
+    def test_resurrect_which_raises_makes_the_analysis_stuck(self, mock_echo):
+        self.analysis.pipeline.resurrect = Mock(side_effect=RuntimeError("no"))
+        result = self.state.handle(self.context)
+        self.assertFalse(result)
+        self.assertEqual(self.analysis.status, "stuck")
+        self.context.update_ledger.assert_called_once()
 
 
 class TestFinishedState(unittest.TestCase):
