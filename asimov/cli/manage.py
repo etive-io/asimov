@@ -17,6 +17,7 @@ from asimov import LOGGER_LEVEL
 from asimov.event import DescriptionException
 from asimov.pipeline import PipelineException
 from asimov.git import EventRepo
+from asimov import retry
 from asimov.throttle import (
     SubmissionThrottle,
     is_transient_submit_error,
@@ -38,6 +39,18 @@ def check_dependencies_satisfied(analysis, logger):
     analysis: the analysis (production or project analysis) to check
     logger: the logger to record any problems to
     """
+    try:
+        from asimov import retry
+
+        for skipped in retry.note_skipped_inputs(analysis):
+            message = (
+                f"{analysis.name} needs {skipped}, which was skipped after failing: "
+                "its outputs are not there"
+            )
+            click.echo(click.style("●", fg="yellow") + f" {message}")
+            logger.warning(message)
+    except Exception as e:
+        logger.warning(f"Could not check for skipped inputs of {analysis.name}: {e}")
     try:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -190,7 +203,7 @@ def build_analyses(event=None, dryrun=False):
                         analysis.status = "ready"
                         ledger.update_analysis_in_project_analysis(analysis)
 
-                if analysis.status in {"ready"}:
+                if analysis.status in {"ready"} and not retry.deferred(analysis):
                     # Need to ensure a directory exists for these!
                     subj_string = subjects_dirname(analysis._subjects)
                     project_analysis_dir = resolve_path(
@@ -407,6 +420,9 @@ def submit_analyses(event=None, update=False, dryrun=False, max_submit=None):
         extra_prio = False
         to_cancel = False
         if analysis.status not in {"ready", "unready"}:
+            to_analyse = False
+        elif retry.deferred(analysis):
+            # It failed, and is to be tried again after its delay.
             to_analyse = False
         elif analysis.meta['needs']:
             # check if the parent jobs are said to be interesting

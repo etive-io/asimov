@@ -50,6 +50,7 @@ from .ini import RunConfiguration
 status_map = {
     "cancelled": "light",
     "finished": "success",
+    "skipped": "light",
     "uploaded": "success",
     "processing": "primary",
     "running": "primary",
@@ -418,6 +419,7 @@ class Analysis:
             for analysis in self.dependency_objects
             if self._is_foreign(analysis)
             and not analysis.finished
+            and str(analysis.status).lower() != "skipped"
             and analysis.status != "wait"
         ]
 
@@ -1486,6 +1488,8 @@ class SimpleAnalysis(Analysis):
         assets = {}
         # Resolving ``needs`` is not free, so do it once.
         for dependency in self.dependency_objects:
+            if str(dependency.status).lower() == "skipped":
+                continue  # it failed for good: whatever it left is not an output
             assets.update(dependency.pipeline.collect_assets())
         return assets
 
@@ -2721,6 +2725,8 @@ class GravitationalWaveTransient(SimpleAnalysis):
             }
             if productions:
                 for previous_job, dependency in productions.items():
+                    if str(dependency.status).lower() == "skipped":
+                        continue  # it failed for good: whatever it left is not an output
                     try:
                         assets = dependency.pipeline.collect_assets() or {}
                     except Exception as e:

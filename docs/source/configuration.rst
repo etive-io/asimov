@@ -72,6 +72,21 @@ a submission because it is busy, the pass stops and the analysis is left ready r
 been accepted, and retrying it would queue a duplicate DAG. The number of active analyses is counted from the ledger, so a finished analysis only frees
 its slot once ``asimov monitor`` has recorded that it finished.
 
+``[retry]``
+-----------
+
+The project's default policy for failed analyses (see :ref:`retry-policy`). An analysis's own ``retry`` block takes precedence.
+Nothing is retried unless ``attempts`` is more than ``1``.
+
+``attempts``, ``deterministic_attempts``
+   How many times an analysis may run, and how many if its command ran and failed.
+
+``delay``, ``backoff``
+   Seconds before the next attempt, and the factor by which it grows for each after.
+
+``on_failure``
+   ``halt`` (the default) or ``skip``: what analyses which need one that failed for good do.
+
 ``[pipelines.command]``
 -----------------------
 

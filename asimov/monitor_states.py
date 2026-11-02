@@ -8,7 +8,7 @@ hard-coded if-elif chains in the monitor loop.
 from abc import ABC, abstractmethod
 import sys
 import click
-from asimov import logger, LOGGER_LEVEL, condor
+from asimov import logger, LOGGER_LEVEL, condor, retry
 from asimov.telemetry import emit_event
 
 if sys.version_info < (3, 10):
@@ -45,6 +45,68 @@ def _collect_history_for(context, job_id):
     if scheduler is not None:
         return scheduler.collect_history(job_id)
     return condor.collect_history(job_id)
+
+
+def _job_removed(analysis):
+    """
+    Remove an analysis's job from the scheduler, and say whether that is certain.
+
+    ``Pipeline.eject_job`` does not raise when the scheduler refuses, but it does
+    forget the job id when the job is gone, so the job is removed only if that
+    is what happened.
+    """
+    try:
+        analysis.pipeline.eject_job()
+    except Exception as error:
+        logger.warning(f"Could not remove the job of {analysis.name}: {error}")
+        return False
+    return analysis.job_id is None
+
+
+def _fail(context, kind, reason, remove_job=False):
+    """
+    An analysis has failed: decide what to do about it, as its retry policy
+    says (see :mod:`asimov.retry`). With no policy it is ``stuck``, as it
+    always was.
+
+    A job which is still on the scheduler (``remove_job``) is removed before
+    the analysis is tried again, so that two do not run at once; if that cannot
+    be confirmed, it is left ``stuck`` with its job id.
+
+    Returns
+    -------
+    str
+        ``retry.RETRY``, ``retry.SKIPPED`` or ``retry.STUCK``.
+    """
+    analysis = context.analysis
+    outcome = retry.on_failure(analysis, kind, reason)
+    kept = False
+    if outcome == retry.RETRY and remove_job and not _job_removed(analysis):
+        outcome, kept = retry.STUCK, True
+        analysis.status = "stuck"
+        analysis.meta.pop(retry.RETRY_AFTER_KEY, None)
+        history = retry.attempts_made(analysis)
+        if history:
+            history[-1]["reason"] += "; the job could not be removed from the scheduler, so it was not tried again"
+    if outcome == retry.RETRY:
+        context.clear_job_id()
+    if kept:
+        click.echo(
+            "  \t  "
+            + click.style("●", "red")
+            + f" {analysis.name} is stuck: its job could not be removed from the scheduler, so it was not tried again"
+        )
+    elif outcome != retry.STUCK or retry.policy(analysis)["configured"]:
+        colour = {"retry": "yellow", "skipped": "red", "stuck": "red"}[outcome]
+        click.echo(
+            "  \t  "
+            + click.style("●", colour)
+            + f" {analysis.name} {retry.describe(analysis, outcome)} ({reason})"
+        )
+    if outcome != retry.RETRY and not kept and retry.policy(analysis)["configured"]:
+        retry.exhausted(analysis, getattr(context, "ledger", None), reason)
+    context.update_ledger()
+    return outcome
 
 
 class MonitorState(ABC):
@@ -201,8 +263,7 @@ class RunningState(MonitorState):
                 + f" {analysis.name} is held on the scheduler"
                 + f" (condor id: {context.job_id})"
             )
-            analysis.status = "stuck"
-            context.update_ledger()
+            _fail(context, retry.TRANSIENT, "the job was held on the scheduler", remove_job=True)
             return True
             
         return False
@@ -266,15 +327,16 @@ class RunningState(MonitorState):
             )
             try:
                 pipe.resurrect()
-            except Exception:
-                analysis.status = "stuck"
-                click.echo(
-                    "  \t  "
-                    + click.style("●", "red")
-                    + f" {analysis.name} is stuck; automatic rescue was not possible"
-                )
-                context.update_ledger()
-                return False
+            except Exception as error:
+                outcome = _fail(context, retry.classify(error), str(error))
+                if outcome == retry.STUCK:
+                    click.echo(
+                        "  \t  "
+                        + click.style("●", "red")
+                        + f" {analysis.name} is stuck; automatic rescue was not possible"
+                    )
+                    return False
+                return True
             # A resurrect which resubmits work has set a new job id. Save it,
             # or the next cycle will look for the old one; and refresh the job
             # list, which is cached for some time, or the new job will not be
@@ -373,6 +435,23 @@ class StuckState(MonitorState):
         return True
 
 
+class SkippedState(MonitorState):
+    """Handle analyses in 'skipped' state: they failed, and were given up on."""
+
+    @property
+    def state_name(self):
+        return "skipped"
+
+    def handle(self, context):
+        """Skipped analyses are not active, just report status."""
+        click.echo(
+            "  \t  "
+            + click.style("●", "red")
+            + f" {context.analysis.name} was skipped"
+        )
+        return True
+
+
 class StoppedState(MonitorState):
     """Handle analyses in 'stopped' state."""
     
@@ -399,6 +478,7 @@ STATE_REGISTRY = {
     "processing": ProcessingState(),
     "stuck": StuckState(),
     "stopped": StoppedState(),
+    "skipped": SkippedState(),
 }
 
 

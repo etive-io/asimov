@@ -12,6 +12,7 @@ every change is also written to the audit trail.
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+from asimov import retry
 from asimov.audit import append_audit, new_record
 from asimov.strategies import read_group, strategy_stamp
 
@@ -20,7 +21,7 @@ from asimov.strategies import read_group, strategy_stamp
 RUNNING = frozenset({"running", "processing", "uploading"})
 
 #: The statuses which ``set`` accepts (as ``asimov production set`` does).
-SETTABLE = frozenset({"ready", "wait", "stuck", "stop", "stopped", "cancelled"})
+SETTABLE = frozenset({"ready", "wait", "stuck", "stop", "stopped", "cancelled", "skipped"})
 
 
 class GroupError(ValueError):
@@ -175,6 +176,8 @@ def set_status(ledger, members: List[Member], status: str) -> List[Member]:
             if before == status:
                 continue
             member.analysis.status = status
+            if status == "ready":
+                retry.clear(member.analysis)
             _save(ledger, member)
             _audit(ledger, "set-status", member, {"from": before, "to": status})
             changed.append(member)
@@ -193,6 +196,7 @@ def reset(ledger, members: List[Member], clean: bool = False) -> List[Member]:
             if clean:
                 analysis.pipeline.clean()
             analysis.status = "ready"
+            retry.clear(analysis)
             scheduler = analysis.meta.get("scheduler")
             if isinstance(scheduler, dict):
                 scheduler.pop("job id", None)
