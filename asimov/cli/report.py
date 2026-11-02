@@ -1567,9 +1567,15 @@ def html(event, webdir):
     """
     
     # Build search box
-    search_box = """
+    # (What the subjects are called, if their type says; otherwise what it always said.)
+    from html import escape as _escape
+    from asimov.subject_types import noun_of
+
+    noun = noun_of(events)
+    search_for = f"{_escape(noun[1])}" if noun else "events/subjects"
+    search_box = f"""
 <div class='container-fluid'>
-    <input type='text' id='subject-search' class='search-box' placeholder='Search events/subjects...'>
+    <input type='text' id='subject-search' class='search-box' placeholder='Search {search_for}...'>
 </div>
     """
     
@@ -1595,7 +1601,7 @@ def html(event, webdir):
 <div class='container-fluid'><div class='row'><div class='col-12 col-md-3 col-xl-2  asimov-sidebar'>
 """
 
-    toc = """<nav><h6>Subjects</h6><ul class="list-unstyled">"""
+    toc = f"""<nav><h6>{_escape(noun[1].capitalize()) if noun else "Subjects"}</h6><ul class="list-unstyled">"""
     for event in events:
         toc += f"""<li><a href="#card-{event.name}">{event.name}</a></li>"""
 

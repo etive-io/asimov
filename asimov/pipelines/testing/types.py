@@ -13,6 +13,7 @@ import os
 
 from asimov.analysis import SimpleAnalysis
 from asimov.analysis_types import compare
+from asimov.event import Event
 
 
 class ToyStep(SimpleAnalysis):
@@ -71,3 +72,15 @@ class ToyStep(SimpleAnalysis):
 
     def card_details(self):
         return [("Round", self.round), ("Stream", self.stream)]
+
+
+class ToyComponent(Event):
+    """
+    A toy subject type: a component of an iterative fit, which is what its
+    subjects are called in the report and the build commands (#238).
+
+    It is registered, and made by the toy strategy with ``typed: true``, only
+    under ``ASIMOV_TESTING`` and ``ASIMOV_TOY_STRATEGY``.
+    """
+
+    subject_noun = "component"

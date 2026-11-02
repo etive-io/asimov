@@ -24,7 +24,7 @@ import asimov.event
 from asimov.analysis import ProjectAnalysis
 from asimov.ledger import Ledger
 from asimov.utils import update
-from asimov import features
+from asimov import features, subject_types
 from asimov.needs_check import check_needs
 from asimov.strategies import (
     StrategyContext,
@@ -626,6 +626,14 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
         if document["kind"] in ("event", "subject"):
             logger.info("Found an event")
             document.pop("kind")
+            try:
+                subject_types.check(document)
+            except subject_types.SubjectTypeError as error:
+                _say(
+                    click.style("●", fg="red")
+                    + f" Could not apply {document.get('name', 'a subject')}: {error}"
+                )
+                continue
             event_obj = asimov.event.Event.from_yaml(yaml.dump(document))
 
             # Check if the event is in the ledger already. ledger.events is a

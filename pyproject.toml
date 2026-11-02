@@ -143,6 +143,11 @@ prometheus = "asimov.telemetry:PrometheusPushgatewaySink"
 simple = "asimov.analysis:SimpleAnalysis"
 gravitational-wave-transient = "asimov.analysis:GravitationalWaveTransient"
 
+# Subject types (#238): what kind of subject a blueprint makes. Registered by name here,
+# and selected with ``type:`` on the subject.
+[project.entry-points."asimov.subject_types"]
+event = "asimov.event:Event"
+
 [project.entry-points."asimov.strategies"]
 chain = "asimov.strategies_builtin:ChainStrategy"
 

@@ -70,7 +70,25 @@ Please fix the error and then remove the `yaml-error` label from this issue.
 class Event:
     """
     A specific gravitational wave event or trigger.
+
+    This is the default type of a subject. A subject of another type (see
+    :mod:`asimov.subject_types`) is a subclass, chosen by ``type:`` when the
+    subject is built, whichever way it is built.
     """
+
+    #: What subjects of this type are called, in the report and the build commands,
+    #: or None to say what asimov always has ("subjects", and "events"). A type sets
+    #: it (``subject_noun = "component"``); ``subject_noun_plural`` if adding "s"
+    #: is not the plural.
+    subject_noun = None
+    subject_noun_plural = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls is Event and "type" in kwargs:
+            from asimov.subject_types import class_for
+
+            return super().__new__(class_for(kwargs))
+        return super().__new__(cls)
 
     def __init__(self, name, repository=None, update=False, **kwargs):
         """
