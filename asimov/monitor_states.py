@@ -266,10 +266,6 @@ class RunningState(MonitorState):
             )
             try:
                 pipe.resurrect()
-                # A resurrect which resubmits work has set a new job id, which
-                # must be saved or the next cycle will look for the old one.
-                context.update_ledger()
-                return True
             except Exception:
                 analysis.status = "stuck"
                 click.echo(
@@ -279,6 +275,15 @@ class RunningState(MonitorState):
                 )
                 context.update_ledger()
                 return False
+            # A resurrect which resubmits work has set a new job id. Save it,
+            # or the next cycle will look for the old one; and refresh the job
+            # list, which is cached for some time, or the new job will not be
+            # found and the work will be submitted again. These are outside the
+            # try so that only a failure of the rescue itself makes the
+            # analysis stuck.
+            context.update_ledger()
+            context.refresh_job_list()
+            return True
 
 
 class FinishedState(MonitorState):
