@@ -527,6 +527,21 @@ class Pipeline:
         raise NotImplementedError
 
     def resurrect(self):
+        """
+        Define a hook to run when a running analysis has left the scheduler
+        without being complete.
+
+        ``asimov monitor`` calls this on each cycle in which the analysis's job
+        is gone (or the scheduler reports it as completed) and
+        :meth:`detect_completion` is false. It can, for instance, submit a rescue
+        DAG.
+
+        Returning normally means the situation is handled: the analysis stays
+        ``running`` and this is called again on the next cycle, so a pipeline can
+        wait before it resubmits. Raising an exception marks the analysis
+        ``stuck``, and it is then not called again. If new work is submitted, set
+        the new job id on the analysis; the monitor saves the ledger afterwards.
+        """
         pass
 
     def while_running(self):

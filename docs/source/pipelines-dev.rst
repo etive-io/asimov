@@ -132,7 +132,14 @@ Optional methods
     This method should remove all of the artefacts of a job from the working directory.
 
 ``Pipeline.resurrect``
-    This method will be called on jobs which are marked as ``stuck`` in the asimov ledger, and can be used to, for example, submit a rescue DAG for a job on the condor scheduler.
+    This method is called by ``asimov monitor`` on every cycle in which a ``running`` analysis's job is no longer on the scheduler (or the scheduler reports it as completed) but ``Pipeline.detect_completion`` says the analysis is not complete.
+    It can be used to, for example, submit a rescue DAG on the condor scheduler.
+
+    * Returning normally means the situation has been handled: the analysis stays ``running`` and ``resurrect`` is called again on the next cycle.
+      A pipeline can use this to wait, for instance for a back-off delay, before it resubmits anything.
+    * Raising any exception marks the analysis ``stuck``. A ``stuck`` analysis is reported by the monitor but ``resurrect`` is not called for it again, so this is the way to give up (after too many attempts, say).
+    * If it submits new work it must set the new job id (``self.production.job_id``). The monitor saves the ledger after a successful call.
+    * Any bookkeeping of its own, such as how many attempts have been made, should be kept in the run directory rather than in the ledger, which holds the inputs of an analysis.
 
 ``Pipeline.read_ini``
     This should be implemented as a class method, and should parse the configuration file for the pipeline into a dictionary.
