@@ -179,7 +179,27 @@ def prune(group, done, dry_run, yes):
     if not yes and not click.confirm("Go ahead?"):
         click.echo("Nothing was released.")
         return
-    records = retention.release(ledger, result.items)
+    # Time has passed (at the prompt, for one): something may have been run again, or
+    # finished, since the plan was made, so it is made again and only what is still
+    # releasable, and was confirmed, goes.
+    ledger.refresh()  # (other commands write the ledger too)
+    try:
+        members = groups.everything(ledger)
+        scope = groups.group_members(ledger, group, members) if group else members
+    except GroupError as error:
+        _fail(error)
+    confirmed = {(item.member.key, item.asset) for item in result.items}
+    now = retention.plan(ledger, members, scope, done)
+    items = [item for item in now.items if (item.member.key, item.asset) in confirmed]
+    if len(items) < len(confirmed):
+        click.echo(
+            click.style("●", fg="yellow")
+            + f" {len(confirmed) - len(items)} outputs can no longer be released, and were left"
+        )
+    try:
+        records = retention.release(ledger, items)
+    except RuntimeError as error:
+        raise click.ClickException(str(error))
     click.echo(
         click.style("●", fg="green")
         + f" Released {len(records)} outputs, {retention.human(sum(r['size'] for r in records))}"

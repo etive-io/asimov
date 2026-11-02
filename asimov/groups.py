@@ -134,7 +134,8 @@ def dependents(members: List[Member]) -> dict:
             key = (getattr(event, "name", None), dependency.name)
             if key in found and key != member.key:
                 found[key].append(member.key)
-    return {key: sorted(values) for key, values in found.items()}
+    # (a subject's name or None for a project analysis: not comparable, so sorted apart)
+    return {key: sorted(values, key=lambda k: (k[0] is None, k[0] or "", k[1])) for key, values in found.items()}
 
 
 def downstream(ledger, start: Member, members: Optional[List[Member]] = None) -> List[Member]:
@@ -181,6 +182,8 @@ def set_status(ledger, members: List[Member], status: str) -> List[Member]:
     GroupError
         If ``status`` is not one which may be set.
     """
+    from asimov import retention  # (which needs this module)
+
     if status not in SETTABLE:
         raise GroupError(f"'{status}' cannot be set. Use one of: {', '.join(sorted(SETTABLE))}.")
     changed = []
@@ -192,6 +195,7 @@ def set_status(ledger, members: List[Member], status: str) -> List[Member]:
             member.analysis.status = status
             if status == "ready":
                 retry.clear(member.analysis)
+                retention.clear(member.analysis)
             _save(ledger, member)
             _audit(ledger, "set-status", member, {"from": before, "to": status})
             changed.append(member)

@@ -264,6 +264,11 @@ class Pipeline:
     #: changes for a pipeline which does not say.
     output_retention = {}
 
+    #: Whether :meth:`get_actual_inputs` is a complete list of what the pipeline
+    #: reads from the analyses it needs (so that an empty one means none). A
+    #: pipeline which does not say may read anything. See :mod:`asimov.retention`.
+    declares_inputs = False
+
     def retention_of(self, name):
         """The retention policy of an output: ``keep`` or ``until_consumed``."""
         return (self.output_retention or {}).get(name, "keep")

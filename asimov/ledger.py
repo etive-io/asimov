@@ -173,6 +173,14 @@ class Ledger:
         """Drop the cached ``project_analyses`` result. See _invalidate_events_cache."""
         self._project_analyses_cache = None
 
+    def refresh(self):
+        """
+        Forget what was read, so that what another process has changed since is
+        seen. (A ledger which keeps its data in memory reads it again.)
+        """
+        self._invalidate_events_cache()
+        self._invalidate_project_analyses_cache()
+
     #: Ledger-wide settings which act as project-level defaults for events.
     _DEFAULT_KEYS = ("data", "priors", "quality", "likelihood", "scheduler", "waveform")
 
@@ -239,7 +247,13 @@ class YAMLLedger(Ledger):
         self.location = os.path.abspath(location)
         lock_timeout = int(os.getenv("ASIMOV_LEDGER_FILELOCK_TIMEOUT", "60"))
         self.lock = FileLock(f"{self.location}.lock", timeout=lock_timeout)
-        with open(location, "r") as ledger_file:
+        self._read()
+        self._batch_depth = 0
+        self._batch_dirty = False
+
+    def _read(self):
+        """Read the ledger from its file."""
+        with open(self.location, "r") as ledger_file:
             self.data = yaml.safe_load(ledger_file)
 
         self.data["events"] = [
@@ -250,9 +264,14 @@ class YAMLLedger(Ledger):
         self.events = {ev["name"]: ev for ev in self.data["events"]}
         self._events_cache = None
         self._project_analyses_cache = None
-        self._batch_depth = 0
-        self._batch_dirty = False
         self.data.pop("events")
+
+    def refresh(self):
+        """
+        Read the ledger again from its file, so that what another process has
+        changed since it was read is seen. Anything not yet saved is lost.
+        """
+        self._read()
 
     def __getstate__(self):
         """

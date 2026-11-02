@@ -343,10 +343,12 @@ class GroupTests(RetentionCase):
         with self.plugins(fixed=Fixed):
             self.assertEqual(self.released_items(), [("E/gen", "big"), ("E/gen", "tree")])
 
-    def test_a_strategy_which_is_not_installed_does_not_hold_things_back(self):
+    def test_a_strategy_which_cannot_be_found_keeps_what_it_made(self):
+        """It may have failed to load for now: that does not say its group will not grow."""
         self.stamp("gone")
         with self.plugins():
-            self.assertEqual(self.released_items(), [("E/gen", "big"), ("E/gen", "tree")])
+            self.assertEqual(self.released_items(), [])
+            self.assertEqual(self.released_items(done=True), [("E/gen", "big"), ("E/gen", "tree")])
 
     def test_a_strategy_which_fails_when_asked_keeps_everything(self):
         class Broken(Grower):
@@ -534,6 +536,236 @@ class CommandTests(RetentionCase):
         meta = self.find("E", "gen").analysis.meta
         self.assertNotIn("released", meta)
         self.assertNotIn("assets", meta)
+
+
+class ReviewTests(RetentionCase):
+    """What a review of the first version found."""
+
+    def setUp(self):
+        super().setUp()
+        self.make_outputs()
+        self.finish_all()
+
+    def cli(self, *arguments, **kwargs):
+        with patch("asimov.cli.analysis.ledger", self.fresh()):
+            return CliRunner().invoke(analysis_cli.analysis, list(arguments), **kwargs)
+
+    def only_gen(self, paths):
+        """gen's pipeline says it made these; no other analysis made anything."""
+        return patch.object(
+            type(self.find("E", "gen").analysis.pipeline),
+            "output_paths",
+            autospec=True,
+            side_effect=lambda pipe: paths if pipe.production.name == "gen" else {},
+        )
+
+    # Nothing is released which has become needed since the plan was made
+
+    def test_what_is_needed_again_while_the_prompt_is_open_is_not_released(self):
+        from asimov.cli import analysis as module
+
+        original = module.click.confirm
+
+        def meanwhile(*a, **k):
+            # another command runs the consumer again, while the question is on the screen
+            self.change("E", "use", "ready")
+            return True
+
+        with patch.object(module.click, "confirm", side_effect=meanwhile):
+            result = self.cli("prune")
+        self.assertIn("can no longer be released", result.output)
+        self.assertTrue(os.path.exists(os.path.join(self.find("E", "gen").analysis.rundir, "big.dat")))
+        self.assertEqual(retention.released_names(self.find("E", "gen").analysis), set())
+
+    # Something which would release a kept output with it
+
+    def test_a_directory_which_holds_a_kept_output_is_not_released(self):
+        gen = self.find("E", "gen").analysis
+        with open(os.path.join(gen.rundir, "tree", "final.txt"), "w") as handle:
+            handle.write("keep me")
+        paths = {
+            "tree": os.path.join(gen.rundir, "tree"),
+            "final": os.path.join(gen.rundir, "tree", "final.txt"),
+            "big": os.path.join(gen.rundir, "big.dat"),
+        }
+        with self.only_gen(paths):
+            ledger = self.fresh()
+            result = retention.plan(ledger, groups.everything(ledger))
+        self.assertEqual(sorted(i.asset for i in result.items), ["big"])
+        self.assertTrue(any("overlaps" in why and "kept" in why for _, a, why in result.kept if a == "tree"))
+
+    def test_two_names_for_one_file_where_one_is_kept(self):
+        gen = self.find("E", "gen").analysis
+        big = os.path.join(gen.rundir, "big.dat")
+        paths = {"big": big, "final": big}  # final (keep) is the same file
+        with self.only_gen(paths):
+            ledger = self.fresh()
+            result = retention.plan(ledger, groups.everything(ledger))
+        self.assertEqual(result.items, [])
+
+    def test_an_output_which_is_the_results_store_itself_is_not_released(self):
+        gen = self.find("E", "gen").analysis
+        store = os.path.join(gen.rundir, "tree")
+        with patch.object(retention, "_store_root", return_value=os.path.realpath(store)):
+            self.assertNotIn(("E/gen", "tree"), self.released_items())
+            self.assertTrue(any("results store" in why for _, a, why in self.plan().kept if a == "tree"))
+
+    def test_a_directory_which_contains_the_results_store_is_not_released(self):
+        gen = self.find("E", "gen").analysis
+        store = os.path.join(gen.rundir, "tree", "sub")
+        with patch.object(retention, "_store_root", return_value=os.path.realpath(store)):
+            self.assertNotIn(("E/gen", "tree"), self.released_items())
+
+    # A new run starts afresh
+
+    def test_setting_ready_by_hand_forgets_what_was_released(self):
+        retention.release(self.fresh(), self.plan().items)
+        result = self.cli("set", "--group", "nope", "--status", "ready", "--yes")  # (no such group)
+        self.assertNotEqual(result.exit_code, 0)
+        groups.set_status(self.fresh(), [self.find("E", "gen")], "ready")
+        self.assertNotIn("released", self.find("E", "gen").analysis.meta)
+
+    def test_production_set_ready_forgets_what_was_released(self):
+        from asimov.cli import production
+
+        retention.release(self.fresh(), self.plan().items)
+        with patch("asimov.cli.production.ledger", new=self.fresh()):
+            result = CliRunner().invoke(production.set, ["E", "gen", "-s", "ready"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn("released", self.find("E", "gen").analysis.meta)
+
+    def test_submitting_forgets_what_was_released(self):
+        retention.release(self.fresh(), self.plan().items)
+        gen = self.find("E", "gen").analysis
+        self.assertIn("released", gen.meta)
+        with patch("asimov.pipelines.command.JobDescription"), patch.object(
+            type(gen.pipeline), "scheduler", new_callable=MagicMock
+        ) as scheduler:
+            scheduler.submit.return_value = 7
+            gen.pipeline.submit_dag()
+        self.assertNotIn("released", gen.meta)
+        self.assertNotIn("assets", gen.meta)
+
+    def test_a_released_output_is_not_present_for_a_run_which_has_not_made_it(self):
+        retention.release(self.fresh(), self.plan().items)
+        gen = self.find("E", "gen").analysis
+        gen.pipeline.production.meta.pop("released")  # a new run has been started
+        self.assertFalse(gen.pipeline.detect_completion())
+
+    # A released contribution is missing even when another provider has the name
+
+    def test_another_provider_of_the_same_name_does_not_hide_a_released_one(self):
+        self.apply(
+            "kind: analysis\nname: other\ncommand: [true]\noutputs:\n  big: other.dat\n---\n"
+            "kind: analysis\nname: both\ncommand: [cat, '{inputs.big}']\nneeds: [gen, other]\n",
+            "E",
+        )
+        self.make_outputs()
+        self.finish_all()  # (applying more to the subject starts them from ready again)
+        other = self.find("E", "other").analysis
+        os.makedirs(other.rundir, exist_ok=True)
+        with open(os.path.join(other.rundir, "other.dat"), "w") as handle:
+            handle.write("surviving")
+        self.change("E", "other", "complete")
+        self.change("E", "both", "ready")
+        self.assertEqual(len(self.find("E", "both").analysis.pipeline.resolve_command()), 3)  # both are there
+        self.change("E", "both", "complete")  # (it has run; gen's output is no longer needed)
+        retention.release(self.fresh(), self.plan().items)
+        self.change("E", "both", "ready")  # and now it is to be run again
+        with self.assertRaisesRegex(CommandError, "released to save space"):
+            self.find("E", "both").analysis.pipeline.resolve_command()
+
+    # A failure part of the way through does not lose the record of what went
+
+    def test_what_was_removed_is_recorded_when_a_later_removal_fails(self):
+        items = self.plan().items
+        real = os.remove
+        calls = []
+
+        def refuse_big(path):
+            calls.append(path)
+            if path.endswith("big.dat"):
+                raise PermissionError("not allowed")
+            real(path)
+
+        with patch("asimov.retention.os.remove", side_effect=refuse_big):
+            with self.assertRaisesRegex(RuntimeError, "could not be released.*big"):
+                retention.release(self.fresh(), items)
+        gen = self.find("E", "gen").analysis
+        self.assertEqual(retention.released_names(gen), {"tree"})  # tree went, and is recorded
+        self.assertTrue(os.path.exists(os.path.join(gen.rundir, "big.dat")))
+        self.assertFalse(os.path.exists(os.path.join(gen.rundir, "tree")))
+
+    def test_an_output_with_several_paths_records_the_ones_which_went(self):
+        gen = self.find("E", "gen").analysis
+        a, b = os.path.join(gen.rundir, "a.dat"), os.path.join(gen.rundir, "b.dat")
+        for path in (a, b):
+            with open(path, "w") as handle:
+                handle.write("data")
+        item = retention.Item(self.find("E", "gen"), "pair", [a, b], 8, "test")
+        real = os.remove
+
+        def refuse_b(path):
+            if path == b:
+                raise PermissionError("no")
+            real(path)
+
+        with patch("asimov.retention.os.remove", side_effect=refuse_b):
+            with self.assertRaises(RuntimeError):
+                retention.release(self.fresh(), [item])
+        record = retention.released(self.find("E", "gen").analysis)[-1]
+        self.assertEqual(record["paths"], ["a.dat"])
+        self.assertTrue(record["partial"])
+        self.assertTrue(os.path.exists(b))
+
+    def test_the_command_says_what_could_not_be_released(self):
+        with patch("asimov.retention.os.remove", side_effect=PermissionError("no")):
+            result = self.cli("prune", "--yes")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("could not be released", result.output)
+
+    def test_each_file_is_hashed_once(self):
+        with patch.object(retention, "hash_of", wraps=retention.hash_of) as hashed:
+            retention.release(self.fresh(), self.plan().items)
+        big = [c for c in hashed.call_args_list if str(c.args[0]).endswith("big.dat")]
+        self.assertEqual(len(big), 1)
+
+    # A project analysis and a subject's analysis may both need an analysis
+
+    def test_a_producer_with_a_subject_and_a_project_consumer_can_be_planned(self):
+        members = groups.everything(self.fresh())
+        project = types.SimpleNamespace(
+            name="pa", status="complete", meta={}, event=None, pipeline=None, rundir=None,
+            _dependency_analyses=lambda: [self.find("E", "gen").analysis],
+        )
+        members.append(groups.Member(project, None))
+        after = groups.dependents(members)
+        self.assertEqual(after[("E", "gen")], [("E", "use"), ("F", "far"), (None, "pa")])
+        self.assertEqual(
+            [m.label for m in groups.downstream(None, groups.find(self.fresh(), "E", "gen", members), members)][:2],
+            ["E/gen", "E/use"],
+        )
+
+    # An input list which is known to be empty is not an unknown one
+
+    def test_a_command_which_asks_for_nothing_does_not_need_what_was_released(self):
+        retention.release(self.fresh(), self.plan().items)
+        ledger = self.fresh()
+        members = groups.everything(ledger)
+        far = groups.find(ledger, "F", "far", members)
+        self.assertEqual(retention.pruned_inputs([far], members), [])
+        self.assertEqual([m.label for m in retention.regenerate([far], members)], ["F/far"])
+        self.assertEqual(self.cli("rerun", "F", "far", "--yes").exit_code, 0)
+
+    def test_a_pipeline_which_does_not_declare_its_inputs_may_need_anything(self):
+        retention.release(self.fresh(), self.plan().items)
+        ledger = self.fresh()
+        members = groups.everything(ledger)
+        far = groups.find(ledger, "F", "far", members)
+        with patch.object(type(far.analysis.pipeline), "declares_inputs", False):
+            self.assertEqual(
+                [(u, p) for u, p, _ in retention.pruned_inputs([far], members)], [("F/far", "E/gen")] * 2
+            )
 
 
 class ReportTests(unittest.TestCase):

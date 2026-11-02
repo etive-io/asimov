@@ -235,22 +235,31 @@ def _store_root() -> Optional[str]:
 
 
 def _inside(path: str, directory: str) -> bool:
+    """Whether a path is strictly inside a directory (not the directory itself)."""
     directory = os.path.join(os.path.realpath(directory), "")
     return os.path.realpath(path).startswith(directory)
+
+
+def _overlap(a: str, b: str) -> bool:
+    """Whether two paths are the same, or one is inside the other."""
+    a, b = os.path.realpath(a), os.path.realpath(b)
+    return a == b or _inside(a, b) or _inside(b, a)
 
 
 def _may_consume(ledger, analysis, done: bool) -> bool:
     """
     Whether an analysis which a strategy made may yet be needed by one which
     the strategy has not made. False for one which no strategy made, and for
-    every analysis of a group which is done.
+    every analysis of a group which is done; True if the strategy cannot be asked.
     """
     stamp = strategy_stamp(getattr(analysis, "meta", None) or {})
     if not stamp or done:
         return False
     plugin_class = strategy_plugins().get(stamp["type"])
     if plugin_class is None:
-        return False
+        # Not installed, or it failed to load: that says nothing about whether the
+        # group will grow, so what it made is kept (--done overrides this).
+        return True
     try:
         plugin = plugin_class()
         context = StrategyContext(
@@ -283,6 +292,15 @@ def plan(ledger, members: Optional[List[Member]] = None, scope: Optional[Iterabl
     after = dependents(members)
     result = Plan()
     store = _store_root()
+    # What may not be touched, from any analysis: a directory which holds a kept output,
+    # or a second name for the same file, must not be released with its neighbour.
+    protected = [
+        (path, f"{m.label} {name}")
+        for m in members
+        for name, paths in output_paths(m.analysis).items()
+        if policy_of(m.analysis, name) != UNTIL_CONSUMED
+        for path in paths
+    ]
 
     for member in (members if scope is None else list(scope)):
         analysis = member.analysis
@@ -316,8 +334,12 @@ def plan(ledger, members: Optional[List[Member]] = None, scope: Optional[Iterabl
                     unsafe = "it is a symbolic link"
                 elif not _inside(path, analysis.rundir):
                     unsafe = "it is outside the run directory"
-                elif store and (_inside(path, store) or _inside(store, path)):
+                elif store and _overlap(path, store):
                     unsafe = "it is in the results store"
+                else:
+                    clash = next((who for other, who in protected if _overlap(path, other)), None)
+                    if clash:
+                        unsafe = f"it overlaps {clash}, which is kept"
                 if unsafe:
                     break
             if unsafe:
@@ -354,41 +376,64 @@ def release(ledger, items: List[Item]) -> List[dict]:
     Release outputs: remove them, and record each (what, how big, its hash, why, when)
     on the analysis and in the audit trail.
 
+    Each output is recorded as soon as it has been removed, in a transaction of its
+    own, so that a failure part of the way through (a file which cannot be removed)
+    does not lose the record of what was already gone. What was removed is
+    recorded, a failure is reported once every output has been tried, and an output
+    only some of whose files could be removed is recorded as released with the
+    ones which were.
+
     Raises
     ------
     RuntimeError
-        If the project does not allow it (``[retention] release = false``).
+        If the project does not allow it (``[retention] release = false``), or if
+        something could not be removed (after all the rest has been done).
     """
     if not enabled():
         raise RuntimeError("Releasing assets is switched off for this project ([retention] release = false).")
-    records = []
-    with ledger.transaction():
-        for item in items:
-            analysis = item.member.analysis
-            hashes = {path: hash_of(path) for path in item.paths if hash_of(path)}
-            record = {
-                "asset": item.asset,
-                "paths": [os.path.relpath(p, analysis.rundir) for p in item.paths],
-                "size": item.size,
-                "hash": hashes or None,
-                "reason": item.reason,
-                "released": _now(),
-            }
-            for path in item.paths:
-                if os.path.isdir(path):
+    records, failures = [], []
+    for item in items:
+        analysis = item.member.analysis
+        gone, hashes, freed, error = [], {}, 0, None
+        for path in item.paths:
+            size = size_of(path)[0]
+            digest = hash_of(path)
+            try:
+                if os.path.isdir(path) and not os.path.islink(path):
                     shutil.rmtree(path)
                 elif os.path.lexists(path):
                     os.remove(path)
-            analysis.meta.setdefault(RELEASED_KEY, [])
-            if not isinstance(analysis.meta[RELEASED_KEY], list):
-                analysis.meta[RELEASED_KEY] = []
-            analysis.meta[RELEASED_KEY].append(record)
+            except OSError as problem:
+                error = problem
+                failures.append(f"{item.member.label} {item.asset}: {problem}")
+                break
+            gone.append(path)
+            freed += size
+            if digest:
+                hashes[path] = digest
+        if not gone:
+            continue
+        record = {
+            "asset": item.asset,
+            "paths": [os.path.relpath(p, analysis.rundir) for p in gone],
+            "size": freed,
+            "hash": hashes or None,
+            "reason": item.reason,
+            "released": _now(),
+        }
+        if error is not None:
+            record["partial"] = True
+        with ledger.transaction():
+            current = analysis.meta.get(RELEASED_KEY)
+            analysis.meta[RELEASED_KEY] = (current if isinstance(current, list) else []) + [record]
             _save(ledger, item.member)
             append_audit(
                 ledger,
                 new_record("release", "analysis", item.member.label, content=record, outcome="released"),
             )
-            records.append(record)
+        records.append(record)
+    if failures:
+        raise RuntimeError("Some outputs could not be released: " + "; ".join(failures))
     return records
 
 
@@ -409,16 +454,21 @@ def pruned_inputs(chosen: List[Member], members: List[Member]) -> List[Tuple[str
             dependencies = member.analysis._dependency_analyses()
         except Exception:
             continue
+        pipeline = member.analysis.pipeline
         try:
-            wanted = set(member.analysis.pipeline.get_actual_inputs(member.analysis))
+            wanted = set(pipeline.get_actual_inputs(member.analysis))
         except Exception:
             wanted = set()
+        # A pipeline which declares its inputs (the command pipeline does) has told us what
+        # it needs, which may be nothing. For one which does not, we do not know, so we
+        # take it that it may need anything.
+        declares = bool(getattr(pipeline, "declares_inputs", False))
         for dependency in dependencies:
             event = getattr(dependency, "event", None)
             if (getattr(event, "name", None), dependency.name) in chosen_keys:
                 continue
             for name in sorted(released_names(dependency)):
-                if not wanted or name in wanted:
+                if name in wanted or not (declares or wanted):
                     provider = Member(dependency, getattr(event, "name", None)).label
                     problems.append((member.label, provider, name))
     return problems
