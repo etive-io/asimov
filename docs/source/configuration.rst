@@ -72,6 +72,12 @@ a submission because it is busy, the pass stops and the analysis is left ready r
 been accepted, and retrying it would queue a duplicate DAG. The number of active analyses is counted from the ledger, so a finished analysis only frees
 its slot once ``asimov monitor`` has recorded that it finished.
 
+``[retention]``
+---------------
+
+``release``
+   ``false`` stops ``asimov analysis prune`` releasing anything (see :ref:`retention`). On by default.
+
 ``[retry]``
 -----------
 

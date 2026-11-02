@@ -5,9 +5,11 @@ analysis and what depends on it (#234).
 Every command that changes anything says what it would change, takes
 ``--dry-run`` to stop there, and asks before it goes on unless given ``--yes``.
 """
+import os
+
 import click
 
-from asimov import groups
+from asimov import groups, retention
 from asimov.context import active_ledger as ledger
 from asimov.groups import GroupError
 
@@ -102,6 +104,109 @@ def delete(group, force, dry_run, yes):
 
 
 @analysis.command(
+    "du",
+    help="How much disk space analyses take: what they produced (recorded when they finished), "
+    "what is in their run directory now, and what has been released.",
+)
+@click.option("--group", "-g", "group", default=None, help="The name of the group (its blueprint).")
+def du(group):
+    try:
+        members = groups.group_members(ledger, group) if group else groups.everything(ledger)
+    except GroupError as error:
+        _fail(error)
+    on_disk = produced = freed = 0
+    for member in members:
+        rundir = getattr(member.analysis, "rundir", None)
+        now = retention.size_of(rundir)[0] if rundir and os.path.isdir(rundir) else 0
+        made = retention.recorded_size(member.analysis) or sum(
+            retention.size_of(path)[0]
+            for paths in retention.output_paths(member.analysis).values()
+            for path in paths
+        )
+        gone = sum(int(r.get("size", 0) or 0) for r in retention.released(member.analysis))
+        on_disk, produced, freed = on_disk + now, produced + made, freed + gone
+        click.echo(
+            f"{member.label:40} {member.status:10} {retention.human(now):>10} on disk "
+            f"{retention.human(made):>10} outputs {retention.human(gone):>10} released"
+        )
+    click.echo(
+        f"{len(members)} analyses: {retention.human(on_disk)} on disk, "
+        f"{retention.human(produced)} of outputs, {retention.human(freed)} released"
+    )
+
+
+@analysis.command(
+    "prune",
+    help="Release the outputs which their pipelines say can go once consumed (retention: until_consumed), "
+    "when everything which needs them has finished. Nothing in the results store, outside a run directory, "
+    "or marked keep is touched.",
+)
+@click.option("--group", "-g", "group", default=None, help="Only the analyses of this group.")
+@click.option(
+    "--done",
+    is_flag=True,
+    help="The group will not grow any more, so what a strategy might still consume is not kept.",
+)
+@click.option("--dry-run", is_flag=True, help="Say what would be released, and release nothing.")
+@click.option("--yes", "-y", is_flag=True, help="Do not ask first.")
+def prune(group, done, dry_run, yes):
+    if not retention.enabled():
+        raise click.ClickException("Releasing assets is switched off for this project ([retention] release = false).")
+    try:
+        members = groups.everything(ledger)
+        scope = groups.group_members(ledger, group, members) if group else members
+    except GroupError as error:
+        _fail(error)
+    result = retention.plan(ledger, members, scope, done)
+    if result.kept:
+        reasons = {}
+        for _, _, why in result.kept:
+            reasons[why] = reasons.get(why, 0) + 1
+        click.echo("Kept:")
+        for why, number in sorted(reasons.items(), key=lambda pair: (-pair[1], pair[0]))[:8]:
+            click.echo(f"  {number} x {why}")
+    if not result.items:
+        click.echo("Nothing to release.")
+        return
+    click.echo(f"Release {len(result.items)} outputs, {retention.human(result.size)}:")
+    for item in result.items[:25]:
+        click.echo(f"  {item.member.label}  {item.asset}  {retention.human(item.size)}")
+    if len(result.items) > 25:
+        click.echo(f"  ... and {len(result.items) - 25} more")
+    if dry_run:
+        click.echo(click.style("Dry run: nothing was released.", fg="yellow"))
+        return
+    if not yes and not click.confirm("Go ahead?"):
+        click.echo("Nothing was released.")
+        return
+    # Time has passed (at the prompt, for one): something may have been run again, or
+    # finished, since the plan was made, so it is made again and only what is still
+    # releasable, and was confirmed, goes.
+    ledger.refresh()  # (other commands write the ledger too)
+    try:
+        members = groups.everything(ledger)
+        scope = groups.group_members(ledger, group, members) if group else members
+    except GroupError as error:
+        _fail(error)
+    confirmed = {(item.member.key, item.asset) for item in result.items}
+    now = retention.plan(ledger, members, scope, done)
+    items = [item for item in now.items if (item.member.key, item.asset) in confirmed]
+    if len(items) < len(confirmed):
+        click.echo(
+            click.style("●", fg="yellow")
+            + f" {len(confirmed) - len(items)} outputs can no longer be released, and were left"
+        )
+    try:
+        records = retention.release(ledger, items)
+    except RuntimeError as error:
+        raise click.ClickException(str(error))
+    click.echo(
+        click.style("●", fg="green")
+        + f" Released {len(records)} outputs, {retention.human(sum(r['size'] for r in records))}"
+    )
+
+
+@analysis.command(
     "rerun",
     help="Make an analysis ready to run again. With --downstream, so is everything which "
     "depends on it, in any subject. --clean also removes what each has produced.",
@@ -110,13 +215,27 @@ def delete(group, force, dry_run, yes):
 @click.argument("name")
 @click.option("--downstream", is_flag=True, help="Include everything which depends on it.")
 @click.option("--clean", is_flag=True, help="Remove the artefacts of each analysis (its pipeline's clean()).")
+@click.option(
+    "--regenerate",
+    is_flag=True,
+    help="Also run again what made an input which was released, so that it is there again.",
+)
 @click.option("--dry-run", is_flag=True, help="Say what would be reset, and reset nothing.")
 @click.option("--yes", "-y", is_flag=True, help="Do not ask first.")
-def rerun(subject, name, downstream, clean, dry_run, yes):
+def rerun(subject, name, downstream, clean, regenerate, dry_run, yes):
     try:
         members = groups.everything(ledger)
         start = groups.find(ledger, subject, name, members)
         chosen = groups.downstream(ledger, start, members) if downstream else [start]
+        if regenerate:
+            chosen = retention.regenerate(chosen, members)
+        missing = retention.pruned_inputs(chosen, members)
+        if missing:
+            lines = "\n".join(f"  {user} needs {what} of {maker}" for user, maker, what in missing[:10])
+            raise GroupError(
+                "These were released to save space, and what would be run again needs them:\n"
+                f"{lines}\nRun again what made them (--regenerate does that), or release less."
+            )
         running = [m for m in chosen if m.status in groups.RUNNING]
         if running:
             raise GroupError(

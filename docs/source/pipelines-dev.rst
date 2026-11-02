@@ -141,6 +141,13 @@ Optional methods
     * If it submits new work it must set the new job id (``self.production.job_id``). The monitor saves the ledger after a successful call.
     * Any bookkeeping of its own, such as how many attempts have been made, should be kept in the run directory rather than in the ledger, which holds the inputs of an analysis.
 
+``Pipeline.output_paths`` and ``Pipeline.output_retention``
+    Together these let ``asimov analysis du`` measure, and ``asimov analysis prune`` release, what the pipeline produced (see :ref:`retention`).
+    ``output_paths()`` returns what the analysis has produced as ``{name: path}`` (a name may have a list of paths), relative to the run directory or absolute, and has no side effects, which is why it is not ``collect_assets()``.
+    ``output_retention`` maps a name to ``keep`` or ``until_consumed`` (``Pipeline.retention_of(name)`` is what is asked, and can be overridden).
+    An output with no policy is ``keep``, so a pipeline which declares nothing is never touched.
+    A pipeline which does not change what is stored should also treat an output which was released as present (``asimov.retention.released_names(self.production)``) when it checks that an analysis is complete.
+
 ``Pipeline.read_ini``
     This should be implemented as a class method, and should parse the configuration file for the pipeline into a dictionary.
 

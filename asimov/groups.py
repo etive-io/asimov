@@ -111,18 +111,19 @@ def find(ledger, subject: str, name: str, members: Optional[List[Member]] = None
     raise GroupError(f"There is no analysis '{name}' in '{subject}'.")
 
 
-def downstream(ledger, start: Member, members: Optional[List[Member]] = None) -> List[Member]:
+def dependents(members: List[Member]) -> dict:
     """
-    ``start`` and every analysis which depends on it, directly or through others.
+    For each analysis, the analyses which need it directly.
 
     Dependencies are those which each analysis resolves for itself, so they
-    cross subjects as ``needs`` does. The result is in the order in which the
-    analyses can be run again: an analysis comes after what it depends on.
-    """
-    members = everything(ledger) if members is None else members
-    by_key = {member.key: member for member in members}
+    cross subjects as ``needs`` does.
 
-    dependents = {member.key: [] for member in members}
+    Returns
+    -------
+    dict
+        ``{key: [key, ...]}``, in sorted order, for every member's ``key``.
+    """
+    found = {member.key: [] for member in members}
     for member in members:
         try:
             needed = member.analysis._dependency_analyses()
@@ -131,12 +132,26 @@ def downstream(ledger, start: Member, members: Optional[List[Member]] = None) ->
         for dependency in needed:
             event = getattr(dependency, "event", None)
             key = (getattr(event, "name", None), dependency.name)
-            if key in dependents and key != member.key:
-                dependents[key].append(member.key)
+            if key in found and key != member.key:
+                found[key].append(member.key)
+    # (a subject's name or None for a project analysis: not comparable, so sorted apart)
+    return {key: sorted(values, key=lambda k: (k[0] is None, k[0] or "", k[1])) for key, values in found.items()}
+
+
+def downstream(ledger, start: Member, members: Optional[List[Member]] = None) -> List[Member]:
+    """
+    ``start`` and every analysis which depends on it, directly or through others.
+
+    The result is in the order in which the analyses can be run again: an
+    analysis comes after what it depends on.
+    """
+    members = everything(ledger) if members is None else members
+    by_key = {member.key: member for member in members}
+    after = dependents(members)
 
     seen, order, queue = {start.key}, [start], [start.key]
     while queue:
-        for key in sorted(dependents[queue.pop(0)]):
+        for key in after[queue.pop(0)]:
             if key not in seen:
                 seen.add(key)
                 order.append(by_key[key])
@@ -167,6 +182,8 @@ def set_status(ledger, members: List[Member], status: str) -> List[Member]:
     GroupError
         If ``status`` is not one which may be set.
     """
+    from asimov import retention  # (which needs this module)
+
     if status not in SETTABLE:
         raise GroupError(f"'{status}' cannot be set. Use one of: {', '.join(sorted(SETTABLE))}.")
     changed = []
@@ -178,6 +195,7 @@ def set_status(ledger, members: List[Member], status: str) -> List[Member]:
             member.analysis.status = status
             if status == "ready":
                 retry.clear(member.analysis)
+                retention.clear(member.analysis)
             _save(ledger, member)
             _audit(ledger, "set-status", member, {"from": before, "to": status})
             changed.append(member)
@@ -189,6 +207,8 @@ def reset(ledger, members: List[Member], clean: bool = False) -> List[Member]:
     Make each analysis ready to run again: status ``ready``, no job id, and
     (with ``clean``) its pipeline's artefacts removed.
     """
+    from asimov import retention  # (which needs this module)
+
     with ledger.transaction():
         for member in members:
             analysis = member.analysis
@@ -197,6 +217,7 @@ def reset(ledger, members: List[Member], clean: bool = False) -> List[Member]:
                 analysis.pipeline.clean()
             analysis.status = "ready"
             retry.clear(analysis)
+            retention.clear(analysis)
             scheduler = analysis.meta.get("scheduler")
             if isinstance(scheduler, dict):
                 scheduler.pop("job id", None)

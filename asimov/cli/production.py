@@ -3,7 +3,7 @@ from copy import copy
 import click
 import yaml
 
-from asimov import config, retry
+from asimov import config, retention, retry
 from asimov.context import resolve_path
 from asimov.context import active_ledger as ledger
 
@@ -132,6 +132,7 @@ def set(event, production, status):
             production.status = status
             if status == "ready":
                 retry.clear(production)
+                retention.clear(production)
             if config.get("ledger", "engine") == "yamlfile":
                 ledger.events[event.name] = event.to_dict()
                 ledger.save()

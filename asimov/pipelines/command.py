@@ -27,7 +27,7 @@ import shlex
 import stat
 from configparser import NoOptionError, NoSectionError
 
-from asimov import config, retry
+from asimov import config, retention, retry
 from asimov.pipeline import Pipeline, PipelineException
 from asimov.scheduler import JobDescription
 
@@ -138,6 +138,9 @@ class CommandPipeline(Pipeline):
 
     name = "command"
 
+    #: What it reads from the analyses it needs is what its command asks for.
+    declares_inputs = True
+
     #: Whether the command comes from the ledger, and so is subject to the
     #: project's configuration. A subclass which fixes the executable sets False.
     arbitrary_command = True
@@ -179,6 +182,24 @@ class CommandPipeline(Pipeline):
                 raise CommandError(f"The output '{name}' of {self.production.name} has no path.")
             specs[str(name)] = spec
         return specs
+
+    def retention_of(self, name):
+        """The ``retention`` of an output (``keep`` unless the analysis says otherwise)."""
+        try:
+            return self.output_specs().get(name, {}).get("retention", "keep")
+        except CommandError:
+            return "keep"
+
+    def output_paths(self):
+        """What the command has written, by name, as absolute paths."""
+        try:
+            return {
+                name: self.output_path(name)
+                for name in self.output_specs()
+                if os.path.lexists(self.output_path(name))
+            }
+        except CommandError:
+            return {}
 
     def input_names(self):
         """The products which the command takes from the analyses it needs."""
@@ -245,6 +266,17 @@ class CommandPipeline(Pipeline):
             if label:
                 raise CommandError(f"{{outputs.{name}.{label}}}: an output has no labels.")
             return [self.output_path(name)]
+
+        # What a dependency produced and released is missing, whatever else provides
+        # the same name: a command must not run with only some of what it asked for.
+        for dependency in self.production.dependency_objects:
+            if not retry.is_skipped(dependency) and name in retention.released_names(dependency):
+                where = f"{{inputs.{name}.{label}}}" if label else f"{{inputs.{name}}}"
+                raise CommandError(
+                    f"{self.production.name} uses {where}, which {dependency.name} produced "
+                    f"and which was released to save space ({retention.released_when(dependency, name)}). "
+                    f"Run {dependency.name} again to make it (asimov analysis rerun)."
+                )
 
         found = []
         for _, assets in providers:
@@ -371,6 +403,9 @@ class CommandPipeline(Pipeline):
 
         rundir = self.run_directory()
         name = self.production.name
+        # A new run makes its outputs again: what was recorded about the last one's
+        # (sizes, and what was released) is not true of it.
+        retention.clear(self.production)
         job = JobDescription(
             executable=os.path.join(rundir, "command.sh"),
             output=os.path.join(rundir, f"{name}.out"),
@@ -420,7 +455,10 @@ class CommandPipeline(Pipeline):
         outputs = self.output_specs()
         if not outputs and status is None:
             return False
-        if not all(os.path.exists(self.output_path(name)) for name in outputs):
+        gone = retention.released_names(self.production)
+        if not all(
+            os.path.exists(self.output_path(name)) or name in gone for name in outputs
+        ):
             return False
         return bool(self.command_succeeded())
 

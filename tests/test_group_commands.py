@@ -235,7 +235,10 @@ class CommandTests:
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("component-A/step-r1  ready", result.output)
         self.assertNotIn("Elsewhere", result.output)
-        self.assertTrue(result.output.strip().endswith("6 analyses: 6 ready"))
+        # (the output is mixed with stderr, where a ResourceWarning for an unclosed
+        # sqlite connection can appear whenever the garbage collector happens to run,
+        # so the summary is looked for, not asked to be last)
+        self.assertIn("6 analyses: 6 ready", result.output.splitlines())
 
     def test_list_of_an_unknown_group_fails(self):
         result = self.run_command("list", "--group", "nope")
