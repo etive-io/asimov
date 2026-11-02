@@ -469,6 +469,9 @@ def _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeo
         passes += 1
         click.secho(f"Pass {passes}", bold=True)
         failures_before = _attempt_counts(event)
+        # What is waiting at the start of the pass may fall due during it, after
+        # build and submit have passed it by, so it is counted from before.
+        waiting_before = retry.pending(_analyses(event))
         try:
             result = ctx.invoke(
                 monitor, event=event, update=update, dry_run=dry_run,
@@ -482,7 +485,7 @@ def _monitor_until_idle(ctx, event, update, dry_run, interval, max_passes, timeo
         click.echo(f"After pass {passes}: {_summarise(counts)}")
 
         # An analysis which failed and will be tried again, after its delay, is still work.
-        waiting = retry.pending(_analyses(event))
+        waiting = max(waiting_before, retry.pending(_analyses(event)))
         if waiting:
             click.echo(f"  {waiting} waiting to be tried again")
         working = waiting or any(counts.get(state) for state in RUNNING_STATES)

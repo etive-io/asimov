@@ -208,6 +208,9 @@ class RestartState(MonitorState):
         
         # Reset to ready state to be picked up by submit
         analysis.status = "ready"
+        from asimov import retry
+
+        retry.clear(analysis)
         context.update_ledger()
         
         click.echo(

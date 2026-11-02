@@ -223,6 +223,8 @@ class CommandPipeline(Pipeline):
         """``(name, assets)`` for each analysis this one needs, in order."""
         providers = []
         for dependency in self.production.dependency_objects:
+            if retry.is_skipped(dependency):
+                continue  # it failed for good: whatever it left is not an output
             try:
                 assets = dependency.pipeline.collect_assets() or {}
             except Exception as error:

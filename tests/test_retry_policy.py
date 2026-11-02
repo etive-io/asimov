@@ -26,7 +26,7 @@ T0 = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
 
 def fake(status="running", **meta):
-    return types.SimpleNamespace(name="a", status=status, meta=dict(meta))
+    return types.SimpleNamespace(name="a", status=status, meta=dict(meta), job_id=5)
 
 
 def config_with(**options):
@@ -246,15 +246,44 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(RunningState()._handle_no_condor_job(context))
         self.assertEqual(analysis.status, "skipped")
 
-    def test_a_held_job_is_removed_and_tried_again(self):
-        analysis = fake(retry={"attempts": 2})
+    def held(self, analysis, removes):
+        """A held job; the scheduler does or does not let it be removed."""
         pipe = self.pipeline()
+        if removes:
+            pipe.eject_job.side_effect = lambda: setattr(analysis, "job_id", None)
         context = self.context(analysis, pipe)
         context.job = {"status": 5}
+        return pipe, context
+
+    def test_a_held_job_is_removed_and_tried_again(self):
+        analysis = fake(retry={"attempts": 2})
+        pipe, context = self.held(analysis, removes=True)
         self.assertTrue(RunningState()._handle_condor_job(context))
         self.assertEqual(analysis.status, "ready")
         pipe.eject_job.assert_called_once()
+        context.clear_job_id.assert_called_once()
         self.assertEqual(analysis.meta["attempts"][0]["kind"], "transient")
+
+    def test_a_held_job_which_cannot_be_removed_is_not_tried_again(self):
+        """eject_job does not raise when condor_rm fails: a second run would join the first."""
+        analysis = fake(retry={"attempts": 3})
+        with patch("asimov.telemetry.emit_event") as emit:
+            pipe, context = self.held(analysis, removes=False)
+            self.assertTrue(RunningState()._handle_condor_job(context))
+            self.assertEqual(analysis.status, "stuck")
+            self.assertEqual(analysis.job_id, 5)
+            context.clear_job_id.assert_not_called()
+            self.assertNotIn("retry after", analysis.meta)
+            self.assertIn("could not be removed", analysis.meta["attempts"][0]["reason"])
+            emit.assert_not_called()
+
+    def test_a_held_job_whose_removal_raises_is_not_tried_again(self):
+        analysis = fake(retry={"attempts": 3})
+        pipe, context = self.held(analysis, removes=False)
+        pipe.eject_job.side_effect = RuntimeError("condor is not installed")
+        self.assertTrue(RunningState()._handle_condor_job(context))
+        self.assertEqual(analysis.status, "stuck")
+        self.assertEqual(analysis.job_id, 5)
 
     def test_a_held_job_with_no_policy_is_stuck_and_left_on_the_scheduler(self):
         analysis = fake()
@@ -402,6 +431,134 @@ class CommandMessageTests(GraphCase):
         _, q = self.analysis("E", "q")
         with self.assertRaisesRegex(CommandError, "p failed and was skipped"):
             q.pipeline.resolve_command()
+
+
+class UntilIdleTests(unittest.TestCase):
+    """``monitor --until-idle`` and a retry which falls due while a pass runs."""
+
+    def run_loop(self, pending):
+        from asimov.cli import monitor as monitor_module
+
+        ctx = MagicMock()
+        ctx.meta = {}
+        ctx.invoke.return_value = {}
+        with patch.object(monitor_module, "_status_counts", return_value={"ready": 1}), patch.object(
+            monitor_module, "_attempt_counts", return_value={}
+        ), patch.object(monitor_module, "_analyses", return_value=[]), patch.object(
+            monitor_module.retry, "pending", side_effect=pending
+        ), patch.object(monitor_module.time, "sleep"):
+            monitor_module._monitor_until_idle(ctx, None, False, False, 0, None, None)
+        return ctx.invoke.call_count
+
+    def test_a_retry_which_was_waiting_at_the_start_of_the_pass_gets_another(self):
+        """Its delay ended during the pass, after submit had passed it by."""
+        self.assertEqual(self.run_loop([1, 0, 0, 0]), 2)
+
+    def test_nothing_waiting_is_idle_after_one_pass(self):
+        self.assertEqual(self.run_loop([0, 0]), 1)
+
+
+class SkippedOutputsTests(GraphCase):
+    def test_what_a_skipped_analysis_left_is_not_an_input(self):
+        self.apply(
+            "kind: analysis\nname: p\ncommand: [true]\noutputs:\n  data: d.txt\n---\n"
+            "kind: analysis\nname: q\ncommand: [cat, '{inputs.data}']\nneeds: [p]\n",
+            subject="E",
+        )
+        _, p = self.analysis("E", "p")
+        os.makedirs(p.rundir, exist_ok=True)
+        with open(os.path.join(p.rundir, "d.txt"), "w") as handle:
+            handle.write("partial")
+        self.change("E", "p", "finished")
+        _, q = self.analysis("E", "q")
+        self.assertEqual(len(q.pipeline.resolve_command()), 2)  # it is there while p has finished
+        self.change("E", "p", "skipped")
+        _, q = self.analysis("E", "q")
+        with self.assertRaisesRegex(CommandError, "skipped"):
+            q.pipeline.resolve_command()
+
+    def test_previous_assets_leave_out_a_skipped_analysis(self):
+        _, b = self.analysis("E", "b")
+        _, a = self.analysis("E", "a")
+        with patch.object(type(a.pipeline), "collect_assets", return_value={"x": 1}):
+            self.assertEqual(b._previous_assets(), {"x": 1})
+            self.change("E", "a", "skipped")
+            _, b = self.analysis("E", "b")
+            self.assertEqual(b._previous_assets(), {})
+
+
+class ManualReadyTests(GraphCase):
+    def test_production_set_ready_forgets_the_failures(self):
+        from click.testing import CliRunner
+
+        from asimov.cli import production
+
+        self.change("E", "a", "stuck", attempts=[{"attempt": 1}], **{"retry after": "2026-01-01T12:01:00Z"})
+        with patch("asimov.cli.production.ledger", new=YAMLLedger(".asimov/ledger.yml")):
+            result = CliRunner().invoke(production.set, ["E", "a", "-s", "ready"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        _, a = self.analysis("E", "a")
+        self.assertEqual(a.status, "ready")
+        self.assertNotIn("attempts", a.meta)
+        self.assertNotIn("retry after", a.meta)
+
+    def test_restarting_forgets_them_too(self):
+        from asimov.custom_states import RestartState
+
+        self.change("E", "a", "restart", attempts=[{"attempt": 1}])
+        event, a = self.analysis("E", "a")
+        context = types.SimpleNamespace(
+            analysis=a, has_condor_job=lambda: False, update_ledger=MagicMock(), job_id=None, dry_run=False,
+            refresh_job_list=MagicMock(), clear_job_id=MagicMock(),
+        )
+        a.pipeline = MagicMock()
+        RestartState().handle(context)
+        self.assertEqual(a.status, "ready")
+        self.assertNotIn("attempts", a.meta)
+
+
+from tests.test_project_analysis_cli import ProjectAnalysisTestCase  # noqa: E402
+from click.testing import CliRunner  # noqa: E402
+from asimov.cli import manage  # noqa: E402
+from asimov.review import ReviewMessage  # noqa: E402
+
+
+class ProjectAnalysisDelayTests(ProjectAnalysisTestCase):
+    """A project analysis which failed waits out its delay as an analysis of a subject does."""
+
+    base_status = "finished"
+
+    def setUp(self):
+        super().setUp()
+        ledger = YAMLLedger(".asimov/ledger.yml")
+        event = ledger.get_event("EvA")[0]
+        analysis = event.productions[0]
+        analysis.review.add(ReviewMessage(message="ok", status="approved", production=analysis))
+        ledger.update_event(event)
+
+    def delay(self, until):
+        ledger = YAMLLedger(".asimov/ledger.yml")
+        pa = ledger.project_analyses[0]
+        pa.meta["retry after"] = until
+        ledger.update_analysis_in_project_analysis(pa)
+
+    def submit(self):
+        with patch("asimov.cli.manage.ledger", new=YAMLLedger(".asimov/ledger.yml")), patch(
+            "asimov.cli.manage.condor"
+        ), patch("asimov.pipelines.testing.SimpleTestPipeline.build_dag", create=True) as build_dag:
+            CliRunner().invoke(manage.submit, [])
+        return build_dag
+
+    def test_it_is_submitted_when_it_has_no_delay(self):
+        self.submit().assert_called()
+
+    def test_it_is_not_submitted_while_it_waits(self):
+        self.delay("2999-01-01T00:00:00Z")
+        self.submit().assert_not_called()
+
+    def test_it_is_submitted_once_the_delay_is_over(self):
+        self.delay("2000-01-01T00:00:00Z")
+        self.submit().assert_called()
 
 
 if __name__ == "__main__":

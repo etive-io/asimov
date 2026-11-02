@@ -47,11 +47,31 @@ def _collect_history_for(context, job_id):
     return condor.collect_history(job_id)
 
 
+def _job_removed(analysis):
+    """
+    Remove an analysis's job from the scheduler, and say whether that is certain.
+
+    ``Pipeline.eject_job`` does not raise when the scheduler refuses, but it does
+    forget the job id when the job is gone, so the job is removed only if that
+    is what happened.
+    """
+    try:
+        analysis.pipeline.eject_job()
+    except Exception as error:
+        logger.warning(f"Could not remove the job of {analysis.name}: {error}")
+        return False
+    return analysis.job_id is None
+
+
 def _fail(context, kind, reason, remove_job=False):
     """
     An analysis has failed: decide what to do about it, as its retry policy
     says (see :mod:`asimov.retry`). With no policy it is ``stuck``, as it
     always was.
+
+    A job which is still on the scheduler (``remove_job``) is removed before
+    the analysis is tried again, so that two do not run at once; if that cannot
+    be confirmed, it is left ``stuck`` with its job id.
 
     Returns
     -------
@@ -60,21 +80,30 @@ def _fail(context, kind, reason, remove_job=False):
     """
     analysis = context.analysis
     outcome = retry.on_failure(analysis, kind, reason)
+    kept = False
+    if outcome == retry.RETRY and remove_job and not _job_removed(analysis):
+        outcome, kept = retry.STUCK, True
+        analysis.status = "stuck"
+        analysis.meta.pop(retry.RETRY_AFTER_KEY, None)
+        history = retry.attempts_made(analysis)
+        if history:
+            history[-1]["reason"] += "; the job could not be removed from the scheduler, so it was not tried again"
     if outcome == retry.RETRY:
-        if remove_job:
-            try:
-                analysis.pipeline.eject_job()
-            except Exception as error:
-                logger.warning(f"Could not remove the job of {analysis.name}: {error}")
         context.clear_job_id()
-    if outcome != retry.STUCK or retry.policy(analysis)["configured"]:
+    if kept:
+        click.echo(
+            "  \t  "
+            + click.style("●", "red")
+            + f" {analysis.name} is stuck: its job could not be removed from the scheduler, so it was not tried again"
+        )
+    elif outcome != retry.STUCK or retry.policy(analysis)["configured"]:
         colour = {"retry": "yellow", "skipped": "red", "stuck": "red"}[outcome]
         click.echo(
             "  \t  "
             + click.style("●", colour)
             + f" {analysis.name} {retry.describe(analysis, outcome)} ({reason})"
         )
-    if outcome != retry.RETRY and retry.policy(analysis)["configured"]:
+    if outcome != retry.RETRY and not kept and retry.policy(analysis)["configured"]:
         retry.exhausted(analysis, getattr(context, "ledger", None), reason)
     context.update_ledger()
     return outcome
