@@ -20,6 +20,8 @@ from asimov import config, logger, LOGGER_LEVEL, set_logger_level
 from asimov.context import resolve_path
 from asimov.preview import is_dry_run
 from asimov.analysis import SubjectAnalysis, GravitationalWaveTransient
+from asimov.analysis_types import AnalysisTypeError
+from asimov.pipelines import PipelineNotInstalled
 
 from .git import EventRepo
 
@@ -163,11 +165,19 @@ class Event:
                         SubjectAnalysis.from_dict(prod_meta, subject=self)
                     )
                 else:
-                    self.add_production(
-                        Production.from_dict(
+                    try:
+                        built = Production.from_dict(
                             prod_meta, subject=self, ledger=self.ledger
                         )
-                    )
+                    except (PipelineNotInstalled, AnalysisTypeError) as error:
+                        # A plugin is missing: leave this analysis out (as the database
+                        # ledger does), rather than make the whole subject unreadable.
+                        logger.warning(
+                            "Skipped loading production %r for event %r: %s",
+                            prod_meta.get("name"), self.name, error,
+                        )
+                        continue
+                    self.add_production(built)
         # After all productions are added, update the graph to build dependency edges
         # This ensures dependencies can be resolved regardless of order in the ledger
         self.update_graph()

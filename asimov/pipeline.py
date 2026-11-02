@@ -259,6 +259,12 @@ class Pipeline:
         for asset in self.assets:
             repo.add_file(asset[0], asset[1])
 
+    #: The name of the analysis type this pipeline's analyses are (see
+    #: :mod:`asimov.analysis_types`), or None for the default, which is a
+    #: gravitational-wave analysis. It is read from the class, before the analysis
+    #: is built, and ``type:`` on the analysis overrides it.
+    analysis_type = None
+
     #: What happens to each output once nothing needs it (see :mod:`asimov.retention`):
     #: ``{name: policy}``. An output which is not named is ``keep``, so nothing
     #: changes for a pipeline which does not say.

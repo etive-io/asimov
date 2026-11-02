@@ -29,6 +29,11 @@ FEATURES: Dict[str, str] = {
         "pipeline. A version without this feature cannot construct them, and on the "
         "database ledger skips them when it loads the project"
     ),
+    "analysis-types": (
+        "analyses with an explicit 'type:' (an analysis type, which a plugin can provide). A "
+        "version without analysis types loads them as ordinary analyses, with the type as "
+        "plain metadata, and gives them the gravitational-wave defaults"
+    ),
     "subject-analysis-needs": (
         "subject analyses which have both 'analyses:' (what they combine) and 'needs:' "
         "(what they wait on). A version without this feature reads 'needs:' as what "

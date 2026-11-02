@@ -1425,6 +1425,10 @@ class SimpleAnalysis(Analysis):
 
         self.ledger = kwargs.get("ledger", None)
 
+        # Where this analysis is in the repository of its subject. (Set before the
+        # pipeline is made, which reads it.)
+        self.category = config.get("general", "calibration_directory")
+
         self.event = self.subject = subject
         self.name = name
 
@@ -1476,8 +1480,8 @@ class SimpleAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self.pipeline = pipeline.lower()
-        from asimov.pipelines import known_pipelines
-        self.pipeline = known_pipelines[pipeline.lower()](self)
+        from asimov.pipelines import get_pipeline_class
+        self.pipeline = get_pipeline_class(pipeline)(self)
 
         needs_value = self.meta.pop("needs", None)
         self._needs = cast(List[Any], needs_value) if needs_value is not None else []
@@ -1606,8 +1610,8 @@ class SubjectAnalysis(Analysis):
             self.resolve_analyses()
 
         self.pipeline = pipeline.lower()
-        from asimov.pipelines import known_pipelines
-        self.pipeline = known_pipelines[pipeline.lower()](self)
+        from asimov.pipelines import get_pipeline_class
+        self.pipeline = get_pipeline_class(pipeline)(self)
 
         if "comment" in kwargs:
             self.comment = kwargs["comment"]
@@ -2357,8 +2361,6 @@ class GravitationalWaveTransient(SimpleAnalysis):
             A comment on this analysis.
         """
 
-        self.category = config.get("general", "calibration_directory")
-
         # Capture whether PSDs were set directly on this analysis, before
         # `SimpleAnalysis.__init__` merges the event's meta into `self.meta`
         # (`self.meta = update(self.meta, deepcopy(self.subject.meta))`) --
@@ -2485,6 +2487,31 @@ class GravitationalWaveTransient(SimpleAnalysis):
 
         # Gather the PSDs for the job
         self.psds = self._collect_psds()
+
+    @classmethod
+    def from_dict(cls, parameters, subject=None, ledger=None):
+        """
+        Build the analysis which a document describes.
+
+        This is what :data:`asimov.event.Production` is, and what everything which
+        builds an analysis calls, so it chooses the analysis type (see
+        :mod:`asimov.analysis_types`): called on this class, it builds an analysis of
+        whatever type the document asks for, which is a gravitational-wave one
+        unless it says (or its pipeline says) otherwise. Called on any other class
+        it builds that class.
+
+        Raises
+        ------
+        asimov.analysis_types.AnalysisTypeError
+            If the type which the document asks for is not installed.
+        """
+        if cls is GravitationalWaveTransient:
+            from asimov.analysis_types import analysis_class_for
+
+            target = analysis_class_for(parameters)
+            if target is not cls:
+                return target.from_dict(parameters, subject=subject, ledger=ledger)
+        return super().from_dict(parameters, subject=subject, ledger=ledger)
 
     def _checks(self):
         """

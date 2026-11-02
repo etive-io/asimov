@@ -119,11 +119,6 @@ class Tests:
         self.apply(analysis("a", pipeline="SimpleTestPipeline"), "E")
         self.assertEqual(type(self.loaded("a").pipeline).__name__, "SimpleTestPipeline")
 
-    def test_a_command_analysis_is_built_as_one_too(self):
-        self.apply("kind: analysis\nname: c\ncommand: [true]\n", "E")
-        self.assertIs(type(self.loaded("c")), GravitationalWaveTransient)
-        self.assertEqual(self.loaded("c").pipeline.name, "command")
-
     # What the gravitational-wave class adds
 
     def test_the_metadata_it_adds(self):
@@ -233,13 +228,16 @@ class Tests:
 
 
 class YAMLTests(Tests, ConstructionCase):
-    def test_an_analysis_whose_pipeline_is_not_installed_stops_its_subject_loading(self):
-        """The YAML ledger does not skip it: getting the subject raises, so every command on it does."""
-        self.apply(analysis("a"), "E")
+    def test_an_analysis_whose_pipeline_is_not_installed_is_skipped_with_a_warning(self):
+        """(Until analysis types, getting the subject raised, so every command on it failed.)"""
+        self.apply(analysis("a") + "---\n" + analysis("b"), "E")
         self.add_ghost()
-        with self.assertRaises(KeyError) as caught:
-            self.reopen().get_event("E")
-        self.assertIn("nosuchpipeline", str(caught.exception))
+        with self.assertLogs("asimov", level="WARNING") as logs:
+            found = self.loaded()
+        self.assertEqual(sorted(found), ["a", "b"])
+        message = "\n".join(logs.output)
+        self.assertIn("Skipped loading production 'ghost' for event 'E'", message)
+        self.assertIn("The pipeline 'nosuchpipeline' is not installed", message)
 
 
 class DatabaseTests(Tests, DatabaseCase):
@@ -251,7 +249,7 @@ class DatabaseTests(Tests, DatabaseCase):
         self.assertEqual(sorted(found), ["a", "b"])
         message = "\n".join(logs.output)
         self.assertIn("Skipped loading production 'ghost' for event 'E'", message)
-        self.assertIn("nosuchpipeline", message)
+        self.assertIn("The pipeline 'nosuchpipeline' is not installed", message)
 
     def test_get_productions_builds_the_same_class(self):
         self.apply(analysis("a"), "E")
@@ -273,36 +271,52 @@ class AliasTests(unittest.TestCase):
         self.assertTrue(issubclass(GravitationalWaveTransient, SimpleAnalysis))
 
 
-class WillChangeWithTypes(ConstructionCase):
+class GenericAnalysisTests(ConstructionCase):
     """
-    What is true now and is meant to change when analysis types arrive (#238).
+    What a generic analysis is, now that analysis types exist (#238).
 
-    These are the tests to update, deliberately and with the change which makes
-    them fail; the rest of this file should pass unmodified.
+    Before, every analysis was a gravitational-wave one, a command analysis
+    included, a generic analysis had no ``category``, and the database ledger
+    refused to store one.
     """
 
-    def test_a_command_analysis_carries_the_gravitational_wave_metadata(self):
-        """The command pipeline is generic: it will declare the generic type."""
+    def test_a_command_analysis_is_a_generic_analysis(self):
+        self.apply("kind: analysis\nname: c\ncommand: [true]\n", "E")
+        built = self.loaded("c")
+        self.assertIs(type(built), SimpleAnalysis)
+        self.assertEqual(built.pipeline.name, "command")
+
+    def test_it_has_none_of_the_gravitational_wave_metadata(self):
         self.apply("kind: analysis\nname: c\ncommand: [true]\n", "E")
         meta = self.loaded("c").meta
-        for key in ("data", "likelihood", "waveform", "sampler", "scheduler"):
+        for key in ("data", "waveform"):
+            self.assertNotIn(key, meta)
+        for key in ("scheduler", "sampler", "likelihood", "command"):
             self.assertIn(key, meta)
 
-    def test_a_generic_analysis_has_no_category_or_psds(self):
+    def test_it_resolves_no_psds(self):
+        self.apply("kind: analysis\nname: c\ncommand: [true]\n", "E")
+        built = self.loaded("c")
+        self.assertFalse(hasattr(built, "psds"))
+        self.assertFalse(hasattr(built, "xml_psds"))
+        self.assertFalse(hasattr(built, "_psd_errors"))
+
+    def test_it_has_a_category_as_every_analysis_does(self):
         event = self.ledger.get_event("E")[0]
         built = SimpleAnalysis.from_dict({"name": "plain", "pipeline": "simpletestpipeline"}, subject=event, ledger=self.ledger)
-        self.assertFalse(hasattr(built, "category"))
+        self.assertEqual(built.category, config.get("general", "calibration_directory"))
+        self.assertEqual(built.pipeline.category, built.category)
         self.assertFalse(hasattr(built, "psds"))
         self.assertNotIn("data", built.meta)
         self.assertNotIn("waveform", built.meta)
 
-    def test_the_yaml_ledger_stores_a_generic_analysis(self):
+    def test_the_yaml_ledger_stores_one(self):
         event = self.ledger.get_event("E")[0]
         built = SimpleAnalysis.from_dict({"name": "plain", "pipeline": "simpletestpipeline"}, subject=event, ledger=self.ledger)
         self.ledger.add_analysis(built, event=event)  # (does not raise)
+        self.assertIs(type(self.loaded("plain")), GravitationalWaveTransient)  # (it names no type: the default)
 
-    def test_the_database_ledger_refuses_a_generic_analysis(self):
-        """It dispatches on ``isinstance(payload, Production)``, which is the GW class."""
+    def test_the_database_ledger_stores_one_too(self):
         ledger = DatabaseCase.make_ledger(self)
         event_file = os.path.join(self.root, "event.yaml")
         with open(event_file, "w") as handle:
@@ -310,8 +324,7 @@ class WillChangeWithTypes(ConstructionCase):
         apply_page(event_file, ledger=ledger)
         event = ledger.get_event("F")[0]
         built = SimpleAnalysis.from_dict({"name": "plain", "pipeline": "simpletestpipeline"}, subject=event, ledger=ledger)
-        with self.assertRaisesRegex(ValueError, "Unknown payload type"):
-            ledger._insert(built)
+        ledger._insert(built)  # (was: ValueError, "Unknown payload type")
 
 
 if __name__ == "__main__":

@@ -148,6 +148,11 @@ Optional methods
     An output with no policy is ``keep``, so a pipeline which declares nothing is never touched.
     A pipeline which does not change what is stored should also treat an output which was released as present (``asimov.retention.released_names(self.production)``) when it checks that an analysis is complete.
 
+``Pipeline.analysis_type``
+    The name of the :ref:`analysis type <analysis-types>` which this pipeline's analyses are, as a class attribute.
+    The default, ``None``, means the gravitational-wave type, so a pipeline which does not set it is unchanged.
+    It is read from the class before the analysis is built, and a ``type:`` on the analysis overrides it.
+
 ``Pipeline.read_ini``
     This should be implemented as a class method, and should parse the configuration file for the pipeline into a dictionary.
 
