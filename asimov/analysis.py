@@ -986,11 +986,15 @@ class Analysis:
             if not pipeline_obj_checked and 'pipeline' in self.meta:
                 is_pipeline = match.lower() == self.meta['pipeline'].lower()
         else:
-            try:
-                meta_value = reduce(operator.getitem, attribute, self.meta)
-                in_meta = str(meta_value).lower() == str(match).lower()
-            except (KeyError, TypeError, AttributeError):
-                in_meta = False
+            own = self.match_attribute(attribute, match)
+            if own is not None:
+                in_meta = bool(own)
+            else:
+                try:
+                    meta_value = reduce(operator.getitem, attribute, self.meta)
+                    in_meta = str(meta_value).lower() == str(match).lower()
+                except (KeyError, TypeError, AttributeError):
+                    in_meta = False
 
         result = (
             is_name | in_meta | is_status | is_review | is_pipeline | is_label | is_subject
@@ -1111,12 +1115,83 @@ class Analysis:
         if "rundir" in self.meta and self.meta["rundir"] is not None:
             return resolve_path(self.meta["rundir"])
         elif "working directory" in self.subject.meta:
-            value = os.path.join(self.subject.meta["working directory"], self.name)
+            value = os.path.join(self.subject.meta["working directory"], self.rundir_name())
             self.meta["rundir"] = value
             return resolve_path(self.meta["rundir"])
             # TODO: Make sure this is saved back to the ledger
         else:
             return None
+
+    # The hooks of an analysis type (see asimov.analysis_types, and the "Analysis
+    # types" page of the documentation). These are the extension surface: a type
+    # overrides them, and everything else in an analysis is private to asimov.
+
+    def rundir_name(self):
+        """
+        The path of the run directory of this analysis, under the working
+        directory of its subject, when it has not been given one.
+
+        The first time the run directory is needed it is worked out from this and
+        then kept in the metadata (``rundir``), so a type which changes it changes
+        the layout only for the analyses it makes after that.
+
+        Returns
+        -------
+        str
+            The name of the analysis, by default.
+        """
+        return self.name
+
+    def validate(self):
+        """
+        The problems with this analysis which a person applying it should fix.
+
+        Called when a blueprint is applied, before anything is stored, and never
+        when a ledger is loaded (which must succeed whatever it holds).
+
+        Returns
+        -------
+        list of str
+            A sentence for each problem: empty, by default, for none. Any is
+            reason to refuse to apply the analysis.
+        """
+        return []
+
+    def match_attribute(self, attribute, match):
+        """
+        Test an attribute which is the type's own, in a filter such as a ``needs:``
+        entry or ``asimov analysis`` selection (``round: "<3"``).
+
+        Called for every attribute which asimov has no meaning for itself (not
+        ``name``, ``status``, ``review``, ``pipeline``, ``label`` or ``subject``).
+        :func:`asimov.analysis_types.compare` does the comparison operators.
+
+        Parameters
+        ----------
+        attribute : list of str
+            The path of the attribute, as split at the dots.
+        match : str
+            What it is to be matched against.
+
+        Returns
+        -------
+        bool or None
+            Whether this analysis matches, or None if the type has no say, in
+            which case the metadata is looked at as it always was.
+        """
+        return None
+
+    def card_details(self):
+        """
+        What to show about this analysis, besides what asimov always shows, on
+        its card in the report.
+
+        Returns
+        -------
+        list of tuple
+            ``(label, value)`` pairs, as text, in order.
+        """
+        return []
 
     @rundir.setter
     def rundir(self, value):
@@ -1487,6 +1562,42 @@ class SimpleAnalysis(Analysis):
         self._needs = cast(List[Any], needs_value) if needs_value is not None else []
 
         self.comment = kwargs.get("comment", None)
+
+        # The hooks of a type, in the order in which they are called. (Only the
+        # analyses of a subject have them: a subject analysis or a project analysis
+        # is not built from a type.)
+        self.set_defaults()
+        self.migrate()
+        self.after_build()
+
+    def set_defaults(self):
+        """
+        Hook: add the metadata which this kind of analysis has when it is not given.
+
+        Called when the analysis is built, after its metadata has been put together
+        from the defaults of its pipeline and subject and what it says itself. Add
+        only what is missing: what is there was given. (``meta_defaults``, a class
+        attribute, is the simplest way to have a default, and is already there.)
+        """
+
+    def migrate(self):
+        """
+        Hook: move metadata from where it used to be to where it is now.
+
+        Called after :meth:`set_defaults`, on every build, so it has to cope with
+        metadata which is already migrated. Say so (``self.logger.warning``) when
+        something deprecated is found.
+        """
+
+    def after_build(self):
+        """
+        Hook: work out anything else which is wanted from the finished metadata.
+
+        Called last, when the analysis is otherwise built (its pipeline too), so it
+        can read all of it. Must not raise for what is in a ledger: record a problem
+        and say so when the analysis is used, since the whole ledger is built on
+        every load.
+        """
 
     def _previous_assets(self):
         assets = {}
@@ -2395,15 +2506,8 @@ class GravitationalWaveTransient(SimpleAnalysis):
         self._psd_errors = {}
 
         super().__init__(subject, name, pipeline, **kwargs)
-        self._checks()
 
-        self.psds = self._collect_psds()
-        self.xml_psds = self._collect_psds(format="xml")
-
-        if "cip jobs" in self.meta:
-            # TODO: Should probably raise a deprecation warning
-            self.meta["sampler"]["cip jobs"] = self.meta["cip jobs"]
-
+    def set_defaults(self):
         if "scheduler" not in self.meta:
             self.meta["scheduler"] = {}
 
@@ -2416,6 +2520,13 @@ class GravitationalWaveTransient(SimpleAnalysis):
             self.meta["data"] = {}
         if "data files" not in self.meta["data"]:
             self.meta["data"]["data files"] = {}
+
+    def migrate(self):
+        self._checks()
+
+        if "cip jobs" in self.meta:
+            # TODO: Should probably raise a deprecation warning
+            self.meta["sampler"]["cip jobs"] = self.meta["cip jobs"]
 
         if "lmax" in self.meta:
             # TODO: Should probably raise a deprecation warning
@@ -2485,8 +2596,10 @@ class GravitationalWaveTransient(SimpleAnalysis):
             # the value an existing analysis already migrated (and froze).
             self.meta["waveform"].setdefault("reference frequency", ref_freq)
 
+    def after_build(self):
         # Gather the PSDs for the job
         self.psds = self._collect_psds()
+        self.xml_psds = self._collect_psds(format="xml")
 
     @classmethod
     def from_dict(cls, parameters, subject=None, ledger=None):

@@ -812,6 +812,15 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
                 production = asimov.event.Production.from_dict(
                     parameters=expanded_doc, subject=event_obj, ledger=ledger
                 )
+                # What the type of the analysis says is wrong with it (nothing, for most)
+                problems = production.validate()
+                if problems:
+                    _say(
+                        click.style("●", fg="red")
+                        + f" Could not apply {production.name} to {event_obj.name}: "
+                        + "; ".join(problems)
+                    )
+                    continue
                 try:
                     with ledger.transaction():
                         ledger.add_analysis(production, event=event_obj)

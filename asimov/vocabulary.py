@@ -404,6 +404,21 @@ class Vocabulary:
                     entry_point.value,
                     error,
                 )
+        # An analysis type can bring terms too (``vocabulary`` on its class, in the same
+        # format). They are not owned by a pipeline, because a type can be used with any
+        # pipeline, so they are not reported as foreign to the pipeline of a document.
+        from asimov.analysis_types import analysis_types
+
+        for name, analysis_type in analysis_types().items():
+            provided = getattr(analysis_type, "vocabulary", None)
+            if provided is None:
+                continue
+            try:
+                self.merge(_resolve_plugin_vocabulary(provided), owner=None)
+            except Exception as error:
+                logger.warning(
+                    "Failed to load vocabulary from the analysis type '%s': %s", name, error
+                )
         return self
 
     # ------------------------------------------------------------------

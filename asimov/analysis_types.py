@@ -28,6 +28,7 @@ a version of asimov which does not know about types loads a typed analysis as
 a gravitational-wave one, with the ``type`` as plain metadata.
 """
 import logging
+import os
 import sys
 from typing import Any, Dict, Optional
 
@@ -53,7 +54,14 @@ class AnalysisTypeError(ValueError):
 def _builtin() -> Dict[str, Any]:
     from asimov.analysis import GravitationalWaveTransient, SimpleAnalysis
 
-    return {"simple": SimpleAnalysis, DEFAULT_TYPE: GravitationalWaveTransient}
+    found = {"simple": SimpleAnalysis, DEFAULT_TYPE: GravitationalWaveTransient}
+    # (As with the testing pipelines, the toy type is only there when testing, and then
+    # only when asked for, so that tests of "no extra types" are unaffected.)
+    if os.environ.get("ASIMOV_TESTING") and os.environ.get("ASIMOV_TOY_STRATEGY"):
+        from asimov.pipelines.testing.types import ToyStep
+
+        found["toy-step"] = ToyStep
+    return found
 
 
 def analysis_types() -> Dict[str, Any]:
@@ -141,3 +149,44 @@ def build_analysis(parameters: Dict[str, Any], subject=None, ledger=None):
     not the default.
     """
     return analysis_class_for(parameters).from_dict(parameters, subject=subject, ledger=ledger)
+
+
+_OPERATORS = (">=", "<=", "==", "!=", ">", "<")
+
+
+def compare(value: Any, spec: Any) -> bool:
+    """
+    Whether a value satisfies a filter such as ``"<3"``, ``">=2"``, ``"!=5"`` or ``"4"``.
+
+    For :meth:`asimov.analysis.Analysis.match_attribute`. Numbers are compared as
+    numbers, and anything else as lower-case text (for which only ``==``, ``!=``
+    and a plain value mean anything).
+
+    Parameters
+    ----------
+    value
+        What the analysis has.
+    spec : str
+        A comparison operator (``>=``, ``<=``, ``==``, ``!=``, ``>``, ``<``) and a
+        value, or just a value, which means ``==``.
+    """
+    text = str(spec).strip()
+    operator = "=="
+    for candidate in _OPERATORS:
+        if text.startswith(candidate):
+            operator, text = candidate, text[len(candidate):].strip()
+            break
+    try:
+        left, right = float(value), float(text)
+    except (TypeError, ValueError):
+        left, right = str(value).lower(), text.lower()
+        if operator in ("<", "<=", ">", ">="):
+            return False
+    return {
+        "==": left == right,
+        "!=": left != right,
+        ">": left > right,
+        ">=": left >= right,
+        "<": left < right,
+        "<=": left <= right,
+    }[operator]
