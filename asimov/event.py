@@ -967,6 +967,12 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                     review_message_escaped = html.escape(review_message, quote=True)
                     labels = (node.meta.get('labels', {}) or {}) if hasattr(node, 'meta') and isinstance(node.meta, dict) else {}
                     labels_json_escaped = html.escape(_json.dumps(labels), quote=True)
+                    # What the type of the analysis wants shown about it (see Analysis.card_details)
+                    try:
+                        details = [[str(k), str(v)] for k, v in node.card_details()]
+                    except Exception:
+                        details = []
+                    details_json_escaped = html.escape(_json.dumps(details), quote=True)
 
                     # A small preview only - full logs are read live from disk via
                     # collect_logs(), which can return megabytes per file. Embedding
@@ -1006,6 +1012,7 @@ Object.assign(window.asimovNodeMap, {node_map_js});
                          data-modal-plot-labels="{modal_plot_labels_str_escaped}"
                          data-logs="{log_preview_json_escaped}"
                          data-labels="{labels_json_escaped}"
+                         data-details="{details_json_escaped}"
                          {get_profiling_attrs(node)}></div>"""
 
             except Exception as e:

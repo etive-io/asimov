@@ -1323,6 +1323,29 @@ def html(event, webdir):
                 document.getElementById('modal-labels-section').style.display = 'none';
             }
 
+            // What the type of the analysis wants shown about it
+            var detailsContainer = document.getElementById('modal-analysis-details');
+            var details = [];
+            try {
+                details = analysisData.dataset.details ? JSON.parse(analysisData.dataset.details) : [];
+            } catch (e) {
+                details = [];
+            }
+            if (details.length > 0) {
+                detailsContainer.innerHTML = '';
+                details.forEach(function(pair) {
+                    var term = document.createElement('dt');
+                    term.textContent = pair[0];
+                    var definition = document.createElement('dd');
+                    definition.textContent = pair[1];
+                    detailsContainer.appendChild(term);
+                    detailsContainer.appendChild(definition);
+                });
+                document.getElementById('modal-details-section').style.display = 'block';
+            } else {
+                document.getElementById('modal-details-section').style.display = 'none';
+            }
+
             // Handle results pages
             if (analysisData.dataset.resultPages) {
                 var resultPagesStr = analysisData.dataset.resultPages;
@@ -1649,6 +1672,10 @@ def html(event, webdir):
         <div class="modal-section" id="modal-dependencies-section">
             <h5>Dependencies</h5>
             <p id="modal-analysis-dependencies">-</p>
+        </div>
+        <div class="modal-section" id="modal-details-section" style="display:none;">
+            <h5>Details</h5>
+            <dl id="modal-analysis-details"></dl>
         </div>
         <div class="modal-section" id="modal-labels-section" style="display:none;">
             <h5>Labels</h5>

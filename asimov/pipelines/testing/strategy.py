@@ -36,6 +36,9 @@ class ToyRoundsStrategy(Strategy):
     cycle : bool
         Make ``combine-r1`` need the last step, which is a cycle, to test that
         one is refused. Default false.
+    typed : bool
+        Make the analyses of the type ``toy-step``, which has a ``round`` and a
+        ``stream`` (see :mod:`asimov.pipelines.testing.types`). Default false.
     """
 
     name = "toy-rounds"
@@ -47,7 +50,7 @@ class ToyRoundsStrategy(Strategy):
         components = spec.get("components", ["A", "B"])
         if not isinstance(components, list) or not components or len(set(components)) != len(components):
             raise StrategyError("'components' must be a list of different names.")
-        unknown = set(spec) - {"type", "components", "rounds", "cycle"}
+        unknown = set(spec) - {"type", "components", "rounds", "cycle", "typed"}
         if unknown:
             raise StrategyError(f"Unknown option(s) for toy-rounds: {', '.join(sorted(unknown))}.")
 
@@ -60,8 +63,11 @@ class ToyRoundsStrategy(Strategy):
             for subject in components + ["shared"]
         ]
 
+        typed = bool(spec.get("typed"))
+
         def step(subject, r, needs):
             return {
+                **({"type": "toy-step"} if typed else {}),
                 "round": r,
                 "stream": subject,
                 "kind": "analysis",
