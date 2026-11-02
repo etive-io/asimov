@@ -141,6 +141,10 @@ class CommandPipeline(Pipeline):
     #: What it reads from the analyses it needs is what its command asks for.
     declares_inputs = True
 
+    #: A command is not a gravitational-wave analysis: it has none of that domain's
+    #: metadata, and no PSDs to resolve.
+    analysis_type = "simple"
+
     #: Whether the command comes from the ledger, and so is subject to the
     #: project's configuration. A subclass which fixes the executable sets False.
     arbitrary_command = True

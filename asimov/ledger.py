@@ -844,14 +844,14 @@ class DatabaseLedger(Ledger):
         int
             The ID of the inserted record.
         """
-        from asimov.analysis import ProjectAnalysis
+        from asimov.analysis import ProjectAnalysis, SimpleAnalysis
 
         if isinstance(payload, Event):
             data = payload.to_dict(productions=False)
             if isinstance(self.db, asimov.database.AsimovSQLDatabase):
                 data = self._prepare_sql_event_data(data)
             id_number = self.db.insert("event", data)
-        elif isinstance(payload, Production):
+        elif isinstance(payload, SimpleAnalysis):  # (of any type: Production is one)
             data = payload.to_dict(event=False)
             if isinstance(self.db, asimov.database.AsimovSQLDatabase):
                 if "event" not in data and hasattr(payload, "event"):

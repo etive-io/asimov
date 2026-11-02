@@ -136,6 +136,13 @@ prometheus = "asimov.telemetry:PrometheusPushgatewaySink"
 # the strategy expands the blueprint into a graph of analyses at apply time.
 # ``chain`` ships with asimov to test the machinery and as a template.
 # Example: my_strategy = "my_package.strategies:MyStrategy"
+# Analysis types (#238): what kind of analysis a blueprint makes. A plugin registers a
+# named type here, and a blueprint (or a pipeline) selects it; asimov's own are listed
+# so that they are found with the others.
+[project.entry-points."asimov.analysis_types"]
+simple = "asimov.analysis:SimpleAnalysis"
+gravitational-wave-transient = "asimov.analysis:GravitationalWaveTransient"
+
 [project.entry-points."asimov.strategies"]
 chain = "asimov.strategies_builtin:ChainStrategy"
 

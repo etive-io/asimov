@@ -167,6 +167,7 @@ Advanced topics
    :caption: Advanced topics
 
    analyses
+   analysis-types
    blueprints
    priors
    environment-reproducibility
