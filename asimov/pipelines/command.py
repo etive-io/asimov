@@ -27,7 +27,7 @@ import shlex
 import stat
 from configparser import NoOptionError, NoSectionError
 
-from asimov import config, retry
+from asimov import config, retention, retry
 from asimov.pipeline import Pipeline, PipelineException
 from asimov.scheduler import JobDescription
 
@@ -180,6 +180,24 @@ class CommandPipeline(Pipeline):
             specs[str(name)] = spec
         return specs
 
+    def retention_of(self, name):
+        """The ``retention`` of an output (``keep`` unless the analysis says otherwise)."""
+        try:
+            return self.output_specs().get(name, {}).get("retention", "keep")
+        except CommandError:
+            return "keep"
+
+    def output_paths(self):
+        """What the command has written, by name, as absolute paths."""
+        try:
+            return {
+                name: self.output_path(name)
+                for name in self.output_specs()
+                if os.path.lexists(self.output_path(name))
+            }
+        except CommandError:
+            return {}
+
     def input_names(self):
         """The products which the command takes from the analyses it needs."""
         names = []
@@ -256,6 +274,13 @@ class CommandPipeline(Pipeline):
             found.extend(asset_paths(value))
         if not found:
             where = f"{{inputs.{name}.{label}}}" if label else f"{{inputs.{name}}}"
+            for dependency in self.production.dependency_objects:
+                if name in retention.released_names(dependency):
+                    raise CommandError(
+                        f"{self.production.name} uses {where}, which {dependency.name} produced "
+                        f"and which was released to save space ({retention.released_when(dependency, name)}). "
+                        f"Run {dependency.name} again to make it (asimov analysis rerun)."
+                    )
             needs = ", ".join(n for n, _ in providers) or "nothing"
             skipped = retry.skipped_dependencies(self.production)
             why = (
@@ -420,7 +445,10 @@ class CommandPipeline(Pipeline):
         outputs = self.output_specs()
         if not outputs and status is None:
             return False
-        if not all(os.path.exists(self.output_path(name)) for name in outputs):
+        gone = retention.released_names(self.production)
+        if not all(
+            os.path.exists(self.output_path(name)) or name in gone for name in outputs
+        ):
             return False
         return bool(self.command_succeeded())
 

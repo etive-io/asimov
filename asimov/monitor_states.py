@@ -8,7 +8,7 @@ hard-coded if-elif chains in the monitor loop.
 from abc import ABC, abstractmethod
 import sys
 import click
-from asimov import logger, LOGGER_LEVEL, condor, retry
+from asimov import logger, LOGGER_LEVEL, condor, retention, retry
 from asimov.telemetry import emit_event
 
 if sys.version_info < (3, 10):
@@ -247,6 +247,7 @@ class RunningState(MonitorState):
             if pipe.detect_completion() is False:
                 return self._handle_no_condor_job(context)
             pipe.after_completion()
+            retention.record_sizes(analysis)
             context.update_ledger()
             click.echo(
                 "  \t  "
@@ -311,6 +312,7 @@ class RunningState(MonitorState):
             
             analysis.status = "finished"
             pipe.after_completion()
+            retention.record_sizes(analysis)
             context.update_ledger()
             click.secho(
                 f"  \t  ● {analysis.name} - Completion detected",

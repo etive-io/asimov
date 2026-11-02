@@ -259,6 +259,27 @@ class Pipeline:
         for asset in self.assets:
             repo.add_file(asset[0], asset[1])
 
+    #: What happens to each output once nothing needs it (see :mod:`asimov.retention`):
+    #: ``{name: policy}``. An output which is not named is ``keep``, so nothing
+    #: changes for a pipeline which does not say.
+    output_retention = {}
+
+    def retention_of(self, name):
+        """The retention policy of an output: ``keep`` or ``until_consumed``."""
+        return (self.output_retention or {}).get(name, "keep")
+
+    def output_paths(self):
+        """
+        The files and directories this analysis has produced, by name, as
+        ``{name: path}`` (a name may have a list of paths).
+
+        Unlike :meth:`collect_assets` this has no side effects. It is what
+        ``asimov analysis du`` measures and ``asimov analysis prune`` may release,
+        so a pipeline which wants either overrides it; paths are relative to the
+        run directory, or absolute. The default is no outputs.
+        """
+        return {}
+
     log_patterns = ["*.out", "*.err", "*.log"]
     """Glob patterns (relative to the run directory) used by the default
     :meth:`collect_logs` to find log files. Every scheduler this project

@@ -197,6 +197,27 @@ class Strategy(ABC):
         """
         return []
 
+    def may_consume(self, analysis, context: StrategyContext) -> bool:
+        """
+        Whether an analysis of this strategy's group may yet be needed by one
+        which has not been made, so that what it produced must not be released
+        (see :mod:`asimov.retention`).
+
+        A strategy which never adds to its group (it does not override
+        :meth:`extend`) has nothing to wait for. A strategy which does is assumed
+        to, for every analysis, until it says otherwise: override this to say,
+        for instance, that only the last few rounds may be consumed by the next.
+
+        Parameters
+        ----------
+        analysis : asimov.analysis.Analysis
+            An analysis of the group, which has finished.
+        context : StrategyContext
+            Read-only information about the project; ``context.group`` is the
+            record of the group.
+        """
+        return type(self).extend is not Strategy.extend
+
 
 def strategy_plugins() -> Dict[str, Any]:
     """

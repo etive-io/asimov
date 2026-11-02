@@ -534,6 +534,47 @@ Hover over a cell for the analysis and its status; click it for the same details
 Numbers are put in order as numbers, and names with numbers in them in numerical order (``r2`` before ``r10``).
 Without ``report`` the panel has the summary and the list only.
 
+.. _retention:
+
+Releasing what is no longer needed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An analysis keeps everything it wrote in its run directory.
+For a graph of many analyses which each write a large intermediate that adds up, so a pipeline can say which of its outputs may be released once nothing needs them, and ``asimov analysis prune`` does it.
+Nothing is released unless a pipeline says so, so nothing changes for one which does not.
+
+An output of a command analysis (see :ref:`command-pipeline`) says what may happen to it with ``retention``::
+
+    outputs:
+      signal: {path: round_003_signal.hdf, retention: until_consumed}
+      final: {path: final.hdf, retention: keep}     # keep is what it is if it says nothing
+
+``keep``
+   Never released.
+``until_consumed``
+   May be released when **every** analysis which needs this one has finished, and at least one does: an output which nothing consumed is not an intermediate.
+
+(``store``, to copy to the results store and then release the working copy, is reserved and is treated as ``keep`` for now.)
+
+``asimov analysis du [--group ID]`` says how much space analyses take: what they produced (recorded when they finished), what is in their run directory now, and what has been released.
+The report shows what a group's outputs take.
+
+``asimov analysis prune [--group ID] [--done] [--dry-run] [--yes]`` releases what may go, says what it would free (``--dry-run`` stops there), and asks first.
+It releases an output only if **all** of these hold, and otherwise says what kept it:
+
+* the analysis which made it has finished, and so has every analysis which needs it, in any subject (one which was skipped will not consume it, but one which is ``stuck`` may be run again, so it holds the output);
+* it is inside the run directory of the analysis which made it, is not a symbolic link, and is not in the results store;
+* nothing which a strategy has yet to add could consume it. A group whose strategy can add analyses (it overrides ``extend``) holds every output until its strategy says otherwise (``Strategy.may_consume``, so that it can keep, say, the last few rounds), or until ``--done`` says the group will not grow.
+
+Each release is recorded on the analysis (``released``: what, its size and, for a file, its SHA-256, why, and when) and in the audit trail.
+An analysis whose output was released is not incomplete, and what asks for the released output is told that it was released and which analysis to run again.
+
+``asimov analysis rerun`` will not run again an analysis which needs something which was released, unless the analysis which made it is run again too; it lists what is missing.
+``--regenerate`` adds what is needed (and what that needs, in turn).
+Running an analysis again forgets what was recorded about its outputs.
+
+``[retention] release = false`` in the project's configuration switches releasing off.
+
 Writing a strategy
 ^^^^^^^^^^^^^^^^^^
 

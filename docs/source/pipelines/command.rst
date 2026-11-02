@@ -30,6 +30,7 @@ It is also what ``pipelines: command:`` (defaults) and ``needs: [{pipeline: comm
    What the command writes, as ``name: path`` (relative to the run directory) or
    ``name: {path: ...}``. An analysis is complete when it exits successfully and everything
    declared exists. With no outputs, it is complete when it exits successfully.
+   An output may say ``retention: until_consumed`` to let ``asimov analysis prune`` release it once what needs it has finished (see :ref:`retention`).
 
 ``scheduler``
    The resources the job asks for (``request memory``, ``request cpus``, ``request disk``,

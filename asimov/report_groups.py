@@ -24,6 +24,7 @@ import html
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from asimov import retention
 from asimov.groups import Member, summary
 from asimov.strategies import strategy_stamp
 
@@ -208,12 +209,17 @@ def _esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _size_note(member: Member) -> str:
+    size = retention.recorded_size(member.analysis)
+    return f" ({retention.human(size)})" if size else ""
+
+
 def _cell(member: Member) -> str:
     status = member.status
     return (
         f'<a href="#" class="group-cell s-{STATUS_CLASS.get(status, "other")}" '
         f'data-status="{_esc(status)}" data-key="{_esc(member.label)}" '
-        f'title="{_esc(member.label)}: {_esc(status)}"></a>'
+        f'title="{_esc(member.label)}: {_esc(status)}{_esc(_size_note(member))}"></a>'
     )
 
 
@@ -245,7 +251,16 @@ def panel_html(identifier: str, kind: str, members: List[Member], record: Option
 
     out = [f'<div class="group-panel" id="group-{_esc(identifier)}">']
     out.append(f"<h4>{_esc(identifier)}<small>{_esc(kind)}</small></h4>")
-    out.append(f"<p>{_esc(summary(members))}</p>")
+    size = sum(retention.recorded_size(m.analysis) for m in members)
+    freed = sum(
+        int(r.get("size", 0) or 0) for m in members for r in retention.released(m.analysis) if isinstance(r, dict)
+    )
+    sizes = ""
+    if size or freed:
+        sizes = f" · {_esc(retention.human(size))} of outputs"
+        if freed:
+            sizes += f", {_esc(retention.human(freed))} released"
+    out.append(f"<p>{_esc(summary(members))}{sizes}</p>")
     out.append("<div>")
     for status, number in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0])):
         out.append(
