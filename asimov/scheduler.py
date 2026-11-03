@@ -109,7 +109,7 @@ class Scheduler(ABC):
         raise NotImplementedError
     
     @abstractmethod
-    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+    def submit_dag(self, dag_file, batch_name=None, force=False, **kwargs):
         """
         Submit a DAG (Directed Acyclic Graph) workflow to the scheduler.
         
@@ -119,6 +119,12 @@ class Scheduler(ABC):
             Path to the DAG file to submit.
         batch_name : str, optional
             A name for the batch of jobs.
+        force : bool, optional
+            Submit a DAG which has been submitted before. This is how a DAG which
+            finished with failed nodes is resumed on HTCondor: the same file is
+            submitted again, and only the nodes which failed are run. Without it
+            the scheduler refuses while the files of the previous run exist. A
+            scheduler which has no such files ignores it. Default False.
         **kwargs
             Additional scheduler-specific parameters.
             
@@ -310,7 +316,7 @@ class HTCondor(Scheduler):
         else:
             return list(self.schedd.query(constraint=constraint))
     
-    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+    def submit_dag(self, dag_file, batch_name=None, force=False, **kwargs):
         """
         Submit a DAG file to the HTCondor scheduler.
         
@@ -323,6 +329,13 @@ class HTCondor(Scheduler):
             Path to the DAG submit file (HTCondor or Slurm format).
         batch_name : str, optional
             A name for the batch of jobs.
+        force : bool, optional
+            Submit a DAG which has been submitted before (``condor_submit_dag
+            -force``). HTCondor refuses to submit a DAG while the files of its
+            previous run (``.condor.sub``, ``.lib.out``, ...) exist, unless this is
+            set. A rescue DAG file next to the DAG is kept, and is what DAGMan
+            resumes from, so submitting the same file again runs only the nodes
+            which failed. Default False.
         **kwargs
             Additional HTCondor-specific parameters.
             
@@ -348,7 +361,9 @@ class HTCondor(Scheduler):
         
         try:
             # Use HTCondor's Submit.from_dag to create a submit description from the DAG file
-            submit_obj = htcondor.Submit.from_dag(dag_file, options={})
+            submit_obj = htcondor.Submit.from_dag(
+                dag_file, options={"force": 1} if force else {}
+            )
             
             # Add batch name if provided
             if batch_name:
@@ -760,9 +775,12 @@ class Slurm(Scheduler):
                 })
         return jobs
 
-    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+    def submit_dag(self, dag_file, batch_name=None, force=False, **kwargs):
         """
         Submit a DAG to Slurm.
+
+        ``force`` is accepted for compatibility with the other schedulers and is
+        ignored: there is no previous run's files to overwrite.
 
         Prefers an ``sbatch_submit.sh`` file alongside *dag_file* (written by
         ``build_dag()``).  Falls back to converting the HTCondor DAG file to a
@@ -1448,7 +1466,7 @@ class LocalProcessScheduler(Scheduler):
 
         return results
 
-    def submit_dag(self, dag_file, batch_name=None, **kwargs):
+    def submit_dag(self, dag_file, batch_name=None, force=False, **kwargs):
         """Not supported for the local process scheduler."""
         raise NotImplementedError(
             "LocalProcessScheduler does not support DAG submission. "
