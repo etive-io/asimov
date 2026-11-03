@@ -469,3 +469,59 @@ class VocabularyCLITests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetryVocabularyTests(unittest.TestCase):
+    """The keys of the retry policy (#240) are standard ledger terms (#311)."""
+
+    def setUp(self):
+        self.vocabulary = Vocabulary.core()
+
+    def problems(self, document):
+        return [
+            str(f)
+            for f in self.vocabulary.check(document, pipeline="simpletestpipeline")
+            if f.kind in {"unknown", "type", "foreign"}
+        ]
+
+    def test_the_documented_policy_is_clean(self):
+        document = {
+            "kind": "analysis",
+            "name": "fit",
+            "pipeline": "simpletestpipeline",
+            "retry": {
+                "attempts": 4,
+                "deterministic attempts": 2,
+                "delay": 60,
+                "backoff": 2,
+            },
+            "on failure": "skip",
+        }
+        self.assertEqual(self.problems(document), [])
+
+    def test_the_integer_shorthand_is_clean(self):
+        self.assertEqual(self.problems({"retry": 3}), [])
+
+    def test_the_state_which_the_monitor_writes_is_clean(self):
+        document = {
+            "attempts": [{"when": "2026-11-03T08:00:00+00:00", "kind": "transient"}],
+            "retry after": "2026-11-03T08:01:00+00:00",
+            "skipped inputs": ["upstream"],
+        }
+        self.assertEqual(self.problems(document), [])
+
+    def test_a_misspelt_key_of_the_policy_is_still_caught(self):
+        found = self.vocabulary.check({"retry": {"attempt": 3}})
+        self.assertEqual([f.dotted for f in found], ["retry.attempt"])
+
+    def test_the_policy_is_type_checked(self):
+        found = {f.dotted: f.kind for f in self.vocabulary.check({"retry": {"attempts": "four"}})}
+        self.assertEqual(found, {"retry.attempts": "type"})
+
+    def test_the_keys_are_the_ones_which_the_code_reads(self):
+        from asimov import retry
+
+        for key in retry.DEFAULTS:
+            self.assertIsNotNone(self.vocabulary.lookup(["retry", key]), key)
+        for key in (retry.ATTEMPTS_KEY, retry.RETRY_AFTER_KEY, retry.SKIPPED_INPUTS_KEY, "on failure"):
+            self.assertIsNotNone(self.vocabulary.lookup([key]), key)

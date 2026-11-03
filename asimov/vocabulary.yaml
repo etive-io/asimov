@@ -237,6 +237,61 @@ terms:
     type: mapping
     open: true
     description: The software environment captured when the analysis ran. Managed by asimov.
+  retry:
+    # (An integer is accepted too, as shorthand for ``attempts``, so this is
+    # not a ``section``, which would refuse a scalar.)
+    type: any
+    description: >-
+      What to do when the analysis fails: how many times to try it, and how
+      long to wait between attempts. A bare integer means ``attempts``. Can
+      also be set for a pipeline in ``pipelines:``, or in the project's
+      ``[retry]`` configuration.
+    used by: [asimov.retry]
+    children:
+      attempts:
+        type: integer
+        description: >-
+          How many times to try the analysis in all, the first included.
+          Defaults to 1 (no retries).
+      deterministic attempts:
+        type: integer
+        description: >-
+          How many times to try an analysis which ran and failed, which is
+          unlikely to be fixed by trying again. Defaults to 2.
+      delay:
+        type: float
+        units: s
+        description: The time to wait before the next attempt. Defaults to 0.
+      backoff:
+        type: float
+        description: >-
+          The factor which the delay is multiplied by for each attempt after
+          the second. Defaults to 1 (a constant delay).
+  on failure:
+    type: string
+    description: >-
+      What happens to an analysis which has failed for good: ``halt`` (the
+      default) leaves it ``stuck`` and what needs it waits; ``skip`` marks it
+      ``skipped`` so that what needs it can go ahead without its outputs.
+    used by: [asimov.retry]
+  attempts:
+    type: list
+    description: >-
+      The failed attempts at an analysis (when, which kind, why). Managed by
+      asimov.
+    used by: [asimov.retry]
+  retry after:
+    type: any
+    description: >-
+      The time before which a failed analysis will not be tried again.
+      Managed by asimov.
+    used by: [asimov.retry]
+  skipped inputs:
+    type: list
+    description: >-
+      The analyses which this one needs which were skipped, so that it ran
+      without their outputs. Managed by asimov.
+    used by: [asimov.retry]
 
   # ------------------------------------------------------------------
   # Event information.
