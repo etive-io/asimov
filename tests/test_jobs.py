@@ -80,7 +80,7 @@ class TestWorker(JobTestCase):
     def test_a_dry_submit_submits_nothing(self):
         done = self.wait(self.start("submit", dryrun=True).id)
         self.assertEqual(done.status, "succeeded", done.error)
-        self.assertEqual(done.result, {"submitted": 0})
+        self.assertEqual(done.result, {"dryrun": True, "would_submit": 0})
 
     def test_unknown_action(self):
         with self.assertRaises(jobs.JobError):

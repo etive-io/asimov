@@ -434,12 +434,18 @@ def run_job(project, job_id):
                     manage.build_analyses(event=job.subject, dryrun=job.options.get("dryrun", False))
                     job.result = {}
                 else:
+                    dryrun = job.options.get("dryrun", False)
                     submitted = manage.submit_analyses(
                         event=job.subject,
-                        dryrun=job.options.get("dryrun", False),
+                        dryrun=dryrun,
                         max_submit=job.options.get("max_submit"),
                     )
-                    job.result = {"submitted": submitted}
+                    # (A dry run counts what it would submit: don't call it submitted.)
+                    job.result = (
+                        {"dryrun": True, "would_submit": submitted}
+                        if dryrun
+                        else {"submitted": submitted}
+                    )
         finally:
             context.reload_ledger()
         job.status = "succeeded"

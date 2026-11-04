@@ -54,11 +54,21 @@ gravitational-wave work, events).
     How a job is getting on, what it did, and the end of what it printed; and the
     recent jobs. These only read the job's record, so they are quick however busy
     the scheduler is, and are available with ``--read-only``.
+``list_plugins``
+    What is installed which a blueprint can name: pipelines (``pipeline:``),
+    analysis types (``type:``), subject types and strategies, each with the package
+    which provides it, and the labellers and telemetry sinks. It describes the
+    server's installation, not a project, so it is the one tool (with
+    ``list_projects``) which takes no ``project``.
 ``preview_blueprint``
     What applying a blueprint would do, and what would be refused. Changes
     nothing (see :doc:`blueprints`).
 ``apply_blueprint``
     Apply a blueprint. Returns what was changed and what was refused.
+
+The server also offers one *resource*, ``asimov://blueprints/reference``, which says
+how to write a blueprint: the kinds, examples, and the rules below, so a client doesn't
+have to learn them by being refused.
 
 Each of these changes is recorded in the :doc:`audit log <audit>` (kinds ``review``
 and ``label``), in the same transaction as the change. ``--read-only`` leaves out
@@ -66,8 +76,29 @@ every tool which changes anything. Only ``remove_label`` removes anything: it is
 marked as destructive so that clients can ask first.
 
 Lists are paged (``limit`` and ``offset``), and log and telemetry results are
-capped, so a large project cannot flood the client. There is no tool which deletes
+capped, so a large project cannot flood the client. A filter which matches nothing
+is not an error, but if the value isn't one that any analysis has (a misspelt
+``status`` or ``pipeline``), the result has a ``warnings`` entry which says what
+there is. There is no tool which deletes
 an analysis, a subject or a record.
+
+Blueprints
+----------
+
+``preview_blueprint`` and ``apply_blueprint`` take the blueprint as YAML text and
+check it before asimov sees it:
+
+* An analysis is for one subject. Say which with the ``subject`` argument or with
+  ``event:`` (or ``subject:``) in the blueprint. If it is said twice the two must
+  agree, and if they differ the call is an error: asimov would otherwise use the
+  argument and ignore the rest.
+* A document of a kind asimov doesn't know is refused (it is listed under
+  ``refused``), as it is by ``asimov apply``.
+* Names cannot contain control characters, ``<``, ``>`` or ``"``, because names are
+  put into the markup which marks text as untrusted.
+* ``update`` updates existing subjects and the configuration. It does not change an
+  analysis which exists already: that is refused, and the result says so under
+  ``problems``.
 
 Several projects
 ----------------
@@ -115,7 +146,8 @@ and a client which retried could submit twice. ``trigger_build`` and
 
 A job is a file in the project, ``.asimov/jobs/<id>.json``, with its status
 (``queued``, ``running``, ``succeeded`` or ``failed``), who it runs as, when it
-started and finished, what it did (for submit, how many analyses it submitted)
+started and finished, what it did (for submit, ``{"submitted": n}``; for a dry run,
+which submits nothing, ``{"dryrun": true, "would_submit": n}``)
 and why it failed, if it did. What it printed is in ``<id>.log``.
 
 * **One at a time.** Only one job runs in a project at once: a second
@@ -153,9 +185,16 @@ want to look but not touch, and use ``preview_blueprint`` before ``apply_bluepri
 
 Logs, review messages and settings can contain text written by other people or
 jobs. The server marks such text with ``<untrusted-data>`` tags and says in its
-instructions that it is data, not instructions. That reduces the chance that a model
+instructions that it is data, not instructions. A closing tag inside the text is
+altered, and the ``source`` the tag names (which can include the name of an analysis)
+is escaped, so text cannot end the tag early. That reduces the chance that a model
 follows an instruction hidden in a log, but it cannot prevent it, so do not give an
 agent applying rights over a project whose logs you do not trust.
+
+Names (of subjects, analyses and the like) are not marked: an agent needs them as
+they are to ask about the thing they name. Those that a blueprint makes through the
+server cannot contain markup characters, but names which were already in the project,
+or were made by other means, can.
 
 An MCP server cannot ask questions, so a blueprint which would make asimov prompt
 (for example an analysis which does not say which subject it is for) is refused with

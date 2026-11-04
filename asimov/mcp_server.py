@@ -21,6 +21,7 @@ The server needs the ``mcp`` package: ``pip install 'asimov[mcp]'``.
 import collections
 import contextlib
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -76,7 +77,61 @@ Use preview_blueprint before apply_blueprint: it says what would change, and wha
 would be refused, and changes nothing. Applying is attributed to you, acting for \
 the person who started this server. Nothing can be deleted.
 
+A blueprint can only name the pipelines, analysis types and strategies which are \
+installed: list_plugins says which. The resource asimov://blueprints/reference \
+says how to write a blueprint.
+
 {NOTE}
+"""
+
+BLUEPRINT_REFERENCE = """\
+# Writing an asimov blueprint
+
+A blueprint is YAML text, with one or more documents (separated by `---`). Each
+has a `kind`:
+
+- `event` (or `subject`): something analyses are of. Needs a `name`.
+- `analysis`: an analysis of a subject. Needs a `name` and a `pipeline`.
+- `configuration`: project-wide settings and defaults.
+- `projectanalysis`: an analysis over several subjects.
+- `postprocessing`: a postprocessing description.
+- `analysisbundle`: a named list of analyses to apply to one subject.
+
+A document of any other kind is refused.
+
+## Examples
+
+    kind: event
+    name: S000000
+    event time: 900
+
+    kind: analysis
+    name: first-look
+    pipeline: command
+
+    kind: configuration
+    quality:
+      minimum frequency:
+        H1: 20
+
+## Rules
+
+- An analysis is for one subject. Say which with the `subject` argument of
+  preview_blueprint and apply_blueprint, or with `event:` (or `subject:`) in
+  the blueprint. If you say it twice the two must agree.
+- `pipeline:` must be installed, and `type:` (the analysis type) must be too:
+  list_plugins says which are.
+- Names cannot contain control characters, `<`, `>` or `"`.
+- Applying an analysis or subject which exists already is refused, and
+  apply_blueprint changes nothing for it. The `update` argument updates
+  existing subjects and the configuration; it does not change analyses.
+- preview_blueprint says what would be added or refused, and changes nothing.
+  Use it first.
+
+## Tools which take text
+
+- add_comment takes `comment`. set_review_status takes `status` (APPROVED,
+  REJECTED, PREFERRED or DEPRECATED) and an optional `message`.
 """
 
 Limit = Annotated[
@@ -98,7 +153,16 @@ _START = ToolAnnotations(destructiveHint=False, idempotentHint=False, openWorldH
 _ADD = ToolAnnotations(destructiveHint=False, idempotentHint=False, openWorldHint=False)
 _REMOVE = ToolAnnotations(destructiveHint=True, idempotentHint=True, openWorldHint=False)
 
+#: What a name made in a blueprint cannot contain: it would be put in markup.
+_MARKUP_IN_NAME = re.compile(r'[<>"\x00-\x1f\x7f]')
 _CLOSING = "</untrusted-data"
+_MARKUP = re.compile(r'[<>"&\x00-\x1f\x7f]')
+_ESCAPES = {"<": "&lt;", ">": "&gt;", '"': "&quot;", "&": "&amp;"}
+
+
+def _attribute(value):
+    """``value`` made safe to put between the quotes of an attribute."""
+    return _MARKUP.sub(lambda m: _ESCAPES.get(m.group(), " "), str(value))
 
 
 def untrusted(text, source):
@@ -113,12 +177,13 @@ def untrusted(text, source):
     ----------
     text : str or None
     source : str
-        Where it came from, e.g. ``"log:slurm_1.out"``.
+        Where it came from, e.g. ``"log:slurm_1.out"``. It can include names
+        which someone else chose, so it is made safe to put in the tag.
     """
     if text is None:
         return None
     safe = str(text).replace(_CLOSING, "<\\/untrusted-data")
-    return f'<untrusted-data source="{source}">\n{safe}\n</untrusted-data>'
+    return f'<untrusted-data source="{_attribute(source)}">\n{safe}\n</untrusted-data>'
 
 
 def _mark_prose(value, source, keys=("comment", "message")):
@@ -351,6 +416,7 @@ def create_server(project, acting_for=None, read_only=False):
                 subjects = None
 
             matches, complete = [], True
+            seen_status, seen_pipeline = set(), set()
             wanted = offset + limit + 1
             iterator = iter(subjects) if subjects is not None else (
                 subject_of(ledger, n) for n in names
@@ -358,6 +424,8 @@ def create_server(project, acting_for=None, read_only=False):
             for found in iterator:
                 for analysis in found.productions:
                     row = reading.analysis_summary(analysis)
+                    seen_status.add(row["status"].lower())
+                    seen_pipeline.add(str(row["pipeline"]).lower())
                     if status and row["status"].lower() != status.lower():
                         continue
                     if pipeline and str(row["pipeline"]).lower() != pipeline.lower():
@@ -367,7 +435,7 @@ def create_server(project, acting_for=None, read_only=False):
                     complete = False
                     break
             page = matches[offset : offset + limit]
-            return {
+            result = {
                 "note": NOTE,
                 "total": len(matches) if complete else None,
                 "has_more": len(matches) > offset + limit,
@@ -375,6 +443,20 @@ def create_server(project, acting_for=None, read_only=False):
                 "limit": limit,
                 "analyses": page,
             }
+            # A filter which matches nothing is not an error (the state may just be
+            # one that nothing is in), but one that is misspelt looks the same,
+            # so say what there is.
+            where = f"subject {subject!r}" if subject else "the project"
+            for label, plural, wanted_value, seen in (
+                ("status", "statuses", status, seen_status),
+                ("pipeline", "pipelines", pipeline, seen_pipeline),
+            ):
+                if wanted_value and not matches and wanted_value.lower() not in seen:
+                    result.setdefault("warnings", []).append(
+                        f"No analysis in {where} has the {label} {wanted_value!r}. "
+                        f"The {plural} in use are: {', '.join(sorted(seen)) or 'none'}."
+                    )
+            return result
 
     @server.tool(annotations=_READ, title="Get an analysis")
     def get_analysis(ctx: Context, subject: str, analysis: str, project: Project = None) -> dict[str, Any]:
@@ -520,6 +602,25 @@ def create_server(project, acting_for=None, read_only=False):
             found = jobs.list_jobs(get_active_context().root, limit=limit, active=active)
             return {"note": NOTE, "jobs": [job_view(job, log=False) for job in found]}
 
+    @server.tool(annotations=_READ, title="List installed plugins")
+    def list_plugins(ctx: Context) -> dict[str, Any]:
+        """
+        List what is installed which a blueprint can name: pipelines (`pipeline:`),
+        analysis types (`type:`), subject types and strategies, with the package
+        which provides each. Also the labellers and telemetry sinks. Which there
+        are depends on the server's installation, not on the project.
+        """
+        return reading.installed_plugins()
+
+    @server.resource(
+        "asimov://blueprints/reference",
+        title="How to write a blueprint",
+        description="The kinds of blueprint, the rules for applying them, and examples.",
+        mime_type="text/markdown",
+    )
+    def blueprint_reference() -> str:
+        return BLUEPRINT_REFERENCE
+
     if read_only:
         return server
 
@@ -533,14 +634,51 @@ def create_server(project, acting_for=None, read_only=False):
             raise ToolError(f"The blueprint is not valid YAML: {error}")
         if not documents:
             raise ToolError("The blueprint has no documents in it.")
+        rewritten = False
         for document in documents:
             if not isinstance(document, dict) or "kind" not in document:
                 raise ToolError("Every document in a blueprint needs a 'kind'.")
-            needs_subject = str(document["kind"]).lower() == "analysis"
-            if needs_subject and not (subject or document.get("event")):
+            for key in ("name", "event", "subject"):
+                if isinstance(document.get(key), str) and _MARKUP_IN_NAME.search(document[key]):
+                    raise ToolError(
+                        f"The {key} {document[key]!r} cannot be used: names cannot contain "
+                        "control characters, '<', '>' or '\"'."
+                    )
+            if str(document["kind"]).lower() != "analysis":
+                continue
+            # Where it is for can be said in three ways. Asimov would use the
+            # argument and ignore the others (or, for `subject:`, fail with an
+            # error about an argument given twice), so say when they differ.
+            said = {
+                str(value)
+                for value in (subject, document.get("event"), document.get("subject"))
+                if value is not None
+            }
+            if len(said) > 1:
+                raise ToolError(
+                    "The blueprint is for more than one subject: "
+                    + ", ".join(sorted(said))
+                    + ". Say one, with `subject` or with `event:` in the blueprint."
+                )
+            if not said:
                 raise ToolError(
                     "An analysis blueprint needs a subject: pass `subject`, or put "
                     "`event:` in the blueprint."
+                )
+            if "subject" in document:
+                # `subject:` means `event:` in an analysis.
+                document["event"] = str(document.pop("subject"))
+                rewritten = True
+        if rewritten:
+            blueprint = yaml.safe_dump_all(documents, sort_keys=False)
+        has_analyses = any(str(d["kind"]).lower() == "analysis" for d in documents)
+
+        def note_update(plan):
+            if update and has_analyses:
+                plan.add_problem(
+                    "`update` changes existing subjects and the configuration. It does not "
+                    "change an analysis which exists already: that is refused.",
+                    "warning",
                 )
 
         with tempfile.TemporaryDirectory() as scratch:
@@ -555,6 +693,7 @@ def create_server(project, acting_for=None, read_only=False):
                         )
                     except Exception as error:
                         raise ToolError(f"The blueprint could not be previewed: {error}")
+                    note_update(plan)
                     return {"note": NOTE, **plan.to_dict()}
 
                 with recording() as plan:
@@ -576,6 +715,7 @@ def create_server(project, acting_for=None, read_only=False):
                                 else "."
                             )
                         )
+                note_update(plan)
                 return {"note": NOTE, **plan.to_dict()}
 
     @server.tool(annotations=_PREVIEW, title="Preview a blueprint")
@@ -583,10 +723,18 @@ def create_server(project, acting_for=None, read_only=False):
         ctx: Context,
         blueprint: Annotated[str, Field(description="The blueprint, as YAML text.")],
         subject: Annotated[
-            Optional[str], Field(description="The subject analyses in it are for.")
+            Optional[str],
+            Field(
+                description="The subject the analyses in it are for. Or say `event:` in the "
+                "blueprint; if you do both they must agree."
+            ),
         ] = None,
         update: Annotated[
-            bool, Field(description="Update what exists rather than add new records.")
+            bool,
+            Field(
+                description="Update existing subjects and the configuration rather than "
+                "refuse them. An analysis which exists already is never updated."
+            ),
         ] = False,
         project: Project = None,
     ) -> dict[str, Any]:
@@ -605,10 +753,18 @@ def create_server(project, acting_for=None, read_only=False):
         ctx: Context,
         blueprint: Annotated[str, Field(description="The blueprint, as YAML text.")],
         subject: Annotated[
-            Optional[str], Field(description="The subject analyses in it are for.")
+            Optional[str],
+            Field(
+                description="The subject the analyses in it are for. Or say `event:` in the "
+                "blueprint; if you do both they must agree."
+            ),
         ] = None,
         update: Annotated[
-            bool, Field(description="Update what exists rather than add new records.")
+            bool,
+            Field(
+                description="Update existing subjects and the configuration rather than "
+                "refuse them. An analysis which exists already is never updated."
+            ),
         ] = False,
         project: Project = None,
     ) -> dict[str, Any]:
@@ -706,7 +862,11 @@ def create_server(project, acting_for=None, read_only=False):
             str, Field(description="APPROVED, REJECTED, PREFERRED or DEPRECATED.")
         ],
         message: Annotated[
-            Optional[str], Field(max_length=10_000, description="Why, if you want to say.")
+            Optional[str],
+            Field(
+                max_length=10_000,
+                description="Why, if you want to say. (add_comment calls its text `comment`.)",
+            ),
         ] = None,
         override_reason: Annotated[
             Optional[str],
@@ -745,7 +905,14 @@ def create_server(project, acting_for=None, read_only=False):
         ctx: Context,
         subject: str,
         analysis: str,
-        comment: Annotated[str, Field(min_length=1, max_length=10_000)],
+        comment: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=10_000,
+                description="The comment. (set_review_status calls its note `message`.)",
+            ),
+        ],
         project: Project = None,
     ) -> dict[str, Any]:
         """

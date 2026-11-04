@@ -86,7 +86,9 @@ class McpProjectsTestCase(unittest.TestCase):
 class TestSeveralProjects(McpProjectsTestCase):
     def test_every_tool_takes_an_optional_project(self):
         for name, tool in self.tools().items():
-            if name == "list_projects":
+            # (These are not about a project: which projects there are, and which
+            # plugins the server's installation has.)
+            if name in ("list_projects", "list_plugins"):
                 continue
             schema = tool.input_schema if hasattr(tool, "input_schema") else tool.inputSchema
             self.assertIn("project", schema["properties"], name)

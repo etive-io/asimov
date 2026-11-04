@@ -641,6 +641,17 @@ class TestCommand(DryRunTestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("! S000000 already exists in this project.", result.output)
 
+    def test_a_kind_which_is_not_known_is_refused_not_ignored(self):
+        ctx = self.context("sqlite")
+        path = self.text("kind: nonsense\nname: z\n")
+        result = self.run_apply(ctx, "-f", path, "--dry-run")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("! Could not apply a document of kind 'nonsense'", result.output)
+        self.assertIn("The kinds are: event, subject, analysis", result.output)
+        # Applying it for real says so too, rather than saying nothing.
+        result = self.run_apply(ctx, "-f", path)
+        self.assertIn("Could not apply a document of kind 'nonsense'", result.output)
+
     def test_json_output(self):
         ctx = self.context("sqlite")
         result = self.run_apply(

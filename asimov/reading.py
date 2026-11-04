@@ -10,10 +10,18 @@ read: nothing here changes a ledger.
 analyses is an event.
 """
 
+import inspect
 import json
 import os
+import sys
+
+if sys.version_info < (3, 10):
+    from importlib_metadata import entry_points
+else:
+    from importlib.metadata import entry_points
 
 __all__ = [
+    "installed_plugins",
     "NotFound",
     "subject_names",
     "analysis_detail",
@@ -223,3 +231,77 @@ def read_telemetry(analysis, event_type=None, since=None):
     if since:
         events = [e for e in events if e.get("timestamp", "") >= since]
     return events
+
+
+#: The entry point groups of plugins which are only listed by name, because
+#: loading them can import packages (such as a metrics client) which are not needed.
+_NAME_ONLY_GROUPS = {
+    "labellers": "asimov.labellers",
+    "telemetry_sinks": "asimov.hooks.telemetry",
+}
+
+
+def _first_line(thing):
+    """The first line of what a class says of itself."""
+    text = (inspect.getdoc(thing) or "").strip()
+    return text.splitlines()[0].strip() if text else ""
+
+
+def _providers(group):
+    """The package which registers each entry point in ``group``, by name."""
+    found = {}
+    for entry in entry_points(group=group):
+        dist = getattr(entry, "dist", None)
+        found[entry.name.lower()] = {
+            "package": str(getattr(dist, "name", None) or "unknown"),
+            "version": str(getattr(dist, "version", None) or "unknown"),
+        }
+    return found
+
+
+def installed_plugins():
+    """
+    What is installed which a blueprint can name or use.
+
+    A blueprint names a pipeline (``pipeline:``), and may name an analysis type
+    (``type:``) or a strategy; these are provided by plugins, so what can be
+    named depends on what is installed. This is the same registries asimov
+    reads when it applies a blueprint.
+
+    Returns
+    -------
+    dict
+        For each of ``pipelines``, ``analysis_types``, ``subject_types``,
+        ``strategies``, ``labellers`` and ``telemetry_sinks``, a list (by
+        name) of ``name``, ``package`` and ``version`` of what provides it
+        ("asimov" for what is built in) and, where it is loaded to say so, a
+        ``description``.
+    """
+    import asimov
+    from asimov import analysis_types, strategies, subject_types
+    from asimov.pipelines import known_pipelines
+
+    loaded = {
+        "pipelines": (known_pipelines, "asimov.pipelines"),
+        "analysis_types": (analysis_types.analysis_types(), analysis_types.ENTRY_POINT_GROUP),
+        "subject_types": (subject_types.subject_types(), subject_types.ENTRY_POINT_GROUP),
+        "strategies": (strategies.strategy_plugins(), strategies.ENTRY_POINT_GROUP),
+    }
+    builtin = {"package": "asimov", "version": str(asimov.__version__)}
+    found = {}
+    for kind, (registry, group) in loaded.items():
+        providers = _providers(group)
+        found[kind] = [
+            {
+                "name": name,
+                **providers.get(str(name).lower(), builtin),
+                "description": _first_line(thing),
+            }
+            for name, thing in sorted(registry.items())
+        ]
+    for kind, group in _NAME_ONLY_GROUPS.items():
+        found[kind] = [
+            {"name": name, **provider}
+            for name, provider in sorted(_providers(group).items())
+        ]
+    return found
