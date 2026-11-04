@@ -6,7 +6,7 @@ SciTokens support will be added in a future PR.
 """
 
 from functools import wraps
-from flask import request, jsonify, g, current_app
+from flask import request, jsonify, g
 from asimov import config
 import logging
 import yaml
@@ -166,6 +166,9 @@ def _identify(token):
         user = None
     if user:
         return user
+    # Imported here: a context proxy at module level breaks autodoc.
+    from flask import current_app
+
     providers = current_app.config.get(PROVIDERS)
     if not providers or token.count('.') != 2:
         return None
