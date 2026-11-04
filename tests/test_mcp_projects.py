@@ -264,3 +264,78 @@ class TestSqlite(TestSeveralProjects, TestAccessThroughMcp):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGrants(McpProjectsTestCase):
+    """With a groups file beside the registry, the grants decide (#183)."""
+
+    def setUp(self):
+        import yaml
+
+        from asimov.principal import Principal
+
+        super().setUp()
+        with open(os.path.join(self.dir, "groups.yaml"), "w") as handle:
+            yaml.safe_dump(
+                {
+                    "groups": {
+                        "one-group": {"members": ["dw"]},
+                        "referees": {"members": ["sam"]},
+                    }
+                },
+                handle,
+            )
+        entry = self.registry.get("one")
+        self.registry.remove("one")
+        entry.grants = {"referees": ["reviewer"]}
+        self.registry.add(entry)
+        self.person = Principal.person("dw")
+
+    def call(self, name, source=None, read_only=False, **arguments):
+        async def go():
+            server = create_server(self.registry, acting_for=self.person)
+            async with Client(server) as client:
+                return await client.call_tool(name, arguments)
+
+        return asyncio.run(go())
+
+    def as_person(self, identifier):
+        from asimov.principal import Principal
+
+        self.person = Principal.person(identifier)
+
+    def last_record(self, action):
+        context = ProjectContext.from_directory(self.roots["one"])
+        with context.activate():
+            records = [r for r in context.ledger.audit_log() if r.action == action]
+        context.reload_ledger()
+        return records[-1].principal_obj
+
+    def test_a_maintainer_changes_and_the_authority_is_recorded(self):
+        self.data("apply_blueprint", project="one", blueprint=CONFIGURATION)
+        recorded = self.last_record("apply")
+        self.assertEqual((recorded.group, recorded.role), ("one-group", "maintainer"))
+        self.assertEqual(recorded.on_behalf_of.identifier, "dw")
+
+    def test_a_reviewer_reviews_and_comments_but_may_not_apply(self):
+        subject = self.subject()
+        self.data("apply_blueprint", project="one", blueprint=ANALYSIS, subject=subject)
+        self.as_person("sam")
+        self.data("set_review_status", project="one", subject=subject, analysis="a1", status="APPROVED")
+        self.assertEqual(self.last_record("review").role, "reviewer")
+        self.data("add_comment", project="one", subject=subject, analysis="a1", comment="ok")
+        self.assertIn("may not", self.error("apply_blueprint", project="one", blueprint=CONFIGURATION))
+        self.assertIn("may not", self.error("trigger_build", project="one", dryrun=True))
+        self.assertIn("may not", self.error(
+            "add_label", project="one", subject=subject, analysis="a1", label="x"
+        ))
+
+    def test_only_granted_projects_are_listed(self):
+        self.as_person("sam")
+        names = [p["name"] for p in self.data("list_projects")["projects"]]
+        self.assertEqual(names, ["one"])
+        self.assertIn("no project called 'two'", self.error("list_subjects", project="two"))
+
+    def test_the_policy_in_force_is_left_alone(self):
+        self.data("list_subjects", project="one")
+        self.assertIsInstance(access.get_policy(), access.AllowAll)

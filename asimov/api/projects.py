@@ -59,6 +59,8 @@ def init_app(app, registry):
         The projects it serves. ``None`` leaves the API as it was.
     """
     app.config["ASIMOV_PROJECT_REGISTRY"] = registry
+    # With a groups file, the instance's grants decide (#183).
+    policy = access.instance_policy(registry) if registry is not None else None
 
     @app.url_value_preprocessor
     def take_project_name(endpoint, values):
@@ -78,14 +80,16 @@ def init_app(app, registry):
         except (UnknownProject, AmbiguousProject):
             return _not_found()
         try:
-            access.authorize(principal, entry, access.READ)
+            authority = access.authorize(principal, entry, access.READ, policy)
         except AccessDenied:
             return _not_found()
         if request.method not in _SAFE:
             try:
-                access.authorize(principal, entry, access.WRITE)
+                authority = access.authorize(principal, entry, access.WRITE, policy)
             except AccessDenied as error:
                 return jsonify({"error": str(error)}), 403
+        # Recorded with what the request does, as it is now (#143).
+        principal = access.with_authority(principal, authority)
         try:
             context = entry.context()
         except Exception:
@@ -121,7 +125,7 @@ def init_app(app, registry):
         visible = []
         for entry in registry.list():
             try:
-                access.authorize(principal, entry, access.READ)
+                access.authorize(principal, entry, access.READ, policy)
             except AccessDenied:
                 continue
             visible.append({"name": entry.name, "groups": list(entry.groups)})

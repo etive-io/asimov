@@ -126,7 +126,10 @@ class ProjectEntry:
     root : str
         The project's directory.
     groups : list of str
-        The groups which own the project.
+        The groups which own the project. They hold the maintainer role on it.
+    grants : dict, optional
+        The roles other groups hold on it: group name to a list of roles (see
+        :data:`asimov.access.ROLES`).
     ledger : dict, optional
         ``engine`` and ``location`` of the project's ledger, if they aren't
         the ones in the project's own configuration. ``location`` may be a
@@ -149,6 +152,7 @@ class ProjectEntry:
     storage: Optional[str] = None
     scheduler: Optional[str] = None
     quotas: Dict[str, object] = dataclasses.field(default_factory=dict)
+    grants: Dict[str, List[str]] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
         self.validate()
@@ -178,6 +182,21 @@ class ProjectEntry:
                 )
         if not isinstance(self.quotas, dict):
             raise RegistryError(f"The quotas of {self.name!r} must be a mapping.")
+        from asimov.access import ROLES
+
+        if not isinstance(self.grants, dict):
+            raise RegistryError(f"The grants of {self.name!r} must map groups to lists of roles.")
+        for group, roles in self.grants.items():
+            if isinstance(roles, str):
+                roles = self.grants[group] = [roles]
+            if not isinstance(group, str) or not isinstance(roles, list):
+                raise RegistryError(f"The grants of {self.name!r} must map groups to lists of roles.")
+            unknown = [role for role in roles if role not in ROLES]
+            if unknown:
+                raise RegistryError(
+                    f"{', '.join(map(repr, unknown))} granted to {group!r} on {self.name!r} "
+                    f"is not a role: use {', '.join(ROLES)}."
+                )
         for key in SCHEDULER_QUOTAS:
             value = self.quotas.get(key)
             if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0):
@@ -199,6 +218,8 @@ class ProjectEntry:
                 data[key] = copy.deepcopy(value)
         if self.quotas:
             data["quotas"] = copy.deepcopy(self.quotas)
+        if self.grants:
+            data["grants"] = {group: list(roles) for group, roles in self.grants.items()}
         return mask_secrets(data) if mask else data
 
     @classmethod
@@ -215,7 +236,7 @@ class ProjectEntry:
         """
         if not isinstance(data, dict):
             raise RegistryError(f"The entry for {name!r} must be a mapping.")
-        unknown = set(data) - {"root", "groups", "ledger", "storage", "scheduler", "quotas"}
+        unknown = set(data) - {"root", "groups", "grants", "ledger", "storage", "scheduler", "quotas"}
         if unknown:
             raise RegistryError(f"The entry for {name!r} has unknown keys: {', '.join(sorted(unknown))}.")
         root = data.get("root")
@@ -229,6 +250,7 @@ class ProjectEntry:
             storage=data.get("storage"),
             scheduler=data.get("scheduler"),
             quotas=dict(data.get("quotas") or {}),
+            grants=dict(data.get("grants") or {}),
         )
 
     def context(self):
@@ -416,6 +438,7 @@ class FileRegistry(ProjectRegistry):
           gw-o4:
             root: /data/projects/gw-o4
             groups: [cbc-pe]
+            grants: {cbc-review: [reviewer]}
             ledger: {engine: sqlite, location: "sqlite:///data/gw-o4/ledger.db"}
             storage: /results/gw-o4
             scheduler: htcondor
