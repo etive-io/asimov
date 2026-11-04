@@ -52,6 +52,17 @@ logger.setLevel(LOGGER_LEVEL)
 #: The key under which an analysis records who requested it.
 REQUESTED_BY = "requested by"
 
+#: The kinds of document a blueprint can hold (see :doc:`blueprints`).
+BLUEPRINT_KINDS = (
+    "event",
+    "subject",
+    "analysis",
+    "postprocessing",
+    "projectanalysis",
+    "analysisbundle",
+    "configuration",
+)
+
 
 def _audited(ledger, kind, target, content, outcome="added", diff=None):
     """
@@ -1095,6 +1106,15 @@ def apply_page(file, event=None, ledger=None, update_page=False, name=None, iter
             _say(
                 click.style("●", fg="green")
                 + " Successfully applied a configuration update"
+            )
+
+        else:
+            # Not a kind of document asimov knows. Saying nothing made a
+            # misspelt kind look like a blueprint which had been applied.
+            _say(
+                click.style("●", fg="red")
+                + f" Could not apply a document of kind '{document['kind']}'. "
+                + f"The kinds are: {', '.join(BLUEPRINT_KINDS)}."
             )
 
     # The events loaded while applying, which the check of ``needs`` reuses.
