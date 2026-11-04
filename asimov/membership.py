@@ -74,10 +74,15 @@ class FileGroupDirectory(GroupDirectory):
     Parameters
     ----------
     path : str
+    missing_ok : bool
+        Treat a file which doesn't exist as one with no groups and no admins,
+        rather than as a mistake. For an instance whose groups come from
+        tokens (see :mod:`asimov.identity`), which may add local ones later.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, missing_ok=False):
         self.path = os.path.abspath(path)
+        self.missing_ok = missing_ok
 
     def load(self):
         """
@@ -92,6 +97,8 @@ class FileGroupDirectory(GroupDirectory):
         ------
         MembershipError
         """
+        if self.missing_ok and not os.path.exists(self.path):
+            return set(), {}
         try:
             with open(self.path) as handle:
                 data = yaml.safe_load(handle) or {}

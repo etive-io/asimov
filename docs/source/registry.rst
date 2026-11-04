@@ -151,8 +151,7 @@ acting for nobody has none. The monitor may read, change and run what is in a
 project, but not review it. The group and role which allowed a change are recorded
 with it in the project's audit trail, as they were at the time.
 
-Groups from an identity provider's token claims (#182) are not supported yet, so
-groups are local ones, kept by the instance's admins.
+Groups can also come from an identity provider's tokens: see below.
 
 The grants and members can be changed from the command line, rather than by
 editing the files:
@@ -180,3 +179,49 @@ There are two ways round this:
 * A project where the same people analyse and review, such as a personal project, can
   set ``self_approval: true`` in its registry entry (``asimov registry self-approval
   NAME on``), and then the rule doesn't apply to it.
+
+Signing in with an identity provider
+------------------------------------
+
+An instance can let people sign in with an OpenID Connect identity provider (IdP),
+such as CILogon for IGWN, instead of being given API keys. The provider logs the
+person in, and gives their client a signed token, which it sends to asimov as
+``Authorization: Bearer <token>``. asimov never sees a password: it checks the
+token's signature against the provider's published keys, that the provider issued
+it for asimov, and that it hasn't expired. It then reads who the person is, and
+which groups they are in, from the token. This needs ``pip install asimov[oidc]``.
+
+The providers are listed in ``identity.yaml``, beside the registry file (or the file
+named by ``$ASIMOV_IDENTITY``):
+
+.. code-block:: yaml
+
+    providers:
+      - issuer: https://cilogon.org          # exactly the token's "iss"
+        audience: asimov-prod                # the token's "aud": asimov's client ID
+        claims:
+          identifier: uid                    # the person's name in asimov (default: sub)
+          name: name
+          accounting: uid                    # charged to (see #181)
+          groups: isMemberOf                 # a list (or comma-separated) of groups
+        groups:
+          - match: '^CO:COU:([a-z0-9._-]+):members$'
+            group: '\1'
+
+* **Keys** are found by OIDC discovery from the ``issuer``. Give ``jwks_uri`` to name
+  the key set's URL instead, or ``jwks`` to write the keys in the file.
+* **Groups** in the token become asimov groups by the first ``match`` which fits the
+  whole value, with ``group`` saying what it becomes (``\1`` is the first bracket).
+  Values no rule matches are ignored. Those which match are added, for that request,
+  to the person's groups in ``groups.yaml``, so membership follows each login.
+* **Instance admins** come only from ``groups.yaml``, never from a token.
+* **prefix** puts a fixed string in front of every identifier from a provider, so that
+  two providers' people can't be mistaken for one another.
+
+API keys keep working alongside tokens, for automation. Once an identity file exists,
+grants are enforced (as with a groups file): until a groups file is added too, a
+person's groups are just those their token gives.
+
+Choose an ``identifier`` claim which is stable and readable, such as a collaboration
+username, since it is the name used in ``groups.yaml``, in the audit trail, and for
+accounting.

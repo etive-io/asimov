@@ -215,7 +215,8 @@ class GrantPolicy(Policy):
 
 def instance_policy(registry):
     """
-    The policy for an instance serving ``registry``, if it has a groups file.
+    The policy for an instance serving ``registry``, if it has a groups file
+    or an identity file (see :mod:`asimov.identity`).
 
     Parameters
     ----------
@@ -224,15 +225,22 @@ def instance_policy(registry):
     Returns
     -------
     GrantPolicy or None
-        ``None`` if the instance has no groups file, in which case the policy
+        ``None`` if the instance has neither file, in which case the policy
         in force (:func:`get_policy`) applies.
     """
-    from asimov.membership import FileGroupDirectory, groups_path_for
+    from asimov.identity import TokenGroups, identity_path_for
+    from asimov.membership import FileGroupDirectory, default_groups_path, groups_path_for
 
     path = groups_path_for(registry)
-    if path is None:
+    if path is not None:
+        return GrantPolicy(TokenGroups(FileGroupDirectory(path)))
+    if identity_path_for(registry) is None:
         return None
-    return GrantPolicy(FileGroupDirectory(path))
+    # An instance which identifies people by token enforces grants even before
+    # it has local groups: until a groups file is added, groups come from
+    # tokens alone and there are no instance admins.
+    local = FileGroupDirectory(default_groups_path(registry.path), missing_ok=True)
+    return GrantPolicy(TokenGroups(local))
 
 
 _policy = AllowAll()
