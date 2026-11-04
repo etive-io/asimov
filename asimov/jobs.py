@@ -389,8 +389,19 @@ def start_job(
     return job
 
 
-class _TimedOut(Exception):
-    pass
+class _TimedOut(BaseException):
+    """
+    The job has run for as long as it is allowed.
+
+    This is raised inside whatever the job is doing when the time is up. It is not
+    an ``Exception`` because building and submitting catch ``Exception`` around each
+    analysis, so that one which fails does not stop the others, and would take the
+    limit for one more failed analysis and carry on.
+    """
+
+
+#: How often the limit is raised again, in seconds, if something catches it anyway.
+_REPEAT = 5
 
 
 def run_job(project, job_id):
@@ -417,13 +428,17 @@ def run_job(project, job_id):
     job.started = _now()
     _write(project, job)
 
+    expired = []
+
     def timed_out(signum, frame):
+        expired.append(True)
         raise _TimedOut()
 
     previous = None
     if hasattr(signal, "SIGALRM") and threading.current_thread() is threading.main_thread():
         previous = signal.signal(signal.SIGALRM, timed_out)
-        signal.alarm(max(1, job.timeout))
+        # (Repeating, in case something which catches everything gets in the way.)
+        signal.setitimer(signal.ITIMER_REAL, max(1, job.timeout), _REPEAT)
     try:
         context = ProjectContext.from_directory(project)
         try:
@@ -448,8 +463,14 @@ def run_job(project, job_id):
                     )
         finally:
             context.reload_ledger()
+        if expired:
+            # The limit was reached, and something carried on regardless. What it
+            # did afterwards may not be all it was meant to, so it is not a success.
+            raise _TimedOut()
         job.status = "succeeded"
     except _TimedOut:
+        if previous is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
         job.status = "failed"
         job.error = f"The job ran for more than {job.timeout} seconds and was stopped."
     except BaseException as error:  # a worker must always say how it ended
@@ -457,7 +478,7 @@ def run_job(project, job_id):
         job.error = f"{type(error).__name__}: {error}"
     finally:
         if previous is not None:
-            signal.alarm(0)
+            signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
         job.finished = _now()
         _write(project, job)

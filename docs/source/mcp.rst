@@ -158,7 +158,10 @@ and why it failed, if it did. What it printed is in ``<id>.log``.
   ``trigger_submit`` without a ``subject`` submits every ready analysis in the
   project: set ``max_submit_per_pass`` if you give an agent this tool.
 * **Time limit.** A worker is stopped after an hour, and the job is marked as
-  failed.
+  failed. The limit gets through the ``except Exception`` blocks which building and
+  submitting use to carry on past an analysis that fails, and a job which reached its
+  limit is never reported as succeeded, even if something caught the interruption and
+  finished anyway.
 * **Dead workers.** If a worker is killed, or the machine restarts, the job is
   marked as failed the next time it is read, and the project can run jobs again.
 * **Audited.** Starting a job is recorded in the :doc:`audit log <audit>` (kind
