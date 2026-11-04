@@ -153,3 +153,30 @@ with it in the project's audit trail, as they were at the time.
 
 Groups from an identity provider's token claims (#182) are not supported yet, so
 groups are local ones, kept by the instance's admins.
+
+The grants and members can be changed from the command line, rather than by
+editing the files:
+
+.. code-block:: console
+
+    $ asimov registry grant gw-o4 cbc-review reviewer
+    $ asimov registry revoke gw-o4 cbc-review          # every role it was granted
+    $ asimov registry members cbc-review --add sam --remove jane
+    $ asimov registry self-approval gw-o4 on
+
+Reviewing your own work
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Where groups are enforced, whoever applied an analysis (or an agent acting for them)
+may not approve it: setting ``APPROVED`` or ``PREFERRED`` on it is refused, and
+someone else has to review it. Rejecting it, deprecating it and commenting on it are
+still allowed. Who applied an analysis is taken from the project's audit trail.
+
+There are two ways round this:
+
+* A **maintainer** (or an instance admin) may approve their own analysis by giving a
+  reason, which is kept in the audit record of the review (``override_reason`` in the
+  MCP ``set_review_status`` tool).
+* A project where the same people analyse and review, such as a personal project, can
+  set ``self_approval: true`` in its registry entry (``asimov registry self-approval
+  NAME on``), and then the rule doesn't apply to it.

@@ -13,11 +13,15 @@ change it, and it stays until it is removed.
 """
 
 from asimov.audit import append_audit, new_record
+from asimov.principal import current_principal
 from asimov.review import STATES, ReviewMessage
 
 __all__ = [
+    "APPROVING",
     "MANUAL_LABELS",
     "ActionError",
+    "SelfApproval",
+    "applied_by",
     "add_comment",
     "add_label",
     "remove_label",
@@ -28,8 +32,26 @@ __all__ = [
 MANUAL_LABELS = "manual labels"
 
 
+#: The review statuses which approve an analysis.
+APPROVING = frozenset({"APPROVED", "PREFERRED"})
+
+
 class ActionError(ValueError):
     """The change can't be made, and the message says why."""
+
+
+class SelfApproval(ActionError):
+    """Someone tried to approve an analysis they applied (#183)."""
+
+
+def applied_by(ledger, analysis, identifier):
+    """
+    Whether the person called ``identifier`` applied ``analysis``.
+
+    Decided from the audit log: an ``apply`` record for the analysis made by
+    them, or by an agent acting for them.
+    """
+    return bool(ledger.audit_log(target=_target(analysis), action="apply", principal=identifier))
 
 
 def _target(analysis):
@@ -40,7 +62,7 @@ def _save(ledger, analysis):
     ledger.update_event(analysis.event)
 
 
-def _review(ledger, analysis, message, status, action):
+def _review(ledger, analysis, message, status, action, extra=None):
     if status is not None and str(status).upper() not in STATES:
         raise ActionError(
             f"{status!r} is not a review status: use one of {', '.join(sorted(STATES))}."
@@ -57,14 +79,14 @@ def _review(ledger, analysis, message, status, action):
                 action,
                 "review",
                 _target(analysis),
-                content={"status": status, "message": message},
+                content={"status": status, "message": message, **(extra or {})},
                 outcome="added",
             ),
         )
     return record
 
 
-def set_review_status(ledger, analysis, status, message=None):
+def set_review_status(ledger, analysis, status, message=None, separate=False, override=None):
     """
     Give an analysis a review status, with a message if there is one.
 
@@ -75,6 +97,14 @@ def set_review_status(ledger, analysis, status, message=None):
     status : str
         One of the review states, e.g. ``"APPROVED"``.
     message : str, optional
+    separate : bool
+        Refuse to let whoever applied the analysis approve it (``APPROVED``
+        or ``PREFERRED``). The caller decides when this applies: on an
+        instance with groups, unless the project allows self-approval.
+    override : str, optional
+        Why the person who applied the analysis is approving it anyway. It
+        is kept in the audit record. The caller checks that the principal
+        may override (a maintainer or an instance admin).
 
     Returns
     -------
@@ -82,12 +112,25 @@ def set_review_status(ledger, analysis, status, message=None):
 
     Raises
     ------
+    SelfApproval
+        If ``separate`` is set, the current principal applied the analysis,
+        and there is no ``override``.
     ActionError
         If ``status`` isn't a review state.
     """
     if status is None:
         raise ActionError("A status is needed.")
-    return _review(ledger, analysis, message, status, "review")
+    extra = None
+    if separate and str(status).upper() in APPROVING:
+        person = current_principal().on_behalf_of.identifier
+        if applied_by(ledger, analysis, person):
+            if not (override and str(override).strip()):
+                raise SelfApproval(
+                    f"{person} applied {_target(analysis)}, so may not approve it: someone "
+                    "else must review it, or a maintainer may override with a reason."
+                )
+            extra = {"self-approval override": str(override).strip()}
+    return _review(ledger, analysis, message, status, "review", extra)
 
 
 def add_comment(ledger, analysis, message):

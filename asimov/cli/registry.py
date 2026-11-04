@@ -129,3 +129,94 @@ def remove(ctx, name):
     except RegistryError as error:
         raise click.ClickException(str(error))
     click.echo(click.style("●", fg="green") + f" Removed {name} from the registry")
+
+
+@registry.command("grant", help="Give GROUP the ROLE on the project NAME.")
+@click.argument("name")
+@click.argument("group")
+@click.argument("role", type=click.Choice(["viewer", "reviewer", "analyst", "maintainer"]))
+@click.pass_context
+def grant(ctx, name, group, role):
+    """Grant a role."""
+
+    def change(entry):
+        roles = entry.grants.setdefault(group, [])
+        if role not in roles:
+            roles.append(role)
+
+    try:
+        _registry(ctx).update(name, change)
+    except RegistryError as error:
+        raise click.ClickException(str(error))
+    click.echo(click.style("●", fg="green") + f" {group} is {role} on {name}")
+
+
+@registry.command("revoke", help="Take ROLE (or every role) on the project NAME from GROUP.")
+@click.argument("name")
+@click.argument("group")
+@click.argument("role", required=False)
+@click.pass_context
+def revoke(ctx, name, group, role):
+    """Revoke a role. The owning groups are changed by editing the registry."""
+
+    def change(entry):
+        if group not in entry.grants:
+            raise RegistryError(f"{group} holds no granted role on {name}.")
+        if role is None:
+            del entry.grants[group]
+            return
+        remaining = [r for r in entry.grants[group] if r != role]
+        if remaining:
+            entry.grants[group] = remaining
+        else:
+            del entry.grants[group]
+
+    try:
+        _registry(ctx).update(name, change)
+    except RegistryError as error:
+        raise click.ClickException(str(error))
+    click.echo(click.style("●", fg="green") + f" Revoked {role or 'every role'} on {name} from {group}")
+
+
+@registry.command(
+    "self-approval",
+    help="Allow (on) or forbid (off) whoever applied an analysis in NAME to approve it.",
+)
+@click.argument("name")
+@click.argument("setting", type=click.Choice(["on", "off"]))
+@click.pass_context
+def self_approval(ctx, name, setting):
+    """Set whether self-approval is allowed."""
+
+    def change(entry):
+        entry.self_approval = setting == "on"
+
+    try:
+        _registry(ctx).update(name, change)
+    except RegistryError as error:
+        raise click.ClickException(str(error))
+    state = "allowed" if setting == "on" else "forbidden"
+    click.echo(click.style("●", fg="green") + f" Self-approval is {state} on {name}")
+
+
+@registry.command("members", help="Show the members of GROUP, adding or removing people first.")
+@click.argument("group")
+@click.option("--add", "add", multiple=True, help="A person to add (repeat for more).")
+@click.option("--remove", "remove", multiple=True, help="A person to remove (repeat for more).")
+@click.pass_context
+def members(ctx, group, add, remove):
+    """Manage a group's members in the instance's groups file."""
+    from asimov.membership import FileGroupDirectory, MembershipError, default_groups_path
+
+    directory = FileGroupDirectory(default_groups_path(ctx.obj["path"]))
+    try:
+        if add or remove:
+            people = directory.change_members(group, add=add, remove=remove)
+        else:
+            _, groups = directory.load()
+            if group not in groups:
+                raise MembershipError(f"There is no group called {group!r}.")
+            people = groups[group]
+    except MembershipError as error:
+        raise click.ClickException(str(error))
+    click.echo(f"{group}: {', '.join(sorted(people)) or '(no members)'}")

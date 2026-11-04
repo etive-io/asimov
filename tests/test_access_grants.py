@@ -194,3 +194,48 @@ class TestFindingTheGroupsFile(GrantsTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCommands(GrantsTestCase):
+    def setUp(self):
+        from click.testing import CliRunner
+
+        from asimov.cli.registry import registry
+
+        super().setUp()
+        self.registry_path = os.path.join(self.dir, "registry.yaml")
+        FileRegistry(self.registry_path).add(self.entry)
+        self.runner, self.command = CliRunner(), registry
+
+    def cli(self, *arguments):
+        return self.runner.invoke(self.command, ["--registry", self.registry_path, *arguments])
+
+    def stored(self):
+        return FileRegistry(self.registry_path).get("gw-o4")
+
+    def test_grant_and_revoke(self):
+        self.assertEqual(self.cli("grant", "gw-o4", "tgr", "analyst").exit_code, 0)
+        self.cli("grant", "gw-o4", "tgr", "reviewer")
+        self.assertEqual(self.stored().grants["tgr"], ["analyst", "reviewer"])
+        self.cli("revoke", "gw-o4", "tgr", "analyst")
+        self.assertEqual(self.stored().grants["tgr"], ["reviewer"])
+        self.cli("revoke", "gw-o4", "tgr")
+        self.assertNotIn("tgr", self.stored().grants)
+        self.assertNotEqual(self.cli("revoke", "gw-o4", "tgr").exit_code, 0)
+        self.assertNotEqual(self.cli("grant", "gw-o4", "tgr", "owner").exit_code, 0)
+
+    def test_self_approval(self):
+        self.cli("self-approval", "gw-o4", "on")
+        self.assertTrue(self.stored().self_approval)
+        self.cli("self-approval", "gw-o4", "off")
+        self.assertFalse(self.stored().self_approval)
+
+    def test_members(self):
+        result = self.cli("members", "cbc-pe", "--add", "kim", "--remove", "jane")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("dw, kim", result.output)
+        directory = FileGroupDirectory(self.groups_path)
+        self.assertEqual(directory.groups_of("kim"), {"cbc-pe"})
+        self.assertEqual(directory.load()[0], {"root"})  # admins kept
+        self.assertIn("new: x", self.cli("members", "new", "--add", "x").output)
+        self.assertNotEqual(self.cli("members", "missing").exit_code, 0)

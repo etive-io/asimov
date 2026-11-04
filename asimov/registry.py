@@ -130,6 +130,9 @@ class ProjectEntry:
     grants : dict, optional
         The roles other groups hold on it: group name to a list of roles (see
         :data:`asimov.access.ROLES`).
+    self_approval : bool
+        Let whoever applied an analysis approve it, where groups are enforced.
+        Off by default; for projects where the same people analyse and review.
     ledger : dict, optional
         ``engine`` and ``location`` of the project's ledger, if they aren't
         the ones in the project's own configuration. ``location`` may be a
@@ -153,6 +156,7 @@ class ProjectEntry:
     scheduler: Optional[str] = None
     quotas: Dict[str, object] = dataclasses.field(default_factory=dict)
     grants: Dict[str, List[str]] = dataclasses.field(default_factory=dict)
+    self_approval: bool = False
 
     def __post_init__(self):
         self.validate()
@@ -182,6 +186,8 @@ class ProjectEntry:
                 )
         if not isinstance(self.quotas, dict):
             raise RegistryError(f"The quotas of {self.name!r} must be a mapping.")
+        if not isinstance(self.self_approval, bool):
+            raise RegistryError(f"self_approval for {self.name!r} must be true or false.")
         from asimov.access import ROLES
 
         if not isinstance(self.grants, dict):
@@ -220,6 +226,8 @@ class ProjectEntry:
             data["quotas"] = copy.deepcopy(self.quotas)
         if self.grants:
             data["grants"] = {group: list(roles) for group, roles in self.grants.items()}
+        if self.self_approval:
+            data["self_approval"] = True
         return mask_secrets(data) if mask else data
 
     @classmethod
@@ -236,7 +244,7 @@ class ProjectEntry:
         """
         if not isinstance(data, dict):
             raise RegistryError(f"The entry for {name!r} must be a mapping.")
-        unknown = set(data) - {"root", "groups", "grants", "ledger", "storage", "scheduler", "quotas"}
+        unknown = set(data) - {"root", "groups", "grants", "self_approval", "ledger", "storage", "scheduler", "quotas"}
         if unknown:
             raise RegistryError(f"The entry for {name!r} has unknown keys: {', '.join(sorted(unknown))}.")
         root = data.get("root")
@@ -251,6 +259,7 @@ class ProjectEntry:
             scheduler=data.get("scheduler"),
             quotas=dict(data.get("quotas") or {}),
             grants=dict(data.get("grants") or {}),
+            self_approval=data.get("self_approval", False),
         )
 
     def context(self):
@@ -517,3 +526,29 @@ class FileRegistry(ProjectRegistry):
                 raise UnknownProject(name, list(projects))
             del projects[name]
             self._save(projects)
+
+    def update(self, name, change):
+        """
+        Change a project's entry, holding the lock so no other change is lost.
+
+        Parameters
+        ----------
+        name : str
+        change : callable
+            Given the :class:`ProjectEntry`, changes it in place.
+
+        Returns
+        -------
+        ProjectEntry
+            The entry as stored.
+        """
+        with self._locked():
+            projects = self._load()
+            if name not in projects:
+                raise UnknownProject(name, list(projects))
+            entry = ProjectEntry.from_dict(name, projects[name], base=os.path.dirname(self.path))
+            change(entry)
+            entry.validate()
+            projects[name] = entry.to_dict()
+            self._save(projects)
+        return entry

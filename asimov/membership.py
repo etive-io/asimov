@@ -21,8 +21,10 @@ directory of the registry file. While there is no such file, the instance
 allows everything, as it did before groups existed.
 """
 
+import contextlib
 import os
 import re
+import tempfile
 
 import yaml
 
@@ -30,6 +32,7 @@ __all__ = [
     "FileGroupDirectory",
     "GroupDirectory",
     "MembershipError",
+    "default_groups_path",
     "groups_path_for",
 ]
 
@@ -118,6 +121,50 @@ class FileGroupDirectory(GroupDirectory):
             members[name] = set(listed)
         return set(admins), members
 
+    def change_members(self, group, add=(), remove=()):
+        """
+        Add people to ``group`` and take people out of it, creating it if needed.
+
+        The file is written all at once, under a lock, so that two changes
+        made together both happen.
+
+        Returns
+        -------
+        set of str
+            The group's members afterwards.
+        """
+        if not GROUP_NAME.match(group):
+            raise MembershipError(f"{group!r} is not a group name.")
+        import fcntl
+
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path + ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if os.path.exists(self.path):
+                admins, members = self.load()
+                with open(self.path) as handle:
+                    data = yaml.safe_load(handle) or {}
+            else:
+                admins, members, data = set(), {}, {}
+            people = (members.get(group, set()) | set(add)) - set(remove)
+            groups = data.setdefault("groups", {}) or {}
+            data["groups"] = groups
+            entry = groups.setdefault(group, {}) or {}
+            groups[group] = entry
+            entry["members"] = sorted(people)
+            scratch = tempfile.NamedTemporaryFile(
+                "w", dir=os.path.dirname(self.path), prefix=".groups-", delete=False
+            )
+            try:
+                with scratch:
+                    yaml.safe_dump(data, scratch, sort_keys=True)
+                os.replace(scratch.name, self.path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.remove(scratch.name)
+                raise
+        return people
+
     def groups_of(self, identifier):
         _, members = self.load()
         return {name for name, people in members.items() if identifier in people}
@@ -125,6 +172,13 @@ class FileGroupDirectory(GroupDirectory):
     def is_admin(self, identifier):
         admins, _ = self.load()
         return identifier in admins
+
+
+def default_groups_path(registry_path):
+    """Where the groups file of the registry at ``registry_path`` is, or would be."""
+    return os.environ.get("ASIMOV_GROUPS") or os.path.join(
+        os.path.dirname(os.path.abspath(registry_path)), "groups.yaml"
+    )
 
 
 def groups_path_for(registry):

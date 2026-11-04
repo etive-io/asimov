@@ -266,8 +266,8 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TestGrants(McpProjectsTestCase):
-    """With a groups file beside the registry, the grants decide (#183)."""
+class GrantedMcpCase(McpProjectsTestCase):
+    """A registry with a groups file beside it, so the grants decide (#183)."""
 
     def setUp(self):
         import yaml
@@ -311,6 +311,8 @@ class TestGrants(McpProjectsTestCase):
         context.reload_ledger()
         return records[-1].principal_obj
 
+
+class TestGrants(GrantedMcpCase):
     def test_a_maintainer_changes_and_the_authority_is_recorded(self):
         self.data("apply_blueprint", project="one", blueprint=CONFIGURATION)
         recorded = self.last_record("apply")
@@ -339,3 +341,64 @@ class TestGrants(McpProjectsTestCase):
     def test_the_policy_in_force_is_left_alone(self):
         self.data("list_subjects", project="one")
         self.assertIsInstance(access.get_policy(), access.AllowAll)
+
+
+class TestReviewerRule(GrantedMcpCase):
+    """Whoever applied an analysis may not approve it, unless overridden (#183)."""
+
+    def setUp(self):
+        super().setUp()
+        self.registry.update("one", lambda e: e.grants.update(referees=["analyst", "reviewer"]))
+        self.subject_name = self.subject()
+
+    def apply_as(self, identifier, name):
+        self.as_person(identifier)
+        blueprint = ANALYSIS.replace("name: a1", f"name: {name}")
+        self.data("apply_blueprint", project="one", blueprint=blueprint, subject=self.subject_name)
+
+    def review(self, analysis, status="APPROVED", **arguments):
+        return self.call(
+            "set_review_status", project="one", subject=self.subject_name,
+            analysis=analysis, status=status, **arguments,
+        )
+
+    def test_whoever_applied_may_not_approve(self):
+        self.apply_as("sam", "a1")
+        result = self.review("a1")
+        self.assertTrue(result.is_error)
+        self.assertIn("may not approve", result.content[0].text)
+        self.assertTrue(self.review("a1", status="PREFERRED").is_error)
+        # rejecting your own work is fine
+        self.assertFalse(self.review("a1", status="REJECTED").is_error)
+
+    def test_someone_else_may_approve(self):
+        self.apply_as("dw", "a1")
+        self.as_person("sam")
+        self.assertFalse(self.review("a1").is_error)
+
+    def test_only_a_maintainer_may_override(self):
+        self.apply_as("sam", "a1")
+        result = self.review("a1", override_reason="urgent")
+        self.assertIn("Only a maintainer", result.content[0].text)
+        self.apply_as("dw", "a2")
+        self.assertTrue(self.review("a2").is_error)
+        self.assertTrue(self.review("a2", override_reason="  ").is_error)
+        self.assertFalse(self.review("a2", override_reason="only reviewer is away").is_error)
+        context = ProjectContext.from_directory(self.roots["one"])
+        with context.activate():
+            record = [r for r in context.ledger.audit_log() if r.action == "review"][-1]
+        context.reload_ledger()
+        self.assertEqual(record.content["self-approval override"], "only reviewer is away")
+        self.assertEqual(record.principal_obj.role, "maintainer")
+
+    def test_a_project_may_allow_self_approval(self):
+        self.registry.update("one", lambda e: setattr(e, "self_approval", True))
+        self.apply_as("sam", "a1")
+        self.assertFalse(self.review("a1").is_error)
+
+
+class TestReviewerRuleWithoutGroups(McpProjectsTestCase):
+    def test_it_does_not_apply(self):
+        subject = self.subject()
+        self.data("apply_blueprint", project="one", blueprint=ANALYSIS, subject=subject)
+        self.data("set_review_status", project="one", subject=subject, analysis="a1", status="APPROVED")

@@ -44,7 +44,7 @@ from asimov import access, actions, jobs, reading
 from asimov.cli.application import apply_page
 from asimov.context import ProjectContext, get_active_context
 from asimov.preview import recording
-from asimov.principal import Principal, acting_as
+from asimov.principal import Principal, acting_as, current_principal
 from asimov.registry import AmbiguousProject, ProjectRegistry, SingleProjectRegistry, UnknownProject
 
 __all__ = ["create_server", "serve", "untrusted", "INSTRUCTIONS", "NOTE"]
@@ -708,13 +708,37 @@ def create_server(project, acting_for=None, read_only=False):
         message: Annotated[
             Optional[str], Field(max_length=10_000, description="Why, if you want to say.")
         ] = None,
+        override_reason: Annotated[
+            Optional[str],
+            Field(
+                max_length=10_000,
+                description="Only to approve an analysis the person you act for applied, "
+                "which needs a maintainer: why it is being approved anyway. It is recorded.",
+            ),
+        ] = None,
         project: Project = None,
     ) -> dict[str, Any]:
-        """Give an analysis a review status. It becomes its status until another is set."""
-        return act(
-            ctx, project, subject, analysis, actions.set_review_status, status, message,
-            action=access.REVIEW,
-        )
+        """
+        Give an analysis a review status. It becomes its status until another is set.
+
+        On an instance with groups, whoever applied an analysis may not approve
+        it, unless the project allows that or a maintainer gives an
+        override_reason.
+        """
+
+        def review(ledger, found, status, message):
+            entry = registry.get(project)
+            separate = policy is not None and not entry.self_approval
+            if separate and override_reason:
+                try:
+                    access.authorize(current_principal(), entry, access.ADMIN, policy)
+                except access.AccessDenied:
+                    raise ToolError("Only a maintainer may override the reviewer rule.")
+            return actions.set_review_status(
+                ledger, found, status, message, separate=separate, override=override_reason
+            )
+
+        return act(ctx, project, subject, analysis, review, status, message, action=access.REVIEW)
 
     @server.tool(annotations=_ADD, title="Comment on an analysis")
     def add_comment(
