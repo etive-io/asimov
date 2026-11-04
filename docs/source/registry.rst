@@ -91,12 +91,92 @@ Access
 
 Whatever handles a request for a project should call
 :func:`asimov.access.authorize` with who is asking, the project, and what they want
-to do (``read``, ``write``, ``execute`` or ``admin``). What is allowed is decided by
-a *policy*, which can be replaced with :func:`asimov.access.set_policy`.
+to do (``read``, ``write``, ``execute``, ``review`` or ``admin``). What is allowed
+is decided by a *policy*.
 
 .. warning::
 
-    The policy asimov starts with allows everything. Until projects have groups
-    with roles (#183), anyone who can reach an instance can do anything to every
-    project in it, so the instance has to be protected by who can reach it. The
-    ``groups`` in the registry are recorded for that work, and aren't enforced.
+    Without a groups file (below), the policy allows everything: anyone who can
+    reach an instance can do anything to every project in it, so the instance has
+    to be protected by who can reach it.
+
+Groups and roles
+~~~~~~~~~~~~~~~~
+
+People belong to groups, and groups hold roles on projects. Nobody is granted a
+project directly, so a personal project is one owned by a group with one member.
+The groups in a project's ``groups`` own it, and hold the *maintainer* role on it.
+Its ``grants`` give other groups other roles:
+
+.. code-block:: yaml
+
+    projects:
+      gw-o4:
+        root: /data/projects/gw-o4
+        groups: [cbc-pe, tgr]
+        grants:
+          cbc-review: [reviewer]
+          ligo-all: [viewer]
+
+=============  ==============================================================
+Role           May
+=============  ==============================================================
+viewer         read the project
+reviewer       read; set review status, and comment
+analyst        read; apply blueprints, comment and label; build and submit
+maintainer     everything an analyst or a reviewer may, and change the
+               project's registry entry and grants
+=============  ==============================================================
+
+Who is in which group is kept in ``groups.yaml``, beside the registry file (or the
+file named by ``$ASIMOV_GROUPS``), with the instance admins, who may do anything to
+any project:
+
+.. code-block:: yaml
+
+    admins: [dw]
+    groups:
+      cbc-pe:
+        members: [dw, jane]
+      cbc-review:
+        members: [sam]
+
+Once that file exists, the REST API and the MCP server serving the registry enforce
+the grants. The file is read for each request, so a change to it applies at once.
+If it can't be read, or doesn't make sense, every request is denied. Membership is
+flat: a group can't be a member of another group.
+
+An agent has the authority of the person it acts for, and never more; an agent
+acting for nobody has none. The monitor may read, change and run what is in a
+project, but not review it. The group and role which allowed a change are recorded
+with it in the project's audit trail, as they were at the time.
+
+Groups from an identity provider's token claims (#182) are not supported yet, so
+groups are local ones, kept by the instance's admins.
+
+The grants and members can be changed from the command line, rather than by
+editing the files:
+
+.. code-block:: console
+
+    $ asimov registry grant gw-o4 cbc-review reviewer
+    $ asimov registry revoke gw-o4 cbc-review          # every role it was granted
+    $ asimov registry members cbc-review --add sam --remove jane
+    $ asimov registry self-approval gw-o4 on
+
+Reviewing your own work
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Where groups are enforced, whoever applied an analysis (or an agent acting for them)
+may not approve it: setting ``APPROVED`` or ``PREFERRED`` on it is refused, and
+someone else has to review it. Rejecting it, deprecating it and commenting on it are
+still allowed. Who applied an analysis is taken from the project's audit trail.
+
+There are two ways round this:
+
+* A **maintainer** (or an instance admin) may approve their own analysis by giving a
+  reason, which is kept in the audit record of the review (``override_reason`` in the
+  MCP ``set_review_status`` tool).
+* A project where the same people analyse and review, such as a personal project, can
+  set ``self_approval: true`` in its registry entry (``asimov registry self-approval
+  NAME on``), and then the rule doesn't apply to it.

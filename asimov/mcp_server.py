@@ -44,7 +44,7 @@ from asimov import access, actions, jobs, reading
 from asimov.cli.application import apply_page
 from asimov.context import ProjectContext, get_active_context
 from asimov.preview import recording
-from asimov.principal import Principal, acting_as
+from asimov.principal import Principal, acting_as, current_principal
 from asimov.registry import AmbiguousProject, ProjectRegistry, SingleProjectRegistry, UnknownProject
 
 __all__ = ["create_server", "serve", "untrusted", "INSTRUCTIONS", "NOTE"]
@@ -197,6 +197,8 @@ def create_server(project, acting_for=None, read_only=False):
         # Check now, as this has always done, that there is a project there.
         ProjectContext.from_directory(project)
         registry = SingleProjectRegistry(project)
+    # With a groups file, the instance's grants decide (#183).
+    policy = access.instance_policy(registry)
     acting_for = acting_for or Principal.local_user()
     # Tools run in worker threads, and a project is one ledger: one call at a
     # time for each project, but calls for different projects run together.
@@ -208,17 +210,17 @@ def create_server(project, acting_for=None, read_only=False):
         names = []
         for entry in registry.list():
             try:
-                access.authorize(principal, entry, access.READ)
+                access.authorize(principal, entry, access.READ, policy)
             except access.AccessDenied:
                 continue
             names.append(entry.name)
         return names
 
     def entry_for(name, principal, action):
-        """The project's entry, if the agent may do ``action`` to it."""
+        """The project's entry, and what lets the agent do ``action`` to it."""
         try:
             entry = registry.get(name)
-            access.authorize(principal, entry, access.READ)
+            authority = access.authorize(principal, entry, access.READ, policy)
         except (UnknownProject, AmbiguousProject, access.AccessDenied):
             # What may not be read looks the same as what isn't there.
             names = readable_names(principal)
@@ -230,16 +232,18 @@ def create_server(project, acting_for=None, read_only=False):
             )
         if action != access.READ:
             try:
-                access.authorize(principal, entry, action)
+                authority = access.authorize(principal, entry, action, policy)
             except access.AccessDenied as error:
                 raise ToolError(str(error))
-        return entry
+        return entry, authority
 
     @contextlib.contextmanager
     def session(ctx, project=None, action=access.READ):
         """The project's ledger, for one call, with the agent attributed."""
         agent = Principal.agent(_client_name(ctx), acting_for=acting_for)
-        entry = entry_for(project, agent, action)
+        entry, authority = entry_for(project, agent, action)
+        # Recorded with what the call does, as it is now (#143).
+        agent = access.with_authority(agent, authority)
         with locks_guard:
             lock = locks[entry.name]
         with lock:
@@ -679,9 +683,9 @@ def create_server(project, acting_for=None, read_only=False):
         """
         return trigger(ctx, "submit", subject, dryrun, max_submit, project=project)
 
-    def act(ctx, project, subject, analysis, change, *args):
+    def act(ctx, project, subject, analysis, change, *args, action=access.WRITE):
         """Make a change to an analysis and say what record was made of it."""
-        with session(ctx, project, access.WRITE) as ledger:
+        with session(ctx, project, action) as ledger:
             found = analysis_of(ledger, subject, analysis)
             try:
                 record = change(ledger, found, *args)
@@ -704,10 +708,37 @@ def create_server(project, acting_for=None, read_only=False):
         message: Annotated[
             Optional[str], Field(max_length=10_000, description="Why, if you want to say.")
         ] = None,
+        override_reason: Annotated[
+            Optional[str],
+            Field(
+                max_length=10_000,
+                description="Only to approve an analysis the person you act for applied, "
+                "which needs a maintainer: why it is being approved anyway. It is recorded.",
+            ),
+        ] = None,
         project: Project = None,
     ) -> dict[str, Any]:
-        """Give an analysis a review status. It becomes its status until another is set."""
-        return act(ctx, project, subject, analysis, actions.set_review_status, status, message)
+        """
+        Give an analysis a review status. It becomes its status until another is set.
+
+        On an instance with groups, whoever applied an analysis may not approve
+        it, unless the project allows that or a maintainer gives an
+        override_reason.
+        """
+
+        def review(ledger, found, status, message):
+            entry = registry.get(project)
+            separate = policy is not None and not entry.self_approval
+            if separate and override_reason:
+                try:
+                    access.authorize(current_principal(), entry, access.ADMIN, policy)
+                except access.AccessDenied:
+                    raise ToolError("Only a maintainer may override the reviewer rule.")
+            return actions.set_review_status(
+                ledger, found, status, message, separate=separate, override=override_reason
+            )
+
+        return act(ctx, project, subject, analysis, review, status, message, action=access.REVIEW)
 
     @server.tool(annotations=_ADD, title="Comment on an analysis")
     def add_comment(
@@ -721,7 +752,10 @@ def create_server(project, acting_for=None, read_only=False):
         Add a comment to an analysis's review messages, without changing its
         review status. It is recorded as made by you, for the person you act for.
         """
-        return act(ctx, project, subject, analysis, actions.add_comment, comment)
+        return act(
+            ctx, project, subject, analysis, actions.add_comment, comment,
+            action=(access.WRITE, access.REVIEW),
+        )
 
     @server.tool(annotations=_ADD, title="Label an analysis")
     def add_label(

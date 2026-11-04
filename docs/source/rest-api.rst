@@ -127,9 +127,10 @@ attributed to the user their API key belongs to.
 
 .. warning::
 
-    Until projects have groups with roles, the policy allows everything: anyone who
-    can reach the API can read every project in the registry, and anyone with an API
-    key can write to all of them. See :doc:`registry`.
+    Without a groups file, the policy allows everything: anyone who can reach the API
+    can read every project in the registry, and anyone with an API key can write to
+    all of them. With one, each API key's user has what their groups are granted.
+    See :doc:`registry`.
 
 Without a registry the API serves the project its configuration names, on the
 routes without a project in them, as it always has, and the project routes don't exist.

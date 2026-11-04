@@ -247,3 +247,44 @@ class TestSqlite(TestRouting, TestAliases, TestAccess):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGrants(ProjectsTestCase):
+    """With a groups file beside the registry, the grants decide (#183)."""
+
+    def setUp(self):
+        import yaml
+
+        super().setUp()
+        with open(os.path.join(self.dir, "groups.yaml"), "w") as handle:
+            yaml.safe_dump(
+                {"groups": {"one-group": {"members": ["alice"]}, "viewers": {"members": ["bob"]}}},
+                handle,
+            )
+        entry = self.registry.get("one")
+        self.registry.remove("one")
+        entry.grants = {"viewers": ["viewer"]}
+        self.registry.add(entry)
+        self.client = self.make_client(self.registry)
+
+    def test_members_of_the_owning_group_may_change_their_project(self):
+        self.assertEqual(self.post("one", "GW150914").status_code, 201)
+
+    def test_a_viewer_reads_but_may_not_change(self):
+        self.post("one", "GW150914")
+        self.assertEqual(self.names("one", headers={"Authorization": "Bearer tok-bob"}), ["GW150914"])
+        response = self.client.post(
+            "/api/v1/projects/one/events/",
+            data=json.dumps({"name": "GW170817"}),
+            content_type="application/json",
+            headers={"Authorization": "Bearer tok-bob"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_a_project_without_a_grant_looks_missing(self):
+        self.assertEqual(self.post("two", "GW170817").status_code, 404)
+        response = self.client.get("/api/v1/projects/", headers=AUTH)
+        self.assertEqual([p["name"] for p in json.loads(response.data)["projects"]], ["one"])
+
+    def test_the_policy_in_force_is_left_alone(self):
+        self.assertIsInstance(access.get_policy(), access.AllowAll)

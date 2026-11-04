@@ -98,8 +98,10 @@ reported as not existing, as in the REST API.
 
 .. warning::
 
-    The policy asimov starts with allows everything, so an agent served a registry
-    can use every project in it. See :doc:`registry`.
+    Without a groups file, an agent served a registry can use every project in it.
+    With one, it has the authority of the person given by ``--acting-for`` (or the
+    local user), so whoever starts the server chooses who that is. See
+    :doc:`registry`.
 
 Build and submit jobs
 ---------------------
