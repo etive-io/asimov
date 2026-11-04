@@ -8,9 +8,15 @@ SciTokens support will be added in a future PR.
 from functools import wraps
 from flask import request, jsonify, g
 from asimov import config
+import logging
 import yaml
 import os
 import secrets
+
+logger = logging.getLogger(__name__)
+
+#: Where the app keeps the identity providers it trusts (see asimov.identity).
+PROVIDERS = "ASIMOV_IDENTITY_PROVIDERS"
 
 
 def load_api_keys():
@@ -121,6 +127,62 @@ def verify_token(token):
     return None
 
 
+def _bearer(header):
+    """The token in an Authorization header, or ``None``."""
+    try:
+        scheme, token = header.split(' ', 1)
+    except ValueError:
+        return None
+    return token.strip() if scheme.lower() == 'bearer' else None
+
+
+def identify(token):
+    """
+    Who a bearer token belongs to: an API key, or an identity provider's token.
+
+    An API key is tried first. A token which isn't one is checked as an OIDC
+    token if the app trusts any identity providers (#182); what it proves is
+    put in ``g.identity`` for the rest of the request.
+
+    Returns
+    -------
+    str or None
+        The user's identifier, or ``None`` if the token is neither.
+    """
+    seen = g.get("_identified")
+    if seen is not None and secrets.compare_digest(seen[0], token):
+        # Already checked for this request.
+        return seen[1]
+    user = _identify(token)
+    g._identified = (token, user)
+    return user
+
+
+def _identify(token):
+    try:
+        user = verify_token(token)
+    except RuntimeError:
+        # No API keys are configured; an identity token may still do.
+        user = None
+    if user:
+        return user
+    # Imported here: a context proxy at module level breaks autodoc.
+    from flask import current_app
+
+    providers = current_app.config.get(PROVIDERS)
+    if not providers or token.count('.') != 2:
+        return None
+    from asimov.identity import InvalidToken
+
+    try:
+        identity = providers.verify(token)
+    except InvalidToken as error:
+        logger.info("Refused an identity token: %s", error)
+        return None
+    g.identity = identity
+    return identity.principal.identifier
+
+
 def authenticate():
     """
     Who the request is from, if it says.
@@ -136,19 +198,8 @@ def authenticate():
         valid token (or no tokens are configured).
     """
     header = request.headers.get('Authorization')
-    if not header:
-        return None
-    try:
-        scheme, token = header.split(' ', 1)
-    except ValueError:
-        return None
-    if scheme.lower() != 'bearer':
-        return None
-    try:
-        return verify_token(token)
-    except RuntimeError:
-        # No tokens are configured: nobody can be authenticated.
-        return None
+    token = _bearer(header) if header else None
+    return identify(token) if token else None
 
 
 def require_auth(f):
@@ -177,7 +228,7 @@ def require_auth(f):
             if scheme.lower() != 'bearer':
                 return jsonify({'error': 'Invalid authorization scheme'}), 401
 
-            user = verify_token(token)
+            user = identify(token)
             if not user:
                 return jsonify({'error': 'Invalid token'}), 401
 

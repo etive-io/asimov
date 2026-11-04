@@ -28,6 +28,7 @@ from flask import g, jsonify, request
 
 from asimov import access
 from asimov.access import AccessDenied
+from asimov.identity import using_identity
 from asimov.api.auth import authenticate
 from asimov.principal import Principal, acting_as
 from asimov.registry import AmbiguousProject, UnknownProject
@@ -59,6 +60,12 @@ def init_app(app, registry):
         The projects it serves. ``None`` leaves the API as it was.
     """
     app.config["ASIMOV_PROJECT_REGISTRY"] = registry
+    # With an identity file, people may sign in with their provider's tokens (#182).
+    from asimov.api.auth import PROVIDERS
+    from asimov.identity import identity_path_for, load_providers
+
+    identity_path = identity_path_for(registry) if registry is not None else None
+    app.config[PROVIDERS] = load_providers(identity_path) if identity_path else None
     # With a groups file, the instance's grants decide (#183).
     policy = access.instance_policy(registry) if registry is not None else None
 
@@ -75,6 +82,10 @@ def init_app(app, registry):
             # The project routes need a registry. The others work as they did.
             return _not_found() if getattr(g, "project_name", None) else None
         principal = _principal()
+        # The groups the request's token gave count from here on.
+        stack = contextlib.ExitStack()
+        stack.enter_context(using_identity(g.get("identity")))
+        g.project_stack = stack
         try:
             entry = registry.get(getattr(g, "project_name", None))
         except (UnknownProject, AmbiguousProject):
@@ -95,10 +106,8 @@ def init_app(app, registry):
         except Exception:
             logger.exception("Could not open the project %s", entry.name)
             return jsonify({"error": "Project unavailable"}), 503
-        stack = contextlib.ExitStack()
         stack.enter_context(context.activate())
         stack.enter_context(acting_as(principal))
-        g.project_stack = stack
         g.project_context = context
         g.project_entry = entry
         return None
@@ -123,11 +132,15 @@ def init_app(app, registry):
             return jsonify({"error": "Resource not found"}), 404
         principal = _principal()
         visible = []
-        for entry in registry.list():
-            try:
-                access.authorize(principal, entry, access.READ, policy)
-            except AccessDenied:
-                continue
+        with using_identity(g.get("identity")):
+            entries = []
+            for entry in registry.list():
+                try:
+                    access.authorize(principal, entry, access.READ, policy)
+                except AccessDenied:
+                    continue
+                entries.append(entry)
+        for entry in entries:
             visible.append({"name": entry.name, "groups": list(entry.groups)})
         return jsonify({"projects": visible})
 

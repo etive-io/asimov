@@ -288,3 +288,63 @@ class TestGrants(ProjectsTestCase):
 
     def test_the_policy_in_force_is_left_alone(self):
         self.assertIsInstance(access.get_policy(), access.AllowAll)
+
+
+class TestIdentityTokens(ProjectsTestCase):
+    """People sign in with their identity provider's tokens (#182)."""
+
+    def setUp(self):
+        try:
+            try:
+                from tests.test_identity import PROVIDER, token
+            except ImportError:  # run from inside tests/
+                from test_identity import PROVIDER, token
+        except unittest.SkipTest as error:  # pragma: no cover - the oidc extra is optional
+            self.skipTest(str(error))
+        import yaml
+
+        super().setUp()
+        self.token = token
+        with open(os.path.join(self.dir, "identity.yaml"), "w") as handle:
+            yaml.safe_dump({"providers": [PROVIDER]}, handle)
+        # albert.einstein is in cbc-pe by token only; one is owned by cbc-pe
+        entry = self.registry.get("one")
+        self.registry.remove("one")
+        entry.groups = ["cbc-pe"]
+        self.registry.add(entry)
+        self.client = self.make_client(self.registry)
+
+    def bearer(self, value):
+        return {"Authorization": f"Bearer {value}"}
+
+    def test_a_token_identifies_the_person_and_their_groups_grant_access(self):
+        headers = self.bearer(self.token())
+        response = self.client.post(
+            "/api/v1/projects/one/events/", data=json.dumps({"name": "GW150914"}),
+            content_type="application/json", headers=headers,
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        listed = json.loads(self.client.get("/api/v1/projects/", headers=headers).data)["projects"]
+        self.assertEqual([p["name"] for p in listed], ["one"])
+
+    def test_without_the_group_the_project_looks_missing(self):
+        headers = self.bearer(self.token(isMemberOf=[]))
+        self.assertEqual(self.client.get("/api/v1/projects/one/events/", headers=headers).status_code, 404)
+
+    def test_a_bad_token_gets_nothing(self):
+        import time
+
+        headers = self.bearer(self.token(exp=int(time.time()) - 3600))
+        response = self.client.post(
+            "/api/v1/projects/one/events/", data=json.dumps({"name": "X"}),
+            content_type="application/json", headers=headers,
+        )
+        self.assertIn(response.status_code, (401, 403, 404))
+        self.assertEqual(self.client.get("/api/v1/projects/one/events/", headers=headers).status_code, 404)
+
+    def test_api_keys_still_work_alongside(self):
+        import yaml
+
+        with open(os.path.join(self.dir, "groups.yaml"), "w") as handle:
+            yaml.safe_dump({"groups": {"cbc-pe": {"members": ["alice"]}}}, handle)
+        self.assertEqual(self.post("one", "GW150914").status_code, 201)
