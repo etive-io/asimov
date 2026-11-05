@@ -12,6 +12,7 @@ from asimov.scheduler import (
     Job,
     JobList,
     JobDescription,
+    LocalProcessScheduler,
     get_scheduler,
 )
 
@@ -658,6 +659,64 @@ class HTCondorSchedulerTests(unittest.TestCase):
             # Test detection
             self.assertTrue(scheduler._is_slurm_batch_script(slurm_file))
             self.assertFalse(scheduler._is_slurm_batch_script(dag_file))
+
+
+class HTCondorSubmitDagTests(unittest.TestCase):
+    """Submitting a DAG, and submitting it again (#314)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        self.dag = os.path.join(self.tmpdir.name, "run.dag")
+        with open(self.dag, "w") as handle:
+            handle.write("JOB a a.sub\n")
+
+    def submit(self, **kwargs):
+        """Submit the DAG with a fake HTCondor; returns what was asked of it."""
+        scheduler = HTCondor()
+        description = MagicMock()
+        schedd = MagicMock()
+        schedd.submit.return_value.cluster.return_value = 4321
+        with patch("asimov.scheduler.htcondor") as htcondor:
+            htcondor.Submit.from_dag.return_value = description
+            with patch.object(HTCondor, "schedd", new=schedd):
+                cluster = scheduler.submit_dag(self.dag, **kwargs)
+        return cluster, htcondor.Submit.from_dag, description
+
+    def test_a_dag_is_submitted_without_force_by_default(self):
+        cluster, from_dag, _ = self.submit(batch_name="batch")
+        self.assertEqual(cluster, 4321)
+        from_dag.assert_called_once_with(self.dag, options={})
+
+    def test_force_resubmits_a_dag_which_has_run(self):
+        _, from_dag, _ = self.submit(force=True)
+        from_dag.assert_called_once_with(self.dag, options={"force": 1})
+
+    def test_force_is_not_written_into_the_submit_description(self):
+        _, _, description = self.submit(batch_name="batch", force=True)
+        keys = [call.args[0] for call in description.__setitem__.call_args_list]
+        self.assertEqual(keys, ["JobBatchName"])
+
+    def test_other_arguments_still_reach_the_submit_description(self):
+        _, _, description = self.submit(force=True, request_memory="1GB")
+        description.__setitem__.assert_called_with("request_memory", "1GB")
+
+    def test_a_dag_which_does_not_exist_is_an_error(self):
+        os.remove(self.dag)
+        with self.assertRaises(FileNotFoundError):
+            HTCondor().submit_dag(self.dag, force=True)
+
+    def test_slurm_accepts_force(self):
+        script = os.path.join(self.tmpdir.name, "job.sh")
+        with open(script, "w") as handle:
+            handle.write("#!/bin/bash\n#SBATCH --job-name=test\n")
+        with patch("subprocess.run") as run:
+            run.return_value = Mock(stdout="Submitted batch job 7\n", returncode=0)
+            self.assertEqual(Slurm().submit_dag(script, "batch", force=True), 7)
+
+    def test_the_local_scheduler_accepts_force_and_still_does_not_support_dags(self):
+        with self.assertRaises(NotImplementedError):
+            LocalProcessScheduler().submit_dag(self.dag, force=True)
 
 
 if __name__ == "__main__":
