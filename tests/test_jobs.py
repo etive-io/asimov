@@ -49,6 +49,22 @@ class JobTestCase(unittest.TestCase):
             handle.write(text)
         return path
 
+    def wait_unlocked(self, seconds=10):
+        """
+        Wait for the project's lock to be released.
+
+        A worker writes the job's final status and then removes the lock, so the
+        record can say a job has finished for a moment while the lock is still
+        there (longer on a busy machine). Nothing relies on them changing together:
+        see test_the_next_job_can_start_as_soon_as_the_last_is_seen_finished.
+        """
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if jobs._locked_by(self.root) is None:
+                return
+            time.sleep(0.05)
+        self.fail("the lock was not released")
+
     def wait(self, job_id, seconds=60):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -65,7 +81,7 @@ class TestWorker(JobTestCase):
         self.assertIn(job.status, ("queued", "running"))
         done = self.wait(job.id)
         self.assertEqual(done.status, "succeeded", done.error)
-        self.assertIsNone(jobs._locked_by(self.root))
+        self.wait_unlocked()
         self.assertIn("Building", jobs.read_log(self.root, job.id))
 
     def test_the_job_runs_as_the_caller(self):
@@ -130,6 +146,21 @@ class TestLock(JobTestCase):
         self.assertIsNone(jobs._locked_by(self.root))
         # and another job can start
         self.wait(self.start("build").id)
+
+    def test_the_next_job_can_start_as_soon_as_the_last_is_seen_finished(self):
+        # The final status is written before the lock is removed. Whoever sees the
+        # job has finished must not be told the project is busy in that moment.
+        real = jobs._release
+        with patch.object(jobs, "_release", lambda project, job_id: None):
+            first = self.start("build", command=[sys.executable, "-c", "pass"])
+            jobs.run_job(self.root, first.id)
+        self.assertEqual(jobs.get_job(self.root, first.id).status, "succeeded")
+        self.assertEqual(jobs._locked_by(self.root), first.id)  # (still there)
+        second = self.start("build")
+        self.assertNotEqual(second.id, first.id)
+        self.wait(second.id)
+        self.wait_unlocked()
+        real(self.root, first.id)
 
     def test_a_stale_lock_is_taken_over(self):
         os.makedirs(jobs.jobs_dir(self.root), exist_ok=True)
