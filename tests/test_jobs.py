@@ -43,6 +43,28 @@ class JobTestCase(unittest.TestCase):
         with self.context.activate(), acting_as(agent):
             return jobs.start_job(self.context, action, **kwargs)
 
+    def blueprint(self, text):
+        path = os.path.join(self.root, "blueprint.yaml")
+        with open(path, "w") as handle:
+            handle.write(text)
+        return path
+
+    def wait_unlocked(self, seconds=10):
+        """
+        Wait for the project's lock to be released.
+
+        A worker writes the job's final status and then removes the lock, so the
+        record can say a job has finished for a moment while the lock is still
+        there (longer on a busy machine). Nothing relies on them changing together:
+        see test_the_next_job_can_start_as_soon_as_the_last_is_seen_finished.
+        """
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if jobs._locked_by(self.root) is None:
+                return
+            time.sleep(0.05)
+        self.fail("the lock was not released")
+
     def wait(self, job_id, seconds=60):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -59,7 +81,7 @@ class TestWorker(JobTestCase):
         self.assertIn(job.status, ("queued", "running"))
         done = self.wait(job.id)
         self.assertEqual(done.status, "succeeded", done.error)
-        self.assertIsNone(jobs._locked_by(self.root))
+        self.wait_unlocked()
         self.assertIn("Building", jobs.read_log(self.root, job.id))
 
     def test_the_job_runs_as_the_caller(self):
@@ -125,6 +147,21 @@ class TestLock(JobTestCase):
         # and another job can start
         self.wait(self.start("build").id)
 
+    def test_the_next_job_can_start_as_soon_as_the_last_is_seen_finished(self):
+        # The final status is written before the lock is removed. Whoever sees the
+        # job has finished must not be told the project is busy in that moment.
+        real = jobs._release
+        with patch.object(jobs, "_release", lambda project, job_id: None):
+            first = self.start("build", command=[sys.executable, "-c", "pass"])
+            jobs.run_job(self.root, first.id)
+        self.assertEqual(jobs.get_job(self.root, first.id).status, "succeeded")
+        self.assertEqual(jobs._locked_by(self.root), first.id)  # (still there)
+        second = self.start("build")
+        self.assertNotEqual(second.id, first.id)
+        self.wait(second.id)
+        self.wait_unlocked()
+        real(self.root, first.id)
+
     def test_a_stale_lock_is_taken_over(self):
         os.makedirs(jobs.jobs_dir(self.root), exist_ok=True)
         with open(jobs._lock_path(self.root), "w") as handle:
@@ -142,6 +179,64 @@ class TestLock(JobTestCase):
         self.assertLess(time.monotonic() - started, 15)
         self.assertEqual(done.status, "failed")
         self.assertIn("more than 1 seconds", done.error)
+
+    def test_timeout_is_not_swallowed_by_the_code_it_interrupts(self):
+        # Building catches Exception around each analysis (so that one which fails
+        # does not stop the rest), and the time limit is raised inside whatever is
+        # running when it expires. It has to get through that, or a job which is
+        # stuck in a scheduler or a git command is logged as one failed analysis,
+        # carries on, and is never stopped: the alarm only goes off once.
+        with self.context.activate():
+            apply_page(
+                self.blueprint("kind: analysis\nname: a1\npipeline: simpletestpipeline\nstatus: ready\n"),
+                event="S000000",
+                ledger=self.context.ledger,
+            )
+
+        def stuck(*args, **kwargs):
+            time.sleep(30)
+
+        with patch("asimov.analysis.GravitationalWaveTransient.make_config", stuck):
+            job = self.start("build", timeout=1, command=[sys.executable, "-c", "pass"])
+            started = time.monotonic()
+            done = jobs.run_job(self.root, job.id)
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertEqual(done.status, "failed", done.result)
+        self.assertIn("more than 1 seconds", done.error)
+        self.assertIsNone(jobs._locked_by(self.root))
+
+    def test_timeout_is_raised_again_if_something_catches_everything(self):
+        calls = []
+
+        def stubborn(event=None, dryrun=False):
+            for _ in range(2):
+                try:
+                    calls.append(time.monotonic())
+                    time.sleep(30)
+                except BaseException:  # noqa: B902 - this is what is being guarded against
+                    continue
+
+        with patch.object(manage, "build_analyses", stubborn), patch.object(jobs, "_REPEAT", 1):
+            job = self.start("build", timeout=1, command=[sys.executable, "-c", "pass"])
+            started = time.monotonic()
+            done = jobs.run_job(self.root, job.id)
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(done.status, "failed", done.result)
+        self.assertIn("more than 1 seconds", done.error)
+
+    def test_a_job_which_is_stopped_can_be_followed(self):
+        # Stopped by the time limit, it says so, and the next job can start.
+        def slow(event=None, dryrun=False):
+            time.sleep(30)
+
+        with patch.object(manage, "build_analyses", slow):
+            job = self.start("build", timeout=1, command=[sys.executable, "-c", "pass"])
+            jobs.run_job(self.root, job.id)
+        again = jobs.get_job(self.root, job.id)
+        self.assertEqual(again.status, "failed")
+        self.assertIsNotNone(again.finished)
+        self.wait(self.start("build").id)
 
 
 class TestRecords(JobTestCase):
