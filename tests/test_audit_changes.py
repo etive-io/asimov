@@ -81,14 +81,9 @@ class ChangeRecordingCase(unittest.TestCase):
 
     def test_a_write_which_changes_nothing_is_not_recorded(self):
         with self.context.activate():
-            # The database ledger stores the project's defaults in an event the
-            # first time it is written back, which is a real change; after
-            # that, writing it unchanged records nothing.
             self.ledger.update_event(self.event())
-            already = len(self.records())
             self.ledger.update_event(self.event())
-            self.assertEqual(len(self.records()), already)
-            self.assertLessEqual(already, 0 if self.engine == "yamlfile" else 1)
+            self.assertEqual(self.records(), [])
 
     def test_an_explicit_record_in_the_same_transaction_covers_it(self):
         from asimov.audit import append_audit, new_record
@@ -128,3 +123,43 @@ class ChangeRecordingSQLite(ChangeRecordingCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SubjectsFollowProjectDefaults(unittest.TestCase):
+    """A subject written back must still pick up later project defaults."""
+
+    engine = "yamlfile"
+
+    def test_a_changed_project_default_reaches_a_subject_written_back_earlier(self):
+        origin = os.getcwd()
+        self.addCleanup(os.chdir, origin)
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        root = os.path.join(directory, "p")
+        make_project(name="p", root=root, engine=self.engine)
+        os.chdir(origin)
+        context = ProjectContext.from_directory(root)
+
+        def page(text):
+            path = os.path.join(directory, "page.yaml")
+            with open(path, "w") as handle:
+                handle.write(text)
+            return path
+
+        quality = "kind: configuration\nquality:\n  minimum frequency:\n    H1: {}\n"
+        with context.activate():
+            apply_page(page(quality.format(20)), ledger=context.ledger)
+            apply_page(page("kind: event\nname: S1\nevent time: 900\nlikelihood:\n  sample rate: 2048\n"),
+                       ledger=context.ledger)
+            context.ledger.update_event(context.ledger.get_event("S1")[0])
+            apply_page(page(quality.format(30)), ledger=context.ledger)
+        context.reload_ledger()
+        with context.activate():
+            event = context.ledger.get_event("S1")[0]
+            self.assertEqual(event.meta["quality"]["minimum frequency"]["H1"], 30)
+            # what the subject set itself is kept
+            self.assertEqual(event.meta["likelihood"]["sample rate"], 2048)
+
+
+class SubjectsFollowProjectDefaultsSQLite(SubjectsFollowProjectDefaults):
+    engine = "sqlite"

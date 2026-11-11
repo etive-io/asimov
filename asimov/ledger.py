@@ -1318,7 +1318,11 @@ class DatabaseLedger(Ledger):
             The event to update.
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
-            event_data = self._prepare_sql_event_data(event.to_dict(productions=False))
+            # Events are read with the project's defaults merged in underneath.
+            # Store only what the event sets itself, so that it keeps following
+            # the project's defaults when they change, as in the YAML ledger.
+            own = diff_dict(self.get_defaults(), event.to_dict(productions=False))
+            event_data = self._prepare_sql_event_data(own)
             before = self._stored(event.name, event_data)
             try:
                 self.db.update_event(event.name, event_data)
