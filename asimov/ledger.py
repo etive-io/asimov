@@ -17,7 +17,7 @@ from functools import reduce
 import asimov
 import asimov.database
 from asimov import config, logger as _asimov_logger
-from asimov.audit import AuditRecord, filter_records, timestamp_for
+from asimov.audit import PROJECT, AuditRecord, changes, covered, filter_records, new_record, timestamp_for
 from asimov.context import get_active_context
 from asimov.analysis import ProjectAnalysis, SubjectAnalysis
 from asimov.event import Event, Production, Subject
@@ -55,6 +55,74 @@ def _in_own_context(method):
 class Ledger:
     #: The ``ProjectContext`` this ledger belongs to, if it was opened by one.
     _context = None
+
+    # Changes noted in the current transaction, and the targets its explicit
+    # audit records describe (see _note_change).
+    _change_depth = 0
+    _noted_changes = None
+    _explicit_targets = None
+
+    @contextlib.contextmanager
+    def _change_scope(self):
+        """
+        Record the changes made in the block when it ends, if it succeeds.
+
+        Every write to an event or analysis is noted (#143). When the
+        outermost block ends, a ``change`` record is written for each, unless
+        an explicit record made in the block (applying a blueprint, a review,
+        ...) already describes it. A block which raises records nothing.
+        """
+        self._change_depth += 1
+        if self._change_depth == 1:
+            self._noted_changes, self._explicit_targets = [], set()
+        try:
+            yield
+            if self._change_depth == 1:
+                noted, explicit = self._noted_changes, self._explicit_targets
+                self._noted_changes = []
+                for record in noted:
+                    if not covered(record.target, explicit):
+                        self.append_audit(record)
+        finally:
+            self._change_depth -= 1
+            if self._change_depth == 0:
+                self._noted_changes, self._explicit_targets = None, None
+
+    def _note_explicit(self, record):
+        """Remember that the current transaction has its own record of a target."""
+        if self._explicit_targets is not None and record.action != "change":
+            self._explicit_targets.add(record.target)
+
+    def _note_change(self, kind, target, before=None, after=None, outcome="changed"):
+        """
+        Note a write to the ledger, for the audit trail.
+
+        Parameters
+        ----------
+        kind : str
+            ``"event"`` or ``"analysis"``.
+        target : str
+            ``"subject"``, ``"subject/analysis"`` or ``"@project/analysis"``.
+        before, after : dict, optional
+            The stored document before and after, to say what changed. A
+            change which changes nothing isn't recorded.
+        outcome : str
+            ``"changed"`` or ``"deleted"``.
+        """
+        from asimov.preview import is_dry_run
+
+        if is_dry_run():
+            return
+        content = None
+        if outcome == "changed":
+            content = {"changes": changes(before, after)}
+            if not content["changes"]:
+                return
+        record = new_record("change", kind, target, content=content, outcome=outcome)
+        if self._noted_changes is not None:
+            self._noted_changes.append(record)
+        else:
+            self.append_audit(record)
 
     def delete_analysis(self, subject, name):
         """
@@ -312,7 +380,9 @@ class YAMLLedger(Ledger):
         """
         Update an event in the ledger with a changed event object.
         """
+        before = copy.deepcopy(self.events.get(event.name))
         self.events[event.name] = event.to_dict()
+        self._note_change("event", event.name, before, self.events[event.name])
         self._invalidate_events_cache()
         self.save()
 
@@ -324,7 +394,9 @@ class YAMLLedger(Ledger):
             if self.data["project analyses"][i]["name"] == analysis.name:
                 dict_to_save = analysis.to_dict().copy()
                 dict_to_save["status"] = analysis.status
+                before = copy.deepcopy(self.data["project analyses"][i])
                 self.data["project analyses"][i] = dict_to_save
+                self._note_change("analysis", f"{PROJECT}/{analysis.name}", before, dict_to_save)
         self._invalidate_project_analyses_cache()
         self.save()
 
@@ -346,6 +418,7 @@ class YAMLLedger(Ledger):
         entry["productions"] = kept
         trash = self.data.setdefault("trash", {}).setdefault("analyses", {})
         trash[f"{subject}/{name}"] = removed[name]
+        self._note_change("analysis", f"{subject}/{name}", outcome="deleted")
         self._invalidate_events_cache()
         self.save()
 
@@ -359,6 +432,7 @@ class YAMLLedger(Ledger):
             raise ValueError(f"'{name}' is not a project analysis")
         self.data["project analyses"] = [a for a in analyses if a.get("name") != name]
         self.data.setdefault("trash", {}).setdefault("project analyses", {})[name] = found[0]
+        self._note_change("analysis", f"{PROJECT}/{name}", outcome="deleted")
         self._invalidate_project_analyses_cache()
         self.save()
 
@@ -377,6 +451,7 @@ class YAMLLedger(Ledger):
         if "events" not in self.data["trash"]:
             self.data["trash"]["events"] = {}
         self.data["trash"]["events"][event_name] = event
+        self._note_change("event", event_name, outcome="deleted")
         self._invalidate_events_cache()
         self.save()
 
@@ -436,7 +511,8 @@ class YAMLLedger(Ledger):
         """
         self._transaction_depth += 1
         try:
-            yield self
+            with self._change_scope():
+                yield self
         except BaseException:
             if self._transaction_depth == 1:
                 self._pending_audit = None
@@ -481,6 +557,7 @@ class YAMLLedger(Ledger):
         return records
 
     def append_audit(self, record):
+        self._note_explicit(record)
         if self._transaction_depth:
             if self._pending_audit is None:
                 self._pending_audit = []
@@ -747,7 +824,7 @@ class DatabaseLedger(Ledger):
         already holds are not touched, and should be discarded with it.
         """
         try:
-            with self.db.transaction():
+            with self.db.transaction(), self._change_scope():
                 yield self
         except BaseException:
             self._discard_cached_state()
@@ -1220,6 +1297,17 @@ class DatabaseLedger(Ledger):
             analysis.event = event
             self._insert(analysis)
 
+    def _stored(self, name, event_data):
+        """What the database holds for an event, in the shape update_event writes."""
+        rows = self.db.query_events({"name": name})
+        if not rows:
+            return None
+        analyses = {}
+        for row in self.db.query_productions({"event_name": name}):
+            analyses[getattr(row, "name", None)] = row
+        subject = {k: getattr(rows[0], k, None) for k in event_data}
+        return {"subject": subject, "analyses": analyses}
+
     def update_event(self, event):
         """
         Update an event in the ledger, inserting it if it does not exist yet.
@@ -1231,6 +1319,7 @@ class DatabaseLedger(Ledger):
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
             event_data = self._prepare_sql_event_data(event.to_dict(productions=False))
+            before = self._stored(event.name, event_data)
             try:
                 self.db.update_event(event.name, event_data)
             except ValueError:
@@ -1247,6 +1336,14 @@ class DatabaseLedger(Ledger):
             # transaction per production.
             for prod_data in self.db.update_productions(event.name, updates):
                 self.db.insert_production(prod_data)
+            after = {"subject": event_data, "analyses": {p.get("name"): p for p in updates}}
+            if before is not None:
+                rows = before["analyses"]
+                before["analyses"] = {
+                    name: {k: getattr(rows[name], k, None) for k in data}
+                    for name, data in after["analyses"].items() if name in rows
+                }
+            self._note_change("event", event.name, before, after)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
         self._invalidate_events_cache()
@@ -1263,10 +1360,13 @@ class DatabaseLedger(Ledger):
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
             data = self._prepare_sql_project_analysis_data(analysis.to_dict())
             data["status"] = analysis.status
+            rows = self.db.query_project_analyses({"name": analysis.name})
+            before = {k: getattr(rows[0], k, None) for k in data} if rows else None
             try:
                 self.db.update_project_analysis(analysis.name, data)
             except ValueError:
                 self.db.insert_project_analysis(data)
+            self._note_change("analysis", f"{PROJECT}/{analysis.name}", before, data)
         else:
             raise NotImplementedError("Update not implemented for TinyDB backend")
         self._invalidate_project_analyses_cache()
@@ -1277,6 +1377,7 @@ class DatabaseLedger(Ledger):
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
             self.db.delete_production(subject, name)
+            self._note_change("analysis", f"{subject}/{name}", outcome="deleted")
         else:
             raise NotImplementedError("Delete not implemented for TinyDB backend")
         self._invalidate_events_cache()
@@ -1287,6 +1388,7 @@ class DatabaseLedger(Ledger):
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
             self.db.delete_project_analysis(name)
+            self._note_change("analysis", f"{PROJECT}/{name}", outcome="deleted")
         else:
             raise NotImplementedError("Delete not implemented for TinyDB backend")
         self._invalidate_project_analyses_cache()
@@ -1302,6 +1404,7 @@ class DatabaseLedger(Ledger):
         """
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):
             self.db.delete_event(event_name)
+            self._note_change("event", event_name, outcome="deleted")
         else:
             raise NotImplementedError("Delete not implemented for TinyDB backend")
         self._invalidate_events_cache()
@@ -1333,6 +1436,7 @@ class DatabaseLedger(Ledger):
             pass
 
     def append_audit(self, record):
+        self._note_explicit(record)
         data = record.to_dict()
         data.pop("id", None)
         if isinstance(self.db, asimov.database.AsimovSQLDatabase):

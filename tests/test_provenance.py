@@ -294,6 +294,22 @@ class PackageAnalysisTests(ProvenanceTestBase):
             os.path.isfile(os.path.join(destination, "environment", "environment.json"))
         )
 
+    def test_crate_includes_the_audit_trail(self):
+        destination = self._crate_path()
+        package_analysis(
+            self.ledger, "GW150914_095045", "TestAnalysis", destination, store=self.store
+        )
+        with open(os.path.join(destination, "audit.json")) as audit_file:
+            audit = json.load(audit_file)
+        with open(os.path.join(destination, "ro-crate-metadata.json")) as metadata_file:
+            metadata = json.load(metadata_file)
+        ids = [node.get("@id") for node in metadata["@graph"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn("audit.json", ids)
+        self.assertTrue(audit["@graph"], "the analysis was applied, so there is a record")
+        for node in audit["@graph"]:
+            self.assertIn(node["@id"], ids)
+
     def test_output_files_are_referenced_not_copied(self):
         destination = self._crate_path()
         package_analysis(

@@ -93,7 +93,21 @@ def package_analysis(
     with open(config_path, "w") as config_file:
         json.dump(_effective_configuration(analysis), config_file, indent=2, default=str)
 
-    has_part = [{"@id": "provenance.json"}, {"@id": "config.json"}]
+    # Who changed the analysis and its subject, and how (#143): the audit
+    # records, as W3C PROV, so they sit in the same graph as the provenance.
+    from asimov.audit import prov_document
+
+    target = f"{subject_name}/{analysis_name}"
+    records = [
+        r for r in ledger.audit_log(target=subject_name)
+        if r.target in (subject_name, target)
+    ]
+    audit_document = prov_document(records)
+    audit_path = os.path.join(destination, "audit.json")
+    with open(audit_path, "w") as audit_file:
+        json.dump(audit_document, audit_file, indent=2, default=str)
+
+    has_part = [{"@id": "provenance.json"}, {"@id": "config.json"}, {"@id": "audit.json"}]
     file_entities = [
         {
             "@id": "provenance.json",
@@ -106,6 +120,12 @@ def package_analysis(
             "@type": "File",
             "name": "Analysis configuration",
             "encodingFormat": "application/json",
+        },
+        {
+            "@id": "audit.json",
+            "@type": "File",
+            "name": "Audit trail: who changed this analysis and its subject (W3C PROV)",
+            "encodingFormat": "application/ld+json",
         },
     ]
 
@@ -183,8 +203,18 @@ def package_analysis(
             + file_entities
             + output_entities
             + provenance_document["@graph"]
+            + audit_document["@graph"]
         ),
     }
+    # A node may be in both graphs (an agent, say): keep the first of each.
+    seen, graph = set(), []
+    for node in ro_crate_metadata["@graph"]:
+        key = node.get("@id")
+        if key is not None and key in seen:
+            continue
+        seen.add(key)
+        graph.append(node)
+    ro_crate_metadata["@graph"] = graph
 
     metadata_path = os.path.join(destination, "ro-crate-metadata.json")
     with open(metadata_path, "w") as metadata_file:

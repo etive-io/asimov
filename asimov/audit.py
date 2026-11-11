@@ -357,3 +357,70 @@ def prov_document(records):
             seen.add(node["@id"])
             graph.append(node)
     return {"@context": [RO_CRATE_CONTEXT, PROV_CONTEXT], "@graph": graph}
+
+
+#: How many changed fields a ``change`` record lists, and how long a value may
+#: be before it is shortened, so that a large edit doesn't make a huge record.
+MAX_CHANGES = 50
+MAX_VALUE = 200
+
+
+def _keyed(items):
+    """A list of named things as a mapping, if it is one, else ``None``."""
+    keyed = {}
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
+            keyed[item["name"]] = item
+        elif isinstance(item, dict) and len(item) == 1 and isinstance(next(iter(item)), str):
+            name, value = next(iter(item.items()))
+            keyed[name] = value
+        else:
+            return None
+    return keyed
+
+
+def _short(value):
+    text = json.dumps(value, default=str, sort_keys=True) if not isinstance(value, str) else value
+    return text if len(text) <= MAX_VALUE else text[: MAX_VALUE - 1] + "…"
+
+
+def changes(before, after, path=""):
+    """
+    What differs between two versions of a document, field by field.
+
+    Lists of named things (an event's analyses, for example) are compared by
+    name. Values are shortened, and at most :data:`MAX_CHANGES` are given.
+
+    Returns
+    -------
+    dict
+        Dotted path to ``[before, after]``; a missing side is ``None``.
+    """
+    found = {}
+
+    def walk(old, new, where):
+        if len(found) > MAX_CHANGES:
+            return
+        if isinstance(old, list) and isinstance(new, list):
+            old_keyed, new_keyed = _keyed(old), _keyed(new)
+            if old_keyed is not None and new_keyed is not None:
+                old, new = old_keyed, new_keyed
+        if isinstance(old, dict) and isinstance(new, dict):
+            for key in sorted(set(old) | set(new), key=str):
+                walk(old.get(key), new.get(key), f"{where}.{key}" if where else str(key))
+        elif old != new:
+            found[where or "."] = [None if old is None else _short(old), None if new is None else _short(new)]
+
+    walk(before, after, path)
+    if len(found) > MAX_CHANGES:
+        found = dict(list(found.items())[:MAX_CHANGES])
+        found["…"] = ["", "more changes not listed"]
+    return found
+
+
+def covered(target, explicit):
+    """Whether an explicit record for one of ``explicit`` already describes ``target``."""
+    return any(
+        other == target or other.startswith(target + "/") or target.startswith(other + "/")
+        for other in explicit
+    )
