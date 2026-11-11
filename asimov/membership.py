@@ -11,6 +11,10 @@ kept by the instance's admins in a YAML file next to the registry::
         members: [dw, jane]
       cbc-review:
         members: [sam]
+      o4-production:
+        members: [dw]
+        accounting contact: dw         # charged when the group is billed (#181)
+        accounting tags: [ligo.prod.*] # the accounting tags it may use
 
 Membership is flat: a group can't be a member of another. Groups from an
 identity provider's token claims (#182) will plug in as another
@@ -40,6 +44,10 @@ __all__ = [
 GROUP_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
+#: What a group in the groups file may have.
+GROUP_KEYS = frozenset({"members", "description", "accounting contact", "accounting tags"})
+
+
 class MembershipError(ValueError):
     """The groups file doesn't make sense."""
 
@@ -60,6 +68,10 @@ class GroupDirectory:
     def is_admin(self, identifier):
         """Whether the person called ``identifier`` is an instance admin."""
         return False
+
+    def settings(self):
+        """What each group holds besides its members (see :class:`FileGroupDirectory`)."""
+        return {}
 
 
 class FileGroupDirectory(GroupDirectory):
@@ -118,9 +130,18 @@ class FileGroupDirectory(GroupDirectory):
         for name, group in groups.items():
             if not isinstance(name, str) or not GROUP_NAME.match(name):
                 raise MembershipError(f"{name!r} in {self.path} is not a group name.")
-            if not isinstance(group, dict) or set(group) - {"members", "description"}:
+            if not isinstance(group, dict) or set(group) - GROUP_KEYS:
                 raise MembershipError(
-                    f"The group {name!r} in {self.path} may only have 'members' and 'description'."
+                    f"The group {name!r} in {self.path} may only have "
+                    f"{', '.join(sorted(GROUP_KEYS))}."
+                )
+            contact = group.get("accounting contact")
+            if contact is not None and (not isinstance(contact, str) or not contact.strip()):
+                raise MembershipError(f"The accounting contact of {name!r} in {self.path} must be a name.")
+            tags = group.get("accounting tags") or []
+            if not isinstance(tags, list) or not all(isinstance(t, str) and t for t in tags):
+                raise MembershipError(
+                    f"The accounting tags of {name!r} in {self.path} must be a list of patterns."
                 )
             listed = group.get("members") or []
             if not isinstance(listed, list) or not all(isinstance(m, str) for m in listed):
@@ -171,6 +192,25 @@ class FileGroupDirectory(GroupDirectory):
                     os.remove(scratch.name)
                 raise
         return people
+
+    def settings(self):
+        """
+        What each group holds besides its members: its ``accounting contact``,
+        and the ``accounting tags`` it may use (see :mod:`asimov.accounting`).
+
+        Returns
+        -------
+        dict of str to dict
+        """
+        self.load()  # checks the file, and allows a missing one if missing_ok
+        if not os.path.exists(self.path):
+            return {}
+        with open(self.path) as handle:
+            data = yaml.safe_load(handle) or {}
+        return {
+            name: {key: group[key] for key in ("accounting contact", "accounting tags") if key in group}
+            for name, group in (data.get("groups") or {}).items()
+        }
 
     def groups_of(self, identifier):
         _, members = self.load()

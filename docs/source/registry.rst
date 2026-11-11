@@ -225,3 +225,62 @@ person's groups are just those their token gives.
 Choose an ``identifier`` claim which is stable and readable, such as a collaboration
 username, since it is the name used in ``groups.yaml``, in the audit trail, and for
 accounting.
+
+Who jobs are charged to
+-----------------------
+
+On a hosted instance every job runs under one shared account, so asimov tells the
+scheduler who to charge (``accounting_group_user``) and under which accounting tag
+(``accounting_group``). Neither comes from a blueprint: anyone who can apply one could
+otherwise charge someone else. Where groups are enforced:
+
+* **Whoever requested an analysis is charged** for it, and for what follows from it.
+  The requester is whoever applied it, from the project's audit trail, unless it has
+  been handed over to someone else (:func:`asimov.accounting.hand_over`, which is
+  recorded). They are charged under the accounting name their sign-in token gave
+  (the provider's ``accounting`` claim), or else their identifier.
+* **A project can bill a group** instead, with ``billing_group`` in its registry entry.
+  The scheduler needs a person, so the group's ``accounting contact`` is charged; who
+  requested each analysis is still recorded. A single analysis can bill a group with
+  ``scheduler: billing group: NAME``, but only if the project lists that group in
+  ``billable_groups`` and the analysis's requester is a member of it.
+* **Accounting tags are granted to groups.** Once any group lists ``accounting tags``,
+  an analysis may only use a tag granted to a group its requester, or the billed group,
+  is in. Tags are patterns, so ``ligo.prod.*`` grants every production tag.
+
+.. code-block:: yaml
+
+    # groups.yaml
+    groups:
+      o4-production:
+        members: [dw]
+        accounting contact: dw
+        accounting tags: [ligo.prod.*]
+      cbc-pe:
+        members: [dw, jane]
+        accounting tags: [ligo.dev.*]
+
+Without a groups file nothing changes: the analysis's own ``scheduler`` values, then
+the ``[condor]`` ``user`` and ``accounting`` settings, are used.
+
+Asimov applies this when it builds and submits an analysis of a project served from a
+registry whose instance has groups:
+
+* Before the configuration is built, the analysis's ``scheduler`` values are replaced
+  with the resolved user and tag, so pipelines write them into their submit files.
+* Before every submission, every submit description under the analysis's run directory,
+  and every one its DAGs name (following ``SUBDAG EXTERNAL``), is read. The submission
+  is **refused** unless each sets ``accounting_group_user`` and ``accounting_group``
+  to exactly those values. ``+AcctGroupUser``, ``+AcctGroup`` and ``+AccountingGroup``
+  are checked too, and a value taken from a macro, or a file which ``include``\ s
+  another, is refused because it can't be checked. This is needed because, since
+  HTCondor 10, a node's own submit file overrides what DAGMan passes down.
+* What each submission was charged to is recorded in the audit trail.
+
+``asimov accounting show SUBJECT ANALYSIS`` says who an analysis is charged to, and
+``asimov accounting hand-over SUBJECT ANALYSIS PERSON`` makes someone else its
+requester. Over MCP, ``hand_over_analysis`` does the same, for a maintainer or the
+current requester. Handovers are recorded in the audit trail.
+
+Slurm's ``--account`` is not set this way: on a shared account, Slurm charges an
+account rather than a person, so how people map to accounts is for each site to decide.

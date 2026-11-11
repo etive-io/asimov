@@ -10,7 +10,7 @@ import click
 from copy import deepcopy
 from pathlib import Path
 
-from asimov import condor, config, logger, retry, LOGGER_LEVEL
+from asimov import accounting, condor, config, logger, retry, LOGGER_LEVEL
 from asimov.context import current_context, resolve_path
 from asimov.principal import Principal, acting_as
 from asimov.context import active_ledger as ledger
@@ -762,6 +762,7 @@ def monitor(ctx, event, update, dry_run, chain, until_idle, interval, max_passes
                                     + f" {prod.name} has new/changed analyses; refreshing combined summary pages"
                                 )
                                 try:
+                                    accounting.check(prod)
                                     cluster_id = prod.pipeline.submit_dag()
                                     prod.status = "processing"
                                     prod.job_id = cluster_id

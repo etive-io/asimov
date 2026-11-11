@@ -133,6 +133,12 @@ class ProjectEntry:
     self_approval : bool
         Let whoever applied an analysis approve it, where groups are enforced.
         Off by default; for projects where the same people analyse and review.
+    billing_group : str, optional
+        Charge the project's jobs to this group's accounting contact, rather
+        than to whoever requested each analysis (see :mod:`asimov.accounting`).
+    billable_groups : list of str
+        Groups a single analysis may bill instead of its requester, with
+        ``scheduler: billing group``, if its requester is in the group.
     ledger : dict, optional
         ``engine`` and ``location`` of the project's ledger, if they aren't
         the ones in the project's own configuration. ``location`` may be a
@@ -157,6 +163,8 @@ class ProjectEntry:
     quotas: Dict[str, object] = dataclasses.field(default_factory=dict)
     grants: Dict[str, List[str]] = dataclasses.field(default_factory=dict)
     self_approval: bool = False
+    billing_group: Optional[str] = None
+    billable_groups: List[str] = dataclasses.field(default_factory=list)
 
     def __post_init__(self):
         self.validate()
@@ -186,6 +194,14 @@ class ProjectEntry:
                 )
         if not isinstance(self.quotas, dict):
             raise RegistryError(f"The quotas of {self.name!r} must be a mapping.")
+        if self.billing_group is not None and (
+            not isinstance(self.billing_group, str) or not self.billing_group
+        ):
+            raise RegistryError(f"The billing_group of {self.name!r} must be a group name.")
+        if isinstance(self.billable_groups, str) or not all(
+            isinstance(g, str) and g for g in self.billable_groups
+        ):
+            raise RegistryError(f"The billable_groups of {self.name!r} must be a list of group names.")
         if not isinstance(self.self_approval, bool):
             raise RegistryError(f"self_approval for {self.name!r} must be true or false.")
         from asimov.access import ROLES
@@ -228,6 +244,10 @@ class ProjectEntry:
             data["grants"] = {group: list(roles) for group, roles in self.grants.items()}
         if self.self_approval:
             data["self_approval"] = True
+        if self.billing_group:
+            data["billing_group"] = self.billing_group
+        if self.billable_groups:
+            data["billable_groups"] = list(self.billable_groups)
         return mask_secrets(data) if mask else data
 
     @classmethod
@@ -244,7 +264,10 @@ class ProjectEntry:
         """
         if not isinstance(data, dict):
             raise RegistryError(f"The entry for {name!r} must be a mapping.")
-        unknown = set(data) - {"root", "groups", "grants", "self_approval", "ledger", "storage", "scheduler", "quotas"}
+        unknown = set(data) - {
+            "root", "groups", "grants", "self_approval", "billing_group", "billable_groups",
+            "ledger", "storage", "scheduler", "quotas",
+        }
         if unknown:
             raise RegistryError(f"The entry for {name!r} has unknown keys: {', '.join(sorted(unknown))}.")
         root = data.get("root")
@@ -260,6 +283,8 @@ class ProjectEntry:
             quotas=dict(data.get("quotas") or {}),
             grants=dict(data.get("grants") or {}),
             self_approval=data.get("self_approval", False),
+            billing_group=data.get("billing_group"),
+            billable_groups=list(data.get("billable_groups") or []),
         )
 
     def context(self):

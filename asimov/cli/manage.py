@@ -17,7 +17,7 @@ from asimov import LOGGER_LEVEL
 from asimov.event import DescriptionException
 from asimov.pipeline import PipelineException
 from asimov.git import EventRepo
-from asimov import retry
+from asimov import accounting, retry
 from asimov.throttle import (
     SubmissionThrottle,
     is_transient_submit_error,
@@ -231,6 +231,12 @@ def build_analyses(event=None, dryrun=False):
                         )
                         continue
 
+                    try:
+                        accounting.prepare(analysis)
+                    except accounting.AccountingError as error:
+                        logger.error(str(error))
+                        click.echo(click.style("●", fg="red") + f" {error}")
+                        continue
                     analysis.make_config(
                         filename=os.path.join(project_analysis_dir, f"{analysis.name}.ini"),
                         dryrun=dryrun,
@@ -300,6 +306,12 @@ def build_analyses(event=None, dryrun=False):
                             else:
                                 # path.mkdir(parents=True, exist_ok=True)
                                 config_loc = os.path.join(f"{production.name}.ini")
+                                try:
+                                    accounting.prepare(production)
+                                except accounting.AccountingError as error:
+                                    logger.error(str(error))
+                                    click.echo(click.style("●", fg="red") + f" {error}")
+                                    continue
                                 production.pipeline.before_config()
                                 production.make_config(config_loc, dryrun=dryrun)
                                 click.echo(f"Production config {production.name} created.")
@@ -542,6 +554,12 @@ def submit_analyses(event=None, update=False, dryrun=False, max_submit=None):
                 )
                 click.echo("Try running `asimov manage build` first.")
             try:
+                accounting.check(analysis, dryrun=dryrun)
+            except accounting.AccountingError as error:
+                logger.error(str(error))
+                click.echo(click.style("●", fg="red") + f" {error}")
+                continue
+            try:
                 throttle.pace()
                 cluster_id = pipe.submit_dag(dryrun=dryrun)
                 throttle.record_submission()
@@ -704,6 +722,12 @@ def submit_analyses(event=None, update=False, dryrun=False, max_submit=None):
                     logger.error("The pipeline failed to clean up after itself.")
                     logger.exception(e)
                 try:
+                    accounting.check(production, dryrun=dryrun)
+                except accounting.AccountingError as error:
+                    logger.error(str(error))
+                    click.echo(click.style("●", fg="red") + f" {error}")
+                    continue
+                try:
                     throttle.pace()
                     pipe.submit_dag(dryrun=dryrun)
                 except Exception as e:
@@ -752,6 +776,12 @@ def submit_analyses(event=None, update=False, dryrun=False, max_submit=None):
                     )
                     click.echo("Try running `asimov manage build` first.")
                 if not dag_built:
+                    continue
+                try:
+                    accounting.check(production, dryrun=dryrun)
+                except accounting.AccountingError as error:
+                    logger.error(str(error))
+                    click.echo(click.style("●", fg="red") + f" {error}")
                     continue
                 try:
                     throttle.pace()

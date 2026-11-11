@@ -124,7 +124,8 @@ class AuditRecord:
     content_hash : str
         SHA-256 of ``content``, so a record can be compared without it.
     accounting : dict, optional
-        The accounting identity charged, where the change launched jobs.
+        The accounting identity charged, where the change launched jobs; for
+        an ``apply``, the name its requester is charged under, if known.
         Reserved: nothing sets it yet.
     id : int, optional
         The record's place in the log, given when it is stored.
@@ -209,6 +210,14 @@ def new_record(action, kind, target, content=None, outcome="added", accounting=N
         Who acted. Defaults to :func:`~asimov.principal.current_principal`.
     """
     principal = principal if principal is not None else current_principal()
+    if accounting is None and action == "apply":
+        # Who requested an analysis is charged for it (#181): keep the name
+        # they are charged under, which their sign-in token gave, if any.
+        from asimov.identity import current_identity
+
+        identity = current_identity()
+        if identity is not None and identity.accounting:
+            accounting = {"user": identity.accounting}
     plain = None if content is None else _plain(content)
     return AuditRecord(
         action=action,
