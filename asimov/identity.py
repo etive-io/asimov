@@ -392,6 +392,9 @@ class TokenGroups:
             groups |= identity.groups
         return groups
 
+    def settings(self):
+        return self.directory.settings() if self.directory else {}
+
     def is_admin(self, identifier):
         # Being an instance admin is decided by the instance, never by a token.
         return bool(self.directory) and self.directory.is_admin(identifier)

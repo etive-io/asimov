@@ -225,3 +225,44 @@ person's groups are just those their token gives.
 Choose an ``identifier`` claim which is stable and readable, such as a collaboration
 username, since it is the name used in ``groups.yaml``, in the audit trail, and for
 accounting.
+
+Who jobs are charged to
+-----------------------
+
+On a hosted instance every job runs under one shared account, so asimov tells the
+scheduler who to charge (``accounting_group_user``) and under which accounting tag
+(``accounting_group``). Neither comes from a blueprint: anyone who can apply one could
+otherwise charge someone else. Where groups are enforced:
+
+* **Whoever requested an analysis is charged** for it, and for what follows from it.
+  The requester is whoever applied it, from the project's audit trail, unless it has
+  been handed over to someone else (:func:`asimov.accounting.hand_over`, which is
+  recorded). They are charged under the accounting name their sign-in token gave
+  (the provider's ``accounting`` claim), or else their identifier.
+* **A project can bill a group** instead, with ``billing_group`` in its registry entry.
+  The scheduler needs a person, so the group's ``accounting contact`` is charged; who
+  requested each analysis is still recorded.
+* **Accounting tags are granted to groups.** Once any group lists ``accounting tags``,
+  an analysis may only use a tag granted to a group its requester, or the billed group,
+  is in. Tags are patterns, so ``ligo.prod.*`` grants every production tag.
+
+.. code-block:: yaml
+
+    # groups.yaml
+    groups:
+      o4-production:
+        members: [dw]
+        accounting contact: dw
+        accounting tags: [ligo.prod.*]
+      cbc-pe:
+        members: [dw, jane]
+        accounting tags: [ligo.dev.*]
+
+Without a groups file nothing changes: the analysis's own ``scheduler`` values, then
+the ``[condor]`` ``user`` and ``accounting`` settings, are used.
+
+.. note::
+
+    This is worked out by :func:`asimov.accounting.resolve`. Applying it to every job
+    at submission, and refusing a DAG whose node jobs set other values, is the next
+    step (#181).
