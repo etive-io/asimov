@@ -38,6 +38,15 @@ What is recorded
   An event which is updated is recorded as an update. A document which is refused,
   for instance because the analysis already exists, changes nothing and leaves no
   record.
+* Reviews, comments and labels; group commands; handovers and what each submission was
+  charged to (see :doc:`registry`); results released by retention.
+* **Every other change** to an event or analysis (#143): a status set by the monitor,
+  an edit from ``asimov event``, ``production`` or ``manage``, a deletion, or a plugin
+  writing to the ledger. These are ``change`` records, saying which fields changed from
+  what to what (lists of analyses are compared by name; values are shortened, and at
+  most 50 fields are listed), or ``deleted``. A write which changes nothing leaves no
+  record, and a change made in the same transaction as an explicit record of the same
+  thing (applying a blueprint, say) isn't recorded twice.
 * The principal is *snapshotted* when the change is made. Group membership and roles
   change later; the record keeps what they were then.
 * The document is stored as it was applied. The values of keys which look like
@@ -110,3 +119,10 @@ API reference
 .. autoclass:: asimov.preview.PlannedChange
 
 .. autofunction:: asimov.preview.changed_paths
+
+In an RO-Crate
+--------------
+
+An analysis's RO-Crate (``asimov provenance``) includes ``audit.json``: the records for
+the analysis and its subject, as W3C PROV, and the same nodes in the crate's own graph,
+so who changed it sits beside how it was produced.
