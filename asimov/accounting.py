@@ -28,11 +28,15 @@ values.
 
 import dataclasses
 import fnmatch
+import os
 from typing import Optional
 
 from asimov.audit import append_audit, new_record, responsible_identifier
 
-__all__ = ["Accounting", "AccountingError", "hand_over", "requester", "resolve"]
+__all__ = [
+    "Accounting", "AccountingError", "check", "hand_over", "prepare", "requester", "resolve",
+    "rules_for", "submit_files",
+]
 
 
 class AccountingError(ValueError):
@@ -199,3 +203,203 @@ def resolve(ledger, analysis, entry=None, directory=None):
             who = f"the group {billed}" if billed else requested_by
             raise AccountingError(f"{who} may not use the accounting tag {tag!r}.")
     return Accounting(user=user, tag=tag, requested_by=requested_by, billed_group=billed)
+
+
+# ---------------------------------------------------------------------------
+# Applying it at build and submission
+# ---------------------------------------------------------------------------
+
+#: Submit-description keys which say who is charged, lower-cased, and which
+#: field of :class:`Accounting` each must match.
+SUBMIT_KEYS = {
+    "accounting_group_user": "user",
+    "+acctgroupuser": "user",
+    "accounting_group": "tag",
+    "+acctgroup": "tag",
+    "+accountinggroup": "tag",
+}
+
+
+def rules_for(root):
+    """
+    The registry entry and groups for the project in ``root``, if it is served
+    by an instance which enforces groups.
+
+    Found from the instance's registry (``$ASIMOV_REGISTRY``, or the default),
+    so that the command line, the monitor and the MCP server's job workers all
+    apply the same rules to a hosted project.
+
+    Returns
+    -------
+    tuple of (ProjectEntry, GroupDirectory) or (None, None)
+    """
+    from asimov import access
+    from asimov.registry import FileRegistry, RegistryError, default_registry_path
+
+    path = default_registry_path()
+    if not root or not os.path.exists(path):
+        return None, None
+    registry = FileRegistry(path)
+    try:
+        entries = registry.list()
+    except RegistryError:
+        return None, None
+    here = os.path.realpath(root)
+    entry = next((e for e in entries if os.path.realpath(e.root) == here), None)
+    if entry is None:
+        return None, None
+    policy = access.instance_policy(registry)
+    if policy is None:
+        return None, None
+    return entry, policy.directory
+
+
+def _hosted(analysis):
+    from asimov.context import get_active_context
+
+    context = get_active_context()
+    if context is None:
+        return None, None, None
+    entry, directory = rules_for(getattr(context, "root", None))
+    return context, entry, directory
+
+
+def prepare(analysis):
+    """
+    Put who is charged into ``analysis``, before its configuration is built.
+
+    Pipelines write ``scheduler`` values into the submit files they make, so
+    the resolved user and tag replace whatever the blueprint said. Does
+    nothing for a project which isn't hosted with groups.
+
+    Returns
+    -------
+    Accounting or None
+
+    Raises
+    ------
+    AccountingError
+    """
+    context, entry, directory = _hosted(analysis)
+    if directory is None:
+        return None
+    found = resolve(context.ledger, analysis, entry, directory)
+    scheduler = analysis.meta.setdefault("scheduler", {})
+    scheduler["accounting group user"] = found.user
+    if found.tag:
+        scheduler["accounting group"] = found.tag
+    return found
+
+
+def submit_files(rundir):
+    """
+    The submit descriptions of the jobs under ``rundir``.
+
+    Every ``*.sub`` and ``*.submit`` file, and every file a DAG under it names
+    in a ``JOB`` line (``SUBDAG EXTERNAL`` DAGs are followed), except the
+    ``*.condor.sub`` files DAGMan writes for itself.
+    """
+    found, dags, seen = set(), [], set()
+    for here, _, names in os.walk(rundir):
+        for name in names:
+            path = os.path.join(here, name)
+            if name.endswith(".condor.sub"):
+                continue
+            if name.endswith((".sub", ".submit")):
+                found.add(os.path.realpath(path))
+            elif name.endswith(".dag"):
+                dags.append(path)
+    while dags:
+        dag = os.path.realpath(dags.pop())
+        if dag in seen or not os.path.isfile(dag):
+            continue
+        seen.add(dag)
+        base = os.path.dirname(dag)
+        with open(dag, errors="replace") as handle:
+            for line in handle:
+                words = line.split()
+                if len(words) >= 3 and words[0].upper() == "JOB":
+                    directory = base
+                    if "DIR" in [w.upper() for w in words[3:]]:
+                        index = [w.upper() for w in words].index("DIR")
+                        if index + 1 < len(words):
+                            directory = os.path.join(base, words[index + 1])
+                    found.add(os.path.realpath(os.path.join(directory, words[2])))
+                elif len(words) >= 4 and words[0].upper() == "SUBDAG" and words[1].upper() == "EXTERNAL":
+                    dags.append(os.path.join(base, words[3]))
+    return sorted(found)
+
+
+def problems(path, accounting):
+    """What in one submit description doesn't charge ``accounting``."""
+    try:
+        with open(path, errors="replace") as handle:
+            lines = handle.read().splitlines()
+    except OSError as error:
+        return [f"{path} could not be read: {error}"]
+    found, wrong = {}, []
+    for line in lines:
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        if text.lower().startswith("include"):
+            wrong.append(f"{path} includes another file, which can't be checked")
+            continue
+        key, separator, value = text.partition("=")
+        if not separator:
+            continue
+        field = SUBMIT_KEYS.get(key.strip().lower())
+        if field is None:
+            continue
+        value = value.strip().strip('"').strip()
+        expected = getattr(accounting, field)
+        found[field] = value
+        if "$(" in value:
+            wrong.append(f"{path} sets {key.strip()} from a macro, which can't be checked")
+        elif value != expected:
+            wrong.append(f"{path} charges {key.strip()} = {value!r}, not {expected!r}")
+    for field, key in (("user", "accounting_group_user"), ("tag", "accounting_group")):
+        if getattr(accounting, field) and field not in found:
+            wrong.append(f"{path} doesn't set {key}")
+    return wrong
+
+
+def check(analysis, dryrun=False):
+    """
+    Refuse to submit ``analysis`` unless every job charges who it should.
+
+    Does nothing for a project which isn't hosted with groups, or in a dry
+    run. The charge is recorded in the audit trail.
+
+    Returns
+    -------
+    Accounting or None
+
+    Raises
+    ------
+    AccountingError
+        Saying which files charge someone else, or don't say.
+    """
+    context, entry, directory = _hosted(analysis)
+    if directory is None or dryrun:
+        return None
+    found = resolve(context.ledger, analysis, entry, directory)
+    rundir = getattr(analysis, "rundir", None)
+    if not rundir or not os.path.isdir(rundir):
+        raise AccountingError(f"{_target(analysis)} has no run directory to check.")
+    files = submit_files(rundir)
+    if not files:
+        raise AccountingError(f"No submit files were found for {_target(analysis)} in {rundir}.")
+    wrong = [p for path in files for p in problems(path, found)]
+    if wrong:
+        raise AccountingError(
+            f"Refusing to submit {_target(analysis)}: " + "; ".join(wrong[:5])
+            + (f"; and {len(wrong) - 5} more" if len(wrong) > 5 else "")
+        )
+    with context.ledger.transaction():
+        append_audit(
+            context.ledger,
+            new_record("submit", "analysis", _target(analysis), outcome="charged",
+                       accounting=found.to_dict()),
+        )
+    return found

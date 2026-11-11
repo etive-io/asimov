@@ -404,3 +404,26 @@ class TestReviewerRuleWithoutGroups(McpProjectsTestCase):
         subject = self.subject()
         self.data("apply_blueprint", project="one", blueprint=ANALYSIS, subject=subject)
         self.data("set_review_status", project="one", subject=subject, analysis="a1", status="APPROVED")
+
+
+class TestHandOver(GrantedMcpCase):
+    def setUp(self):
+        super().setUp()
+        self.registry.update("one", lambda e: e.grants.update(referees=["analyst"]))
+        self.subject_name = self.subject()
+        self.as_person("sam")
+        self.data("apply_blueprint", project="one", blueprint=ANALYSIS, subject=self.subject_name)
+
+    def hand_over(self, to="jane"):
+        return self.call("hand_over_analysis", project="one", subject=self.subject_name,
+                         analysis="a1", to=to, reason="leaving")
+
+    def test_the_requester_may_hand_it_over_and_it_is_recorded(self):
+        self.assertFalse(self.hand_over().is_error)
+        self.assertEqual(self.last_record("hand over").on_behalf_of.identifier, "sam")
+
+    def test_a_maintainer_may_and_others_may_not(self):
+        self.as_person("dw")
+        self.assertFalse(self.hand_over("kim").is_error)
+        self.as_person("sam")  # no longer the requester, and not a maintainer
+        self.assertIn("Only a maintainer", self.hand_over().content[0].text)

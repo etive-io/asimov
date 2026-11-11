@@ -41,7 +41,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     ) from error
 
 import asimov
-from asimov import access, actions, jobs, reading
+from asimov import access, accounting, actions, jobs, reading
 from asimov.cli.application import apply_page
 from asimov.context import ProjectContext, get_active_context
 from asimov.preview import recording
@@ -899,6 +899,41 @@ def create_server(project, acting_for=None, read_only=False):
             )
 
         return act(ctx, project, subject, analysis, review, status, message, action=access.REVIEW)
+
+    @server.tool(annotations=_ADD, title="Hand an analysis over")
+    def hand_over_analysis(
+        ctx: Context,
+        subject: str,
+        analysis: str,
+        to: Annotated[str, Field(min_length=1, max_length=200, description="Who will be charged for it.")],
+        accounting_name: Annotated[
+            Optional[str],
+            Field(max_length=200, description="The name they are charged under, if not the same."),
+        ] = None,
+        reason: Annotated[Optional[str], Field(max_length=10_000)] = None,
+        project: Project = None,
+    ) -> dict[str, Any]:
+        """
+        Make someone else the requester of an analysis, so that its jobs, and
+        what follows from them, are charged to them. Only a maintainer, or the
+        analysis's current requester, may do this. It is recorded.
+        """
+
+        def change(ledger, found):
+            entry = registry.get(project)
+            who = current_principal()
+            current = accounting.requester(ledger, found)
+            if not (current and current[0] == who.on_behalf_of.identifier):
+                try:
+                    access.authorize(who, entry, access.ADMIN, policy)
+                except access.AccessDenied:
+                    raise ToolError("Only a maintainer or the analysis's requester may hand it over.")
+            try:
+                return accounting.hand_over(ledger, found, to, accounting=accounting_name, reason=reason)
+            except accounting.AccountingError as error:
+                raise ToolError(str(error))
+
+        return act(ctx, project, subject, analysis, change, action=access.WRITE)
 
     @server.tool(annotations=_ADD, title="Comment on an analysis")
     def add_comment(

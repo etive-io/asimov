@@ -261,8 +261,21 @@ otherwise charge someone else. Where groups are enforced:
 Without a groups file nothing changes: the analysis's own ``scheduler`` values, then
 the ``[condor]`` ``user`` and ``accounting`` settings, are used.
 
-.. note::
+Asimov applies this when it builds and submits an analysis of a project served from a
+registry whose instance has groups:
 
-    This is worked out by :func:`asimov.accounting.resolve`. Applying it to every job
-    at submission, and refusing a DAG whose node jobs set other values, is the next
-    step (#181).
+* Before the configuration is built, the analysis's ``scheduler`` values are replaced
+  with the resolved user and tag, so pipelines write them into their submit files.
+* Before every submission, every submit description under the analysis's run directory,
+  and every one its DAGs name (following ``SUBDAG EXTERNAL``), is read. The submission
+  is **refused** unless each sets ``accounting_group_user`` and ``accounting_group``
+  to exactly those values. ``+AcctGroupUser``, ``+AcctGroup`` and ``+AccountingGroup``
+  are checked too, and a value taken from a macro, or a file which ``include``\ s
+  another, is refused because it can't be checked. This is needed because, since
+  HTCondor 10, a node's own submit file overrides what DAGMan passes down.
+* What each submission was charged to is recorded in the audit trail.
+
+The MCP ``hand_over_analysis`` tool makes someone else an analysis's requester. A
+maintainer, or the current requester, may use it.
+
+Slurm's ``--account`` is not yet set this way.

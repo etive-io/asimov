@@ -156,3 +156,109 @@ class TestGroupsFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEnforcement(AccountingTestCase):
+    """Refusing jobs which charge someone else, on a hosted project (#181)."""
+
+    def setUp(self):
+        from unittest import mock
+
+        from asimov.registry import FileRegistry
+
+        super().setUp()
+        registry_path = os.path.join(self.dir, "registry.yaml")
+        FileRegistry(registry_path).add(ProjectEntry(name="p", root=self.root, groups=["cbc-pe"]))
+        patcher = mock.patch.dict(os.environ, {"ASIMOV_REGISTRY": registry_path})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.analysis_ = self.apply("a1", accounting="albert.einstein", **{
+            "accounting group": "ligo.dev.o4.cbc", "accounting group user": "victim",
+        })
+        self.rundir = os.path.join(self.dir, "run")
+        os.makedirs(self.rundir)
+        self.analysis_.rundir = self.rundir
+
+    def write(self, name, text):
+        path = os.path.join(self.rundir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write(text)
+        return path
+
+    def good(self, name="job.sub"):
+        return self.write(name, "executable = /bin/true\naccounting_group = ligo.dev.o4.cbc\n"
+                                "accounting_group_user = albert.einstein\nqueue\n")
+
+    def check(self):
+        from asimov.accounting import check
+
+        with self.context.activate():
+            return check(self.analysis_)
+
+    def test_prepare_replaces_the_blueprints_values(self):
+        from asimov.accounting import prepare
+
+        with self.context.activate():
+            prepare(self.analysis_)
+        self.assertEqual(self.analysis_.meta["scheduler"]["accounting group user"], "albert.einstein")
+
+    def test_matching_jobs_are_allowed_and_the_charge_recorded(self):
+        self.good()
+        self.assertEqual(self.check().user, "albert.einstein")
+        with self.context.activate():
+            record = self.context.ledger.audit_log(action="submit")[-1]
+        self.assertEqual(record.accounting["user"], "albert.einstein")
+        self.assertEqual(record.accounting["requested by"], "albert")
+
+    def test_a_job_charging_someone_else_is_refused(self):
+        self.good()
+        self.write("other.sub", "accounting_group = ligo.dev.o4.cbc\naccounting_group_user = victim\nqueue\n")
+        with self.assertRaises(AccountingError) as caught:
+            self.check()
+        self.assertIn("'victim'", str(caught.exception))
+
+    def test_every_way_of_saying_it_is_checked(self):
+        for text in (
+            '+AcctGroupUser = "victim"\naccounting_group = ligo.dev.o4.cbc\naccounting_group_user = albert.einstein\n',
+            "accounting_group = ligo.prod.o4\naccounting_group_user = albert.einstein\n",
+            "accounting_group = ligo.dev.o4.cbc\naccounting_group_user = $(who)\n",
+            "accounting_group = ligo.dev.o4.cbc\n",
+            "include : other.sub\naccounting_group = ligo.dev.o4.cbc\naccounting_group_user = albert.einstein\n",
+        ):
+            self.write("job.sub", text)
+            with self.assertRaises(AccountingError, msg=text):
+                self.check()
+
+    def test_dag_nodes_outside_the_run_directory_are_found(self):
+        outside = os.path.join(self.dir, "elsewhere")
+        os.makedirs(outside)
+        with open(os.path.join(outside, "node.sub"), "w") as handle:
+            handle.write("accounting_group = ligo.dev.o4.cbc\naccounting_group_user = victim\n")
+        self.good()
+        self.write("top.dag", f"JOB a job.sub\nJOB b node.sub DIR {outside}\n")
+        with self.assertRaises(AccountingError):
+            self.check()
+
+    def test_dagmans_own_files_and_dry_runs_are_ignored(self):
+        from asimov.accounting import check
+
+        self.good()
+        self.write("top.dag.condor.sub", "accounting_group_user = anyone\n")
+        self.assertIsNotNone(self.check())
+        os.remove(os.path.join(self.rundir, "job.sub"))
+        with self.context.activate():
+            self.assertIsNone(check(self.analysis_, dryrun=True))
+
+    def test_no_submit_files_is_refused(self):
+        with self.assertRaises(AccountingError):
+            self.check()
+
+    def test_a_project_not_in_the_registry_is_left_alone(self):
+        from unittest import mock
+
+        from asimov.accounting import check
+
+        with mock.patch.dict(os.environ, {"ASIMOV_REGISTRY": os.path.join(self.dir, "none.yaml")}):
+            with self.context.activate():
+                self.assertIsNone(check(self.analysis_))
