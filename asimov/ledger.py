@@ -724,7 +724,10 @@ class YAMLLedger(Ledger):
         """
 
         if event:
-            productions = self.get_event(event).productions
+            productions = []
+            for event_i in self.get_event(event):
+                for production in event_i.productions:
+                    productions.append(production)
         else:
             productions = []
             for event_i in self.get_event():
