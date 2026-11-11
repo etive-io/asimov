@@ -15,7 +15,9 @@ else. :func:`resolve` works them out:
   it (see :mod:`asimov.identity`), or else their identifier.
 * **A project can bill a group** instead (``billing_group`` in its registry
   entry). The scheduler needs a person, so the group's ``accounting contact``
-  in ``groups.yaml`` is charged, and the requester is still recorded.
+  in ``groups.yaml`` is charged, and the requester is still recorded. A single
+  analysis can bill a group with ``scheduler: billing group``, if the project
+  lists it in ``billable_groups`` and the requester is a member.
 * **Accounting tags are granted to groups** (``accounting tags`` in
   ``groups.yaml``, as patterns such as ``ligo.prod.*``). Once any group lists
   tags, an analysis may only use a tag granted to a group its requester (or the
@@ -189,6 +191,16 @@ def resolve(ledger, analysis, entry=None, directory=None):
     requested_by, user = found
     settings = directory.settings()
     billed = getattr(entry, "billing_group", None) if entry is not None else None
+    chosen = asked.get("billing group")
+    if chosen:
+        # A blueprint may only bill a group the project lets analyses bill,
+        # and which its requester belongs to.
+        allowed = getattr(entry, "billable_groups", None) or []
+        if chosen not in allowed:
+            raise AccountingError(f"The project doesn't let analyses bill {chosen!r}.")
+        if chosen not in directory.groups_of(requested_by):
+            raise AccountingError(f"{requested_by} may not bill {chosen!r}: they aren't in it.")
+        billed = chosen
     if billed:
         contact = (settings.get(billed) or {}).get("accounting contact")
         if not contact:

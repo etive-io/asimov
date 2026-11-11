@@ -241,7 +241,9 @@ otherwise charge someone else. Where groups are enforced:
   (the provider's ``accounting`` claim), or else their identifier.
 * **A project can bill a group** instead, with ``billing_group`` in its registry entry.
   The scheduler needs a person, so the group's ``accounting contact`` is charged; who
-  requested each analysis is still recorded.
+  requested each analysis is still recorded. A single analysis can bill a group with
+  ``scheduler: billing group: NAME``, but only if the project lists that group in
+  ``billable_groups`` and the analysis's requester is a member of it.
 * **Accounting tags are granted to groups.** Once any group lists ``accounting tags``,
   an analysis may only use a tag granted to a group its requester, or the billed group,
   is in. Tags are patterns, so ``ligo.prod.*`` grants every production tag.
@@ -275,7 +277,10 @@ registry whose instance has groups:
   HTCondor 10, a node's own submit file overrides what DAGMan passes down.
 * What each submission was charged to is recorded in the audit trail.
 
-The MCP ``hand_over_analysis`` tool makes someone else an analysis's requester. A
-maintainer, or the current requester, may use it.
+``asimov accounting show SUBJECT ANALYSIS`` says who an analysis is charged to, and
+``asimov accounting hand-over SUBJECT ANALYSIS PERSON`` makes someone else its
+requester. Over MCP, ``hand_over_analysis`` does the same, for a maintainer or the
+current requester. Handovers are recorded in the audit trail.
 
-Slurm's ``--account`` is not yet set this way.
+Slurm's ``--account`` is not set this way: on a shared account, Slurm charges an
+account rather than a person, so how people map to accounts is for each site to decide.

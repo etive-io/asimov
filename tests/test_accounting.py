@@ -262,3 +262,43 @@ class TestEnforcement(AccountingTestCase):
         with mock.patch.dict(os.environ, {"ASIMOV_REGISTRY": os.path.join(self.dir, "none.yaml")}):
             with self.context.activate():
                 self.assertIsNone(check(self.analysis_))
+
+
+class TestBillingOneAnalysis(AccountingTestCase):
+    def make_entry(self, **kwargs):
+        return ProjectEntry(name="p", root=self.root, **kwargs)
+
+    def test_an_analysis_may_bill_an_allowed_group_its_requester_is_in(self):
+        analysis = self.apply("a1", who="dw", **{"accounting group": "ligo.prod.o4", "billing group": "o4-prod"})
+        found = self.resolve(analysis, self.make_entry(billable_groups=["o4-prod"]))
+        self.assertEqual((found.user, found.billed_group, found.requested_by), ("dw.charged", "o4-prod", "dw"))
+
+    def test_not_a_group_the_project_does_not_allow(self):
+        analysis = self.apply("a1", who="dw", **{"accounting group": "ligo.prod.o4", "billing group": "o4-prod"})
+        with self.assertRaises(AccountingError):
+            self.resolve(analysis, self.make_entry())
+
+    def test_not_a_group_the_requester_is_not_in(self):
+        analysis = self.apply("a1", who="albert", **{"accounting group": "ligo.prod.o4", "billing group": "o4-prod"})
+        with self.assertRaises(AccountingError) as caught:
+            self.resolve(analysis, self.make_entry(billable_groups=["o4-prod"]))
+        self.assertIn("aren't in it", str(caught.exception))
+
+
+class TestCommands(AccountingTestCase):
+    def test_show_and_hand_over(self):
+        from click.testing import CliRunner
+
+        from asimov.cli.accounting import accounting
+
+        self.apply("a1", accounting="albert.einstein", **{"accounting group": "ligo.dev.x"})
+        runner = CliRunner()
+        with self.context.activate():
+            shown = runner.invoke(accounting, ["show", "S000000", "a1"])
+            self.assertEqual(shown.exit_code, 0, shown.output)
+            self.assertIn("ligo.dev.x", shown.output)
+            handed = runner.invoke(accounting, ["hand-over", "S000000", "a1", "jane", "--reason", "leaving"])
+            self.assertEqual(handed.exit_code, 0, handed.output)
+            self.assertEqual(requester(self.context.ledger, self.analysis("a1")), ("jane", "jane"))
+            missing = runner.invoke(accounting, ["show", "S000000", "nope"])
+            self.assertNotEqual(missing.exit_code, 0)

@@ -20,6 +20,7 @@ import asimov.pipelines  # NoQA
 
 # Import CLI bits from elsewhere
 from asimov.cli import (  # NoQA
+    accounting as accounting_cli,
     application,
     analysis as analysis_cli,
     audit as audit_cli,
@@ -117,6 +118,7 @@ olivaw.add_command(audit_cli.audit)
 olivaw.add_command(mcp_cli.mcp_server)
 # The registry of projects an instance serves
 olivaw.add_command(registry_cli.registry)
+olivaw.add_command(accounting_cli.accounting)
 
 
 @click.command()
