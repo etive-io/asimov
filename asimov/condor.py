@@ -91,6 +91,8 @@ def _submit_job_legacy(submit_description):
         The cluster ID of the submitted job.
     """
     hostname_job = htcondor.Submit(submit_description)
+    cluster_id = None
+    last_error = None
 
     try:
         schedulers = htcondor.Collector().locate(
@@ -117,9 +119,18 @@ def _submit_job_legacy(submit_description):
                 result = schedd.submit(hostname_job)
                 cluster_id = result.cluster()
                 break
-            except _HTCondorIOError:
-                logger.info(f"{collector} cannot receive jobs")
+            except Exception as e:
+                # Includes a schedd refusing the job (e.g. a submit
+                # requirement such as an invalid accounting tag): keep the
+                # reason so it can be reported if no schedd accepts it.
+                last_error = e
+                logger.info(f"{collector} did not accept the job: {e}")
 
+    if cluster_id is None:
+        raise RuntimeError(
+            "No HTCondor scheduler accepted the job"
+            + (f": {last_error}" if last_error is not None else "")
+        )
     return cluster_id
 
 

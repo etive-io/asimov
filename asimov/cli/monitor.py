@@ -95,11 +95,18 @@ def _start_htcondor_monitor(dry_run, use_scheduler_api):
         "+DESIRED_Sites": "nogrid",
     }
 
+    # The project's own accounting tag (`condor/accounting`, what
+    # `asimov configuration update` sets) is preferred. `[asimov start]` is
+    # only a fallback: the packaged default asimov.conf sets it to an O4
+    # LALInference tag, and `asimov init` copies that into every project, so
+    # preferring it charged every monitor job to that tag whatever the
+    # project was configured with (and pools whose valid tags don't include
+    # it refused the job).
     accounting_group = None
-    if "asimov start" in config:
-        accounting_group = config["asimov start"].get("accounting")
-    if not accounting_group and "condor" in config:
+    if "condor" in config:
         accounting_group = config["condor"].get("accounting")
+    if not accounting_group and "asimov start" in config:
+        accounting_group = config["asimov start"].get("accounting")
 
     if accounting_group:
         submit_description["accounting_group"] = accounting_group
