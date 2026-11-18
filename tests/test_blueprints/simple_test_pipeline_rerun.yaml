@@ -1,0 +1,14 @@
+# A rerun of test-simple-pipeline: the same pipeline, with narrower chirp
+# mass priors. The end-to-end test checks this analysis gets the new priors
+# and the original keeps its own.
+kind: analysis
+name: test-simple-rerun
+pipeline: simpletestpipeline
+comment: Rerun of test-simple-pipeline with narrower chirp mass priors
+status: ready
+needs:
+  - test-simple-pipeline
+priors:
+  chirp mass:
+    minimum: 25.0
+    maximum: 35.0

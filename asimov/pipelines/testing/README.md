@@ -141,10 +141,60 @@ list the analyses they combine in the results file they write.
 The helpers live in `asimov/pipelines/testing/_dump.py`. To write your own
 pipeline's dump, call `write_ledger_dump(self.production)` from `build_dag()`.
 
-`tests/verify_ledger_dumps.py` checks the dumps produced by the multi-event
-scenario in `.github/workflows/testing-pipelines.yml`, which covers
-`asimov apply --update` (a later analysis sees the new settings; existing
-ones are unchanged) and filtering by review status.
+## Configuration files and job output
+
+A real pipeline is driven by the configuration file asimov renders from its
+template, so each testing pipeline renders one too, from
+`asimov/configs/<pipeline>.ini`, and puts it in its run directory as
+`config.ini` when its DAG is built:
+
+- `SimpleTestPipeline`'s has the settings a parameter estimation pipeline's
+  template would pick out (`[data]`, `[waveform]`, `[likelihood]`,
+  `[sampler]`, `[priors]`). A setting the analysis does not have is shown as
+  `<not set>`.
+- `SubjectTestPipeline` and `ProjectTestPipeline` list the analyses they
+  combine under `[analyses]`. `ProjectTestPipeline` also lists its subjects.
+- Every one ends with `[effective settings]`, which lists every setting the
+  analysis had when the file was rendered, flattened (for example
+  `priors.chirp mass.minimum`).
+
+If `asimov manage build` has made the configuration (it is committed to the
+subject's repository, or for a project analysis written under
+`checkouts/project-analyses/`), that file is copied, because it is the one a
+real pipeline would read. Otherwise, for example when a test calls
+`build_dag()` directly, the configuration is rendered when the DAG is built.
+
+The job prints `config.ini` and then `ledger_dump.json` to its standard
+output before it does anything else, each between
+`===== BEGIN <file> =====` and `===== END <file> =====` lines. The output
+therefore shows what the job was given, not only what asimov wrote.
+
+The templates read settings through helpers on the pipeline
+(`pipeline.setting(...)`, `pipeline.settings_under(...)`,
+`pipeline.all_settings()`, `pipeline.combined_analyses()`), because a
+missing key is an error in a Liquid template. These live in
+`asimov/pipelines/testing/_config.py`.
+
+## End-to-end checks
+
+`tests/verify_ledger_dumps.py` checks the dumps, configurations and job
+output produced by the multi-event scenario in
+`.github/workflows/testing-pipelines.yml`. The scenario covers:
+
+- settings coming from the project's defaults for the pipeline
+  (`tests/test_blueprints/testing_pipeline_defaults.yaml`), then the subject,
+  then the analysis (`simple_test_pipeline_override.yaml`);
+- a rerun of an analysis with the same pipeline and narrower priors
+  (`simple_test_pipeline_rerun.yaml`), which must get the new priors while
+  the original keeps its own;
+- `asimov apply --update`, after which a later analysis sees the new settings
+  and existing ones are unchanged;
+- filtering by review status.
+
+It also checks that each job got the configuration `asimov manage build`
+made, and printed it and its dump. The workflow's artifact gathers every
+dump, configuration and job output into `ledger-dumps/`, `configs/` and
+`job-outputs/`, named after the analysis, for a person to review.
 
 ## Implementation Details
 
