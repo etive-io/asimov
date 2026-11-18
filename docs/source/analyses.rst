@@ -134,8 +134,24 @@ Optional Dependencies
 ^^^^^^^^^^^^^^^^^^^^^
 
 By default, all dependencies specified in the ``needs`` list are required.
-This means that if a dependency is not present in the ledger, the analysis will not run.
-However, you can mark dependencies as optional, which allows the analysis to run even if the dependency is missing.
+An entry which matches no analysis in the ledger, for example a misspelt name, contributes no dependency.
+Asimov reports it as a warning each time it builds or submits the analysis, and, unless you ask it not to, the analysis is otherwise treated as if it did not depend on that entry.
+
+To make an analysis wait until every required entry matches at least one analysis, set ``strict needs: true``:
+
+.. code-block:: yaml
+
+		kind: analysis
+		name: fit-r002
+		pipeline: example
+		strict needs: true
+		needs:
+		  - fit-r001
+
+While ``fit-r001`` does not exist, ``fit-r002`` is reported as not ready, and is neither built nor submitted.
+A name which matches nothing is reported as "no analysis is named ...", and a property query which matches nothing as "no analysis matches ...", since the second is often just a sign that nothing has been added yet.
+
+Alternatively, you can mark dependencies as optional, which stops them being reported, and allows the analysis to run even if the dependency is missing.
 This is useful for creating reusable blueprints that can adapt to different situations.
 
 To mark a dependency as optional, use the dict format with an ``optional: true`` key:
