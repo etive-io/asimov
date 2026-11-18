@@ -957,6 +957,27 @@ class TestDatabaseLedger(unittest.TestCase):
 
         self.assertEqual(priors, {"chirp mass": {"minimum": 8.5, "maximum": 10}})
 
+    def test_written_back_event_follows_later_project_defaults(self):
+        """Writing an event back must not freeze the project defaults it was
+        read with into its stored row: a later change to a project default
+        must still reach it, while what the event sets itself is kept."""
+        from asimov.utils import update as merge_update
+
+        merge_update(self.ledger.data, {"priors": {"spin 1": {"maximum": 0.99}}})
+        self.ledger.save()
+        self._insert_event_with_chirp_mass()
+
+        # Read the event (with defaults merged in) and write it back.
+        self.ledger.update_event(self.ledger.get_event("GW150914")[0])
+
+        merge_update(self.ledger.data, {"priors": {"spin 1": {"maximum": 0.8}}})
+        self.ledger.save()
+
+        fresh = DatabaseLedger(engine="sqlalchemy", location=f"sqlite:///{self.db_path}")
+        priors = fresh.get_event("GW150914")[0].meta["priors"]
+        self.assertEqual(priors["spin 1"], {"maximum": 0.8})
+        self.assertEqual(priors["chirp mass"], {"minimum": 8.5, "maximum": 10})
+
     def test_data_mutation_persists_across_save(self):
         """Test the exact pattern `kind: configuration` blueprints use:
         mutate ledger.data in place, then call ledger.save() to persist it.
