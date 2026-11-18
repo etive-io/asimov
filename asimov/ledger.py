@@ -646,16 +646,11 @@ class YAMLLedger(Ledger):
 
         """
 
-        if event:
-            productions = []
-            for event_i in self.get_event(event):
-                for production in event_i.productions:
-                    productions.append(production)
-        else:
-            productions = []
-            for event_i in self.get_event():
-                for production in event_i.productions:
-                    productions.append(production)
+        productions = [
+            production
+            for event_i in self.get_event(event)
+            for production in event_i.productions
+        ]
 
         def apply_filter(productions, parameter, value):
             productions = filter(

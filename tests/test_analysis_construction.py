@@ -226,7 +226,6 @@ class Tests:
         self.assertIs(type(built), GravitationalWaveTransient)
         self.assertEqual(built.name, "direct")
 
-
     def test_get_productions_builds_the_same_class(self):
         self.apply(analysis("a"), "E")
         found = self.reopen().get_productions("E")
@@ -261,8 +260,6 @@ class DatabaseTests(Tests, DatabaseCase):
         message = "\n".join(logs.output)
         self.assertIn("Skipped loading production 'ghost' for event 'E'", message)
         self.assertIn("The pipeline 'nosuchpipeline' is not installed", message)
-
-
 
 
 class AliasTests(unittest.TestCase):
