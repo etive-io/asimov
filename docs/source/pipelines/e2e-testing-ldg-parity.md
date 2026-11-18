@@ -19,7 +19,7 @@ Concretely, as of a live-pool check against `ldas-grid.ligo.caltech.edu`
 - **`SUBMIT_ALLOW_GETENV = False`** -- a job submitted with `getenv = True`
   is rejected outright. `asimov`'s own bundled testing pipelines
   (`SimpleTestPipeline`/`SubjectTestPipeline`/`ProjectTestPipeline`) and the
-  `asimov monitor start` cron job both did exactly this; both are fixed as
+  `asimov start` cron job both did exactly this; both are fixed as
   part of this work (see below).
 - **Accounting group / search-tag validation.** Any non-DAGMan job must
   carry a valid `accounting_group` (mapped internally to a `LigoSearchTag`
@@ -42,7 +42,7 @@ pools do, just with stricter config layered in.
 
 `.github/workflows/htcondor-ldg-parity-tests.yml`, via the
 `setup-htcondor-ldg` composite action, runs the same
-Simple/Subject/ProjectTestPipeline + `asimov monitor start` flow as
+Simple/Subject/ProjectTestPipeline + `asimov start` flow as
 `testing-pipelines.yml`, against the stricter pool. See
 `tests/fixtures/ldg-condor-config/README.md` in the repository root for
 exactly what config was captured, how, and what was deliberately left out
@@ -72,7 +72,7 @@ rather than just documented as known gaps:
    `accounting_group`/`accounting_group_user`/`request_disk` (see
    `asimov/pipelines/testing/_util.py`), so these pipelines are themselves
    submittable to a real LDG pool, not just a permissive one.
-2. `asimov monitor start`'s HTCondor submission
+2. `asimov start`'s HTCondor submission
    (`asimov/cli/monitor.py::_start_htcondor_monitor`) built its
    `submit_description` dict with an *unguarded*
    `config.get("asimov start", "accounting")` call -- if that section/key
@@ -81,6 +81,6 @@ rather than just documented as known gaps:
    continue without accounting info) ever ran, making that fallback dead
    code. It also set `getenv = "true"` unconditionally, which a real LDG
    pool rejects outright. Neither was caught before because
-   `asimov monitor start` wasn't exercised by any existing test. Both are
+   `asimov start` wasn't exercised by any existing test. Both are
    fixed, and the getenv value is now an explicit, configurable variable
    list (`condor`/`monitor_getenv`) instead of a blanket `true`.

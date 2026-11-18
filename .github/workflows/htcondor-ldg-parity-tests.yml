@@ -1,7 +1,7 @@
 name: LDG-parity HTCondor Test
 # Runs the same bundled-testing-pipeline flow as testing-pipelines.yml
 # (SimpleTestPipeline, SubjectTestPipeline, ProjectTestPipeline, plus
-# `asimov monitor start`), but against an HTCondor pool configured to
+# `asimov start`), but against an HTCondor pool configured to
 # enforce the same submission-time policy as the LIGO Data Grid, rather
 # than the permissive pool testing-pipelines.yml/htcondor-tests.yml use.
 # See tests/fixtures/ldg-condor-config/README.md and
@@ -199,20 +199,62 @@ jobs:
             condor_history submituser -af ClusterId JobStatus JobBatchName HoldReason -limit 50 || true
           '
 
+      # The monitor is started with `asimov start` (a top-level command);
+      # `asimov start` would run `asimov monitor` on an event named
+      # "start". The script goes through an unquoted heredoc in
+      # run-asimov-command, so every `$` meant for the submit user's shell
+      # is escaped.
       - name: Start and check the asimov monitor cron job
         uses: ./.github/actions/run-asimov-command
         with:
           script: |
-            asimov monitor start
-            sleep 10
+            asimov start
+            constraint='regexp("^asimov/monitor/", JobBatchName)'
             echo "=== asimov monitor cron job ==="
-            condor_q submituser -af ClusterId JobStatus JobBatchName HoldReason
+            condor_q submituser -constraint "\$constraint" -af ClusterId JobStatus JobBatchName HoldReason
+            if [ -z "\$(condor_q submituser -constraint "\$constraint" -af ClusterId)" ]; then
+              echo "The monitor cron job was not accepted by the schedd" >&2
+              exit 1
+            fi
+            # cron_minute is */1, so the job should run within ~2 minutes.
+            for i in \$(seq 1 36); do
+              status=\$(condor_q submituser -constraint "\$constraint" -af JobStatus NumJobStarts)
+              echo "poll \$i: JobStatus NumJobStarts = \$status"
+              set -- \$status
+              if [ "\${1:-}" = "5" ]; then
+                echo "The monitor cron job is held:" >&2
+                condor_q submituser -constraint "\$constraint" -af HoldReason >&2
+                exit 1
+              fi
+              # Started at least once and back to idle: one pass has finished.
+              if [ "\${2:-0}" -ge 1 ] && [ "\${1:-}" = "1" ]; then
+                break
+              fi
+              sleep 5
+            done
+            echo "=== .asimov/asimov_cron.out ==="
+            cat .asimov/asimov_cron.out || true
+            echo "=== .asimov/asimov_cron.err ==="
+            cat .asimov/asimov_cron.err || true
+            if [ ! -s .asimov/asimov_cron.out ] && [ ! -s .asimov/asimov_cron.err ]; then
+              echo "The monitor cron job never ran a pass" >&2
+              exit 1
+            fi
+            if grep -q "Traceback" .asimov/asimov_cron.err .asimov/asimov_cron.out 2>/dev/null; then
+              echo "The monitor cron job's pass raised an exception" >&2
+              exit 1
+            fi
 
       - name: Stop the asimov monitor cron job
         if: always()
         uses: ./.github/actions/run-asimov-command
         with:
-          script: asimov monitor stop
+          script: |
+            asimov stop
+            if [ -n "\$(condor_q submituser -constraint 'regexp("^asimov/monitor/", JobBatchName) && JobStatus != 3' -af ClusterId)" ]; then
+              echo "The monitor cron job is still queued after asimov stop" >&2
+              exit 1
+            fi
 
       - name: Collect test outputs
         if: always()
