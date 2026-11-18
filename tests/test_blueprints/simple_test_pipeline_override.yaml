@@ -1,0 +1,12 @@
+# Simple analysis which overrides settings it would otherwise inherit from
+# the project's pipeline defaults and from its subject.
+kind: analysis
+name: test-simple-override
+pipeline: simpletestpipeline
+comment: Simple analysis overriding inherited settings
+status: ready
+waveform:
+  approximant: IMRPhenomXPHM
+likelihood:
+  minimum frequency:
+    H1: 25

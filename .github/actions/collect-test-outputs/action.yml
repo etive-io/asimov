@@ -1,10 +1,12 @@
 name: 'Collect Test Outputs'
 description: >
   Generate the asimov HTML report and upload the outputs of an end-to-end test
-  (the report, every analysis's working directory including its ledger dump,
-  the ledger and the project configuration) as a workflow artifact, so that
-  reviewers can download and inspect them. Always uploads, whether or not the
-  test passed. Run it as one of the last steps, with `if: always()`.
+  as a workflow artifact, so that reviewers can download and inspect them: the
+  report; every analysis's working directory, with its ledger dump, rendered
+  configuration and job output (also gathered into ledger-dumps/, configs/ and
+  job-outputs/); the ledger; and the project configuration. Always uploads,
+  whether or not the test passed. Run it as one of the last steps, with
+  `if: always()`.
 inputs:
   name:
     description: 'Name of the artifact to upload'
@@ -31,18 +33,25 @@ runs:
           mkdir -p "${{ inputs.report-dir }}"
           asimov report html --location "$GITHUB_WORKSPACE/${{ inputs.report-dir }}"
 
-    - name: Gather the ledger dumps
+    - name: Gather the ledger dumps, configurations and job output
       if: always()
       shell: bash {0}
       run: |
-        # Collect every analysis's ledger dump in one place, named after the
-        # analysis, so they can be read without hunting through working/.
-        mkdir -p "$GITHUB_WORKSPACE/ledger-dumps"
-        find "$GITHUB_WORKSPACE/working" -name ledger_dump.json 2>/dev/null | while read -r f; do
-          name="$(basename "$(dirname "$f")")"
-          cp "$f" "$GITHUB_WORKSPACE/ledger-dumps/${name}.json" || true
+        # Collect each testing pipeline's ledger dump, rendered configuration
+        # and job standard output in one place, named after the analysis, so
+        # a reviewer can read them without hunting through working/.
+        cd "$GITHUB_WORKSPACE"
+        mkdir -p ledger-dumps configs job-outputs
+        find working -name ledger_dump.json 2>/dev/null | while read -r f; do
+          cp "$f" "ledger-dumps/$(basename "$(dirname "$f")").json" || true
         done
-        ls -la "$GITHUB_WORKSPACE/ledger-dumps" || true
+        find working -name config.ini 2>/dev/null | while read -r f; do
+          cp "$f" "configs/$(basename "$(dirname "$f")").ini" || true
+        done
+        find working \( -name 'test*_job.out' -o -name 'slurm_*.out' -o -name 'local_job.out' \) 2>/dev/null | while read -r f; do
+          cp "$f" "job-outputs/$(basename "$(dirname "$f")").out" || true
+        done
+        ls -la ledger-dumps configs job-outputs || true
 
     - name: Upload test outputs
       if: always()
@@ -52,6 +61,8 @@ runs:
         path: |
           ${{ inputs.report-dir }}/
           ledger-dumps/
+          configs/
+          job-outputs/
           working/
           .asimov/
           checkouts/

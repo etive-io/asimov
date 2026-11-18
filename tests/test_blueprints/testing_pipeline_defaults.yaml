@@ -1,0 +1,10 @@
+# Project defaults for the simple testing pipeline only. The end-to-end test
+# checks that analyses using it get these settings unless their subject or
+# they themselves set something else.
+kind: configuration
+pipelines:
+  simpletestpipeline:
+    sampler:
+      sampler: testsampler
+    waveform:
+      approximant: DefaultApproximant

@@ -12,11 +12,12 @@ import os
 from pathlib import Path
 
 from ...pipeline import Pipeline
+from ._config import TemplateHelpers, job_report_lines, stage_config
 from ._dump import write_ledger_dump
 from ._util import accounting_submit_lines
 
 
-class SimpleTestPipeline(Pipeline):
+class SimpleTestPipeline(TemplateHelpers, Pipeline):
     """
     A minimal testing pipeline for SimpleAnalysis.
     
@@ -112,6 +113,11 @@ class SimpleTestPipeline(Pipeline):
         """
         if not dryrun:
             if self._ensure_rundir():
+                # The job prints its configuration and the ledger dump, so
+                # write both before the job script.
+                write_ledger_dump(self.production)
+                config_path, config_source = stage_config(self.production)
+
                 # Create a simple job script that will create results
                 job_script = os.path.join(self.production.rundir, "test_job.sh")
                 results_file = os.path.join(self.production.rundir, "results.dat")
@@ -119,6 +125,10 @@ class SimpleTestPipeline(Pipeline):
                     f.write("#!/bin/bash\n")
                     f.write("# Simple test pipeline job\n")
                     f.write("set -e\n")
+                    for line in job_report_lines(
+                        config_path, config_source, self.production.rundir
+                    ):
+                        f.write(line)
                     f.write("echo 'Test job running'\n")
                     f.write(f"echo 'Working directory: {self.production.rundir}'\n")
                     f.write("echo 'Current directory:' $(pwd)\n")
@@ -167,7 +177,6 @@ class SimpleTestPipeline(Pipeline):
                     f.write(f"\nbash {job_script}\n")
                 os.chmod(sbatch_file, 0o755)
 
-                write_ledger_dump(self.production)
                 self.logger.info(f"Built test DAG in {self.production.rundir}")
             else:
                 self.logger.warning("No run directory specified, cannot build DAG")
