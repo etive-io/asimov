@@ -81,6 +81,22 @@ class StartHTCondorMonitorTests(unittest.TestCase):
             description["accounting_group"], "ligo.dev.o4.cbc.test.test"
         )
 
+    def test_project_accounting_wins_over_asimov_start_default(self):
+        """The packaged default asimov.conf (copied into every project by
+        `asimov init`) sets [asimov start] accounting to an O4 LALInference
+        tag; it must not override the project's configured tag."""
+        self.test_config["asimov start"] = {
+            "accounting": "ligo.dev.o4.cbc.pe.lalinference"
+        }
+        self.test_config["condor"] = {
+            "accounting": "ligo.dev.o4.cbc.pe.bilby",
+            "user": "submituser",
+        }
+        description = self._submit_and_capture()
+        self.assertEqual(
+            description["accounting_group"], "ligo.dev.o4.cbc.pe.bilby"
+        )
+
     def test_getenv_is_not_blanket_true(self):
         description = self._submit_and_capture()
         self.assertNotEqual(description["getenv"], "true")
