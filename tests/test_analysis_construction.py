@@ -226,6 +226,16 @@ class Tests:
         self.assertIs(type(built), GravitationalWaveTransient)
         self.assertEqual(built.name, "direct")
 
+    def test_get_productions_builds_the_same_class(self):
+        self.apply(analysis("a"), "E")
+        found = self.reopen().get_productions("E")
+        self.assertEqual([(p.name, type(p)) for p in found], [("a", GravitationalWaveTransient)])
+
+    def test_get_productions_with_event_and_filters(self):
+        self.apply(analysis("a") + "---\n" + analysis("b", "status: finished\n"), "E")
+        found = self.reopen().get_productions("E", filters={"status": "finished"})
+        self.assertEqual([p.name for p in found], ["b"])
+
 
 class YAMLTests(Tests, ConstructionCase):
     def test_an_analysis_whose_pipeline_is_not_installed_is_skipped_with_a_warning(self):
@@ -250,11 +260,6 @@ class DatabaseTests(Tests, DatabaseCase):
         message = "\n".join(logs.output)
         self.assertIn("Skipped loading production 'ghost' for event 'E'", message)
         self.assertIn("The pipeline 'nosuchpipeline' is not installed", message)
-
-    def test_get_productions_builds_the_same_class(self):
-        self.apply(analysis("a"), "E")
-        found = self.reopen().get_productions("E")
-        self.assertEqual([(p.name, type(p)) for p in found], [("a", GravitationalWaveTransient)])
 
 
 class AliasTests(unittest.TestCase):
