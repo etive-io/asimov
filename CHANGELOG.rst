@@ -1,3 +1,52 @@
+0.8.2
+=====
+
+This is a bug-fix release for the v0.8 series. The fixes are backported from the main
+development line.
+
+Bug Fixes
+---------
+
+**Incomplete Jobs Are Rescued, Not Marked Finished**
+  When the scheduler reported a job as completed, the monitor started post-processing without
+  asking the pipeline whether the analysis had actually finished. An HTCondor DAG with failed
+  nodes still ends as a completed DAGMan job, so such an analysis was treated as finished
+  (#296). If the pipeline now reports that the analysis is not complete, the monitor rescues it
+  instead. After a successful rescue the ledger is saved and the job list refreshed, so the new
+  job id is not lost and the work is not submitted a second time (#295).
+
+**Resubmitting a DAG**
+  ``submit_dag`` takes a ``force`` argument (``condor_submit_dag -force`` on HTCondor). This
+  lets a DAG which has run before be submitted again, which is how a DAG with failed nodes is
+  resumed from its rescue file (#314). Pipelines whose ``resurrect()`` resubmits a DAG should
+  pass ``force=True``; without it HTCondor refuses the resubmission and the analysis is marked
+  ``stuck``.
+
+**Unresolved ``needs:`` Entries**
+  An entry in ``needs:`` which matched no analysis, for example a misspelt name, added no
+  dependency, so the analysis could be built and submitted at once. Because of the PSD
+  precedence introduced in 0.8.0, a mistyped PSD dependency fell back to the event-level PSDs
+  without warning. ``asimov manage build`` and ``asimov manage submit`` now warn about every
+  such entry on each pass, and ``strict needs: true`` on an analysis holds it back until every
+  required entry resolves (#244). The default behaviour is otherwise unchanged.
+
+**Project Defaults on the Database Ledger**
+  When an event was written back to the database ledger it was stored with the project-level
+  defaults (``data``, ``priors``, ``quality``, ``likelihood``, ``scheduler`` and ``waveform``)
+  merged in. After that, a change to a project default no longer reached the event. The YAML
+  ledger was not affected. Only what the event sets itself is now stored. Rows written by
+  0.8.0 or 0.8.1 keep the defaults of the time as if the event had set them, because they can't
+  be told apart from real overrides automatically.
+
+GitHub Pull Requests
+--------------------
+
++ `github#325 <https://github.com/etive-io/asimov/pull/325>`_: Backport monitor rescue, DAG resubmission, unresolved ``needs:`` and database ledger defaults fixes to 0.8
+  (from `github#250 <https://github.com/etive-io/asimov/pull/250>`_,
+  `github#298 <https://github.com/etive-io/asimov/pull/298>`_,
+  `github#315 <https://github.com/etive-io/asimov/pull/315>`_ and
+  `github#323 <https://github.com/etive-io/asimov/pull/323>`_)
+
 0.8.1
 =====
 
