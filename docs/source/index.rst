@@ -142,6 +142,7 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
    tutorials/when-something-goes-wrong
    tutorials/scaling-up
+   tutorials/results-to-release
    tutorials/analysing-gw150914
    tutorials/python-api-tutorial
    tutorials/adding-a-pipeline

@@ -306,6 +306,7 @@ It records what it removed.
 What's next?
 ------------
 
+* :doc:`results-to-release` shows how to check results, and share them with a record of how they were made.
 * :ref:`Strategies<strategies>` can also be written as plugins, which make whole sets of subjects and analyses, with dependencies between them, from a single blueprint.
 * :ref:`Subject analyses<subject-analysis>` combine the results of one subject, and can update themselves as new results arrive.
 * The reference guides describe :ref:`retention<retention>` and :doc:`submission limits <../configuration>` in full.
