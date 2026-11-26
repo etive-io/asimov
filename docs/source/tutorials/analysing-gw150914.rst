@@ -1,86 +1,99 @@
 Analysing GW150914 with asimov
 ===============================
 
-This tutorial will show you how to analyse data from GW150914, the first gravitational wave to be detected, using asimov and some of the analysis pipelines it's designed to work with.
+This tutorial shows you how to analyse data from GW150914, the first gravitational wave to be detected, using asimov and some of the analysis pipelines it is designed to work with.
+
+.. rst-class:: tutorial-intro
+
+:What you'll learn: How to go from an empty directory to a running parameter estimation workflow: creating a project, adding an event, describing the analyses to run, and letting asimov submit and monitor them.
+:Time required: About 30 minutes to set up, then usually around a day for the analysis itself to run.
+:Prerequisites: A conda environment with asimov installed (see :doc:`../installation`), and access to a computing environment which runs the ``htcondor`` scheduler.
 
 .. note::
-   This tutorial was prepared using ``asimov 0.5.8`` and assumes that you already have asimov installed in a conda environment, and have access to a computing environment which runs the ``htcondor`` scheduler.
+   The standard analyses performed by gravitational-wave researchers are very computationally intensive, so this tutorial needs a cluster. We are working to make them run on a wider range of computing infrastructure, and will keep this tutorial up to date as that happens.
 
-   We're working to make these analyses work on a wider range of computing infrastructure, but the standard analyses which are performed by gravitational wave researchers are generally very computationally intensive. As new developments come along we'll try to keep asimov and these tutorials up-to-date to make analysis more accessible.
+   The commands here are checked against the current ``asimov`` command-line interface every time the documentation is built.
 
-Prerequisites
--------------
+.. rst-class:: procedural-step
 
-In order to use asimov to analyse GW150914 we'll need to ensure that we have the analysis software installed. We'll make use of two "pipelines" in this tutorial: ``bayeswave``, which will estimate the amount of noise present in the gravitational wave strain data, and ``bilby`` which will analyse the signal in the data in order to determine the properties of the astrophysical system which generated in. We'll also need a third pipeline called `asimov-gwdata <https://asimov.docs.ligo.org/pipelines/gwdata/>`_; this doesn't actually perform any analysis, but it allows asimov to add a step into its workflow to fetch various bits of data we'll need.
+Install the analysis software
+-----------------------------
 
-We can install these pipelines into our conda environment with this command:
+This tutorial uses three "pipelines". ``bayeswave`` estimates the amount of noise present in the gravitational wave strain data, and ``bilby`` analyses the signal in the data to determine the properties of the astrophysical system which produced it. A third, `asimov-gwdata <https://asimov.docs.ligo.org/pipelines/gwdata/>`_, doesn't analyse anything itself, but adds a step to the workflow which fetches the data the other two need.
+
+Install them into the conda environment where asimov is installed:
 
 .. code-block:: bash
 
    $ conda install conda-forge::bilby conda-forge::bayeswave conda-forge::asimov-gwdata
 
-From here, setting everything up should be quite straight forward!
+.. tip::
+   ``asimov`` uses git to track your project, so make sure git knows who you are:
+   ``git config --global user.name "Your Name"`` and ``git config --global user.email "you@example.com"``.
 
-Creating an asimov project
---------------------------
+.. rst-class:: procedural-step
 
-The first thing we need to do is to set up an asimov project to run the analysis in.
+Create a project
+----------------
 
-Make a new directory first, for example
+Asimov keeps everything about an analysis in a *project*. Make a directory for it, and run ``asimov init`` inside it. You also give the project a name, which asimov uses in the reports it makes about the progress of your analyses.
 
 .. code-block:: bash
 
    $ mkdir gw150914-analysis
    $ cd gw150914-analysis
-
-and then run ``asimov init`` in that directory to initialise the project. You'll also need to give it a name which asimov will use when making reports about the progress of analyses in the project.
-
-.. code-block:: bash
-
    $ asimov init "GW150914 Analysis Tutorial"
 
-The directory will now be set up as a project, and asimov will make some additional directories for storing data and metadata.
+The directory is now set up as a project. Asimov creates a few directories of its own:
 
-We ship our pipelines with a fairly minimal set of default settings, in order to make it explicit what the analyses are actually doing; however we provide a "blueprint" for asimov which contains the normal settings which are used in most LVK analyses.
+.. code-block:: text
 
-Asimov uses blueprint files to work out how to construct analyses, and we can set defaults which are applied right across all analyses in the project, settings which are event-specific, and settings which are analysis-specific all via different kinds of blueprint.
+   gw150914-analysis/
+   ├── .asimov/       the project's configuration and its ledger database
+   ├── checkouts/     a git repository for each event
+   ├── logs/          logs from asimov and from your jobs
+   ├── results/       where results are collected
+   └── working/       the run directories for each analysis
 
-We'll add the project-wide defaults first; these come in two files. One of these specifies defaults for things like resource allocations for pipelines (`you can look at it here <https://git.ligo.org/asimov/data/-/blob/main/defaults/production-pe.yaml?ref_type=heads>`_), while the other contains the default prior probability distributions to be used in parameter estimation, `and you can find it here <https://git.ligo.org/asimov/data/-/blob/main/defaults/production-pe-priors.yaml?ref_type=heads>`_.
+.. rst-class:: procedural-step
 
-We add these to asimov with two commands.
+Add the project-wide defaults
+-----------------------------
+
+Pipelines ship with a fairly minimal set of default settings, so that it is clear what an analysis is actually doing. A "blueprint" which contains the settings normally used for LVK analyses is kept in the asimov data repository.
+
+Asimov uses blueprint files to work out how to construct analyses. There are blueprints for settings which apply across the whole project, for settings which belong to one event, and for individual analyses; you will use all three kinds in this tutorial.
+
+The project-wide defaults come in two files. One sets defaults for things like the resources pipelines request (`production-pe.yaml <https://git.ligo.org/asimov/data/-/blob/main/defaults/production-pe.yaml?ref_type=heads>`_), and the other holds the default prior distributions for parameter estimation (`production-pe-priors.yaml <https://git.ligo.org/asimov/data/-/blob/main/defaults/production-pe-priors.yaml?ref_type=heads>`_). Add both with ``asimov apply``:
 
 .. code-block:: bash
 
-   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml?
+   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml
    $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml
 
-We've now set everything up to get our analyses started.
+.. rst-class:: procedural-step
 
-Telling asimov about GW150914
------------------------------
+Add GW150914
+------------
 
-We need to first give asimov information about GW150914. The easiest way to do this is to write a blueprint with all of its details, such as the time when the event was detected. Fortunately a complete set of blueprints for events in GWTC-3 is available, and we can find the one for GW150914 `here <https://git.ligo.org/asimov/data/-/blob/main/events/gwtc-2-1/GW150914_095045.yaml?ref_type=heads>`_.
-
-We can then add this event to asimov by running
+Next, tell asimov about the event itself. The easiest way is a blueprint which contains its details, such as the time at which it was detected. A complete set of blueprints for the events in GWTC-3 is available, and `the one for GW150914 is here <https://git.ligo.org/asimov/data/-/blob/main/events/gwtc-2-1/GW150914_095045.yaml?ref_type=heads>`_. Apply it:
 
 .. code-block:: bash
 
    $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml
 
-We're now ready to add the analyses we'll need.
+.. rst-class:: procedural-step
 
-Setting up a workflow
+Describe the workflow
 ---------------------
 
-The workflow for a normal gravitational wave analysis involves three steps:
+The workflow for a normal gravitational-wave analysis has three stages:
 
-1. Gather data products (we use ``asimov-gwdata`` for this)
-2. Estimate the noise PSD (using ``bayeswave``)
-3. Perform parameter estimation (using ``bilby``)
+1. Gather the data products, using ``asimov-gwdata``.
+2. Estimate the noise power spectral density (PSD), using ``bayeswave``.
+3. Perform parameter estimation, using ``bilby``.
 
-We can, again, construct this all using blueprints.
-
-I've written an examples set of blueprints below, which you should save into a file called ``workflow.yaml``.
+Each stage is described by a blueprint. Save the following into a file called ``workflow.yaml``:
 
 .. code-block:: yaml
 
@@ -109,57 +122,77 @@ I've written an examples set of blueprints below, which you should save into a f
      approximant: IMRPhenomXPHM
    comment: PE job using IMRPhenomXPHM and bilby
    needs:
-       - generate-psd
+     - generate-psd
 
-Note that this file contains three blueprints, which are separated with a line containing three hyphens.
+This file holds three blueprints, separated by a line containing three hyphens. The ``needs`` section of each one tells asimov which stages must finish before it starts: the Bayeswave stage needs ``get-data`` to complete first, and ``bilby`` needs the PSD from ``generate-psd``.
 
-These three blueprints contain everything asimov needs to construct the workflow I described earlier. The ``needs`` section in each one allows asimov to understand which steps require other steps to finish before they're started so for example the Bayeswave step requires the ``get-data`` step to complete before it runs.
-
-We can now tell asimov about this workflow by running
+Apply the workflow to the event with:
 
 .. code-block:: bash
 
    $ asimov apply -f workflow.yaml -e GW150914_095045
 
-where we've added the ``-e GW150914_095045`` argument so that asimov knows which event to apply the workflow to. (GW150914_095045 is the "full name" of the event, and it's how the blueprint from the previous step names the event.)
+The ``-e GW150914_095045`` argument tells asimov which event to apply the workflow to. ``GW150914_095045`` is the event's full name, which is how the event blueprint from the previous step names it.
 
-Setting things running
-----------------------
+.. tip::
+   To see where the project stands at any point, run ``asimov report status``. It lists the event's analyses and what each one is waiting for.
 
-We're now ready to set things running! There are a couple of steps to this (though as we'll see at the end these can all be automated).
+.. rst-class:: procedural-step
 
-First we need to get asimov to build the first stage of the pipeline. Running
+Build and submit the first stage
+--------------------------------
+
+You are now ready to set things running. First, ask asimov to build the first stage of the workflow:
 
 .. code-block:: bash
 
    $ asimov manage build
 
-will cause asimov to work out which stages of the workflow are ready to run, and produce the appropriate data required to submit these to the scheduler on our computing facility. In this case only the first stage, the ``get-data`` step, can run just now, so asimov will prepare it.
-
-To submit the job to the scheduler we need to run
+Asimov works out which stages are ready to run, and produces the files needed to submit them to the scheduler. Only ``get-data`` has no unmet dependencies, so that is the stage it prepares. Now submit it:
 
 .. code-block:: bash
 
    $ asimov manage submit
 
-and then we just need to wait for the scheduler to finish running the job.
+The scheduler will run the job. ``generate-psd`` and the ``bilby`` analysis are not submitted yet, because they are still waiting for the stages they need.
 
-We can check on its progress by running
+.. rst-class:: procedural-step
+
+Monitor your analysis
+---------------------
+
+To check on progress once, run
 
 .. code-block:: bash
 
    $ asimov monitor
 
-You probably don't want to check in on these jobs frequently by hand, so asimov can automate the process of checking the status of an analysis, and automatically build and run new steps in the workflow when all their prerequisites are met. To set this up you just need to run
+You probably don't want to check on these jobs by hand. Asimov can do it for you: it will check the status of every analysis, and build and submit each new stage as soon as the ones it needs have finished. Turn this on with
 
 .. code-block:: bash
 
    $ asimov start
 
-and then once everything's done you can get asimov to stop monitoring things automatically by running
+and, once everything is done, turn it off again with
 
 .. code-block:: bash
 
    $ asimov stop
 
-And that's it! You can sit back and wait (normally around a day) for your analysis to complete. Asimov will also produce webpages using the PESummary tool to allow you to explore your results. These are stored in the ``pages`` directory of the project by default.
+You can also write an HTML report of the project, at any time, with ``asimov report html``. See :doc:`../user-guide/reporting`.
+
+.. rst-class:: procedural-step
+
+Look at your results
+--------------------
+
+Now you can sit back and wait, normally around a day, for the analysis to finish. When it does, asimov produces web pages using the PESummary tool, which let you explore the results. By default they are stored in the ``pages`` directory of the project.
+
+Next steps
+----------
+
+* Run more events: apply another event's blueprint, then apply ``workflow.yaml`` to it with ``-e``.
+* Change the analysis: edit ``workflow.yaml``, for example the waveform ``approximant``, and apply it again.
+* Reuse published results in a new analysis: :doc:`remixing-analyses`.
+* Drive the same project from Python: :doc:`python-api-tutorial`.
+* Add support for another pipeline: :doc:`adding-a-pipeline`.
