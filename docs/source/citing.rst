@@ -1,4 +1,5 @@
 .. _citation-guide:
+
 Citation Guide
 ==============
 

@@ -463,11 +463,14 @@ def change_job_priority(job_id, extra_priority, use_old=False):
     """
     Function to change the job priority for a given job.
 
-    Parameters:
-    -----------
-    - job_id: the condor job id for which we want to change the priority
-    - extra_priority: the extra priority that we want to add to the job
-    - use_old: if True, we add the new priority to the old one. Else, we simply replace it
+    Parameters
+    ----------
+    job_id : int
+        The condor job id for which we want to change the priority.
+    extra_priority : int
+        The extra priority that we want to add to the job.
+    use_old : bool
+        If True, add the new priority to the old one. Otherwise, replace it.
     """
 
     # setup a schedduler to query the priority

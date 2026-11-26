@@ -7,7 +7,7 @@ Overview
 The asimov monitor loop has been refactored to use a state machine pattern, replacing the previous hard-coded if-elif chains. This new architecture provides better maintainability, extensibility, and clarity in how analyses transition between states.
 
 Architecture Components
-----------------------
+-----------------------
 
 The refactored monitor system consists of four main components:
 
@@ -17,7 +17,7 @@ The refactored monitor system consists of four main components:
 4. **Labellers**: Plugin system for automatically labelling analyses (see :doc:`labeller-plugins`)
 
 MonitorState Classes
--------------------
+--------------------
 
 Each analysis state is handled by a dedicated state class that implements the ``MonitorState`` abstract base class:
 
@@ -69,7 +69,7 @@ auto-registered on import:
    eight names will silently override the built-in one.
 
 State Transitions
-^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^
 
 The state machine enforces the following transitions:
 
@@ -89,7 +89,7 @@ Each state handler is responsible for:
 * Updating the ledger through the context
 
 MonitorContext
--------------
+--------------
 
 The ``MonitorContext`` class encapsulates all the state and operations needed to monitor a single analysis:
 
@@ -106,7 +106,7 @@ The ``MonitorContext`` class encapsulates all the state and operations needed to
     )
 
 Key Features
-^^^^^^^^^^^
+^^^^^^^^^^^^
 
 * **Job Management**: Retrieves condor job information
 * **Ledger Updates**: Handles both event and project analysis updates
@@ -114,7 +114,7 @@ Key Features
 * **Job List Refresh**: Coordinates with condor job list
 
 Helper Functions
----------------
+----------------
 
 Dependents in the same pass (``--chain``)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -195,7 +195,7 @@ A pipeline can mark an exception it raises from ``resurrect()`` as transient by 
 ``asimov monitor --until-idle`` exits with ``1`` if an analysis ended ``stuck`` or ``skipped``.
 
 monitor_analysis
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
 
 The ``monitor_analysis`` function provides a unified interface for monitoring both event and project analyses:
 
@@ -219,7 +219,7 @@ This function:
 4. Updates the ledger if successful
 
 monitor_analyses_list
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 For monitoring multiple analyses, use ``monitor_analyses_list``:
 
@@ -434,10 +434,10 @@ Pipelines can define their own state handlers that override or extend the defaul
 * Integration with pipeline-specific tools or services
 
 Migration Guide
---------------
+---------------
 
 Updating Existing Code
-^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^
 
 The refactored monitor is backward compatible. Existing code will continue to work without changes. However, to take advantage of the new architecture:
 
@@ -462,7 +462,7 @@ The refactored monitor is backward compatible. Existing code will continue to wo
 The new approach automatically handles all state transitions.
 
 Custom Analysis Types
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 For custom analysis types, define monitoring behavior by creating custom state handlers:
 
@@ -502,7 +502,7 @@ Example test:
             self.assertTrue(result)
 
 Best Practices
--------------
+--------------
 
 1. **Use entry points for production**: Entry points provide automatic discovery and clean separation
 2. **Keep state handlers focused**: Each state should handle only its specific concerns
@@ -606,14 +606,14 @@ Here's a complete example of creating a plugin package with custom states:
     # Set analysis.status = "validation" to trigger ValidationState
 
 Labeller Integration
--------------------
+--------------------
 
 The monitor loop integrates with the labeller plugin system to automatically assign labels to analyses during monitoring. Labellers can mark analyses as "interesting" or add other metadata based on custom logic.
 
 For detailed information on creating and using labellers, see :doc:`labeller-plugins`.
 
 Quick Example
-^^^^^^^^^^^^
+^^^^^^^^^^^^^
 
 .. code-block:: python
 

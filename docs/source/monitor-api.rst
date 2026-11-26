@@ -83,7 +83,7 @@ Run the complete monitoring cycle programmatically:
     # - 'stuck': Number stuck
 
 get_analysis_status()
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 Query the current status of analyses:
 
@@ -119,7 +119,7 @@ Use Cases
 ---------
 
 Custom Monitoring Script
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Create a custom monitoring script:
 

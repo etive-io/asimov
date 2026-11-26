@@ -183,6 +183,6 @@ Planned improvements include:
 See Also
 --------
 
-- :ref:`Analyses <analyses>`
+- :doc:`Analyses <analyses>`
 - :ref:`Storage API <storage>`
-- :ref:`Pipeline Development <pipelines-dev>`
+- :doc:`Pipeline Development <pipelines-dev>`

@@ -28,6 +28,7 @@ Project analyses
 An analysis is defined as a series of configuration variables in an asimov project's ledger, which are then used to configure analysis pipelines.
 
 .. _states:
+
 Analysis state
 --------------
 

@@ -14,7 +14,7 @@ Labellers are plugins that can:
 * Integrate custom decision logic into the monitoring workflow
 
 Architecture
------------
+------------
 
 The labeller system consists of:
 
@@ -24,7 +24,7 @@ The labeller system consists of:
 4. **Monitor Integration**: Automatic application of labellers during monitoring
 
 How Labellers Work
------------------
+------------------
 
 During the monitoring process, registered labellers are automatically applied to each analysis. Labellers inspect the analysis and can return a dictionary of labels/properties to add to the analysis metadata.
 
@@ -39,7 +39,7 @@ Creating a Custom Labeller
 --------------------------
 
 Basic Example
-^^^^^^^^^^^^
+^^^^^^^^^^^^^
 
 To create a custom labeller, subclass the ``Labeller`` abstract base class:
 
@@ -79,7 +79,7 @@ To create a custom labeller, subclass the ``Labeller`` abstract base class:
             return {"interesting": False}
 
 Conditional Labelling
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 You can control when a labeller runs using the ``should_label`` method:
 
@@ -101,7 +101,7 @@ You can control when a labeller runs using the ``should_label`` method:
             return {"interesting": True}
 
 Using the Context
-^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^
 
 The context parameter provides access to monitoring information:
 
@@ -127,10 +127,10 @@ The context parameter provides access to monitoring information:
             return {}
 
 Registering Labellers
---------------------
+---------------------
 
 Programmatic Registration
-^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Register a labeller at runtime:
 
@@ -179,7 +179,7 @@ Built-in Example Labellers
 Asimov includes several example labellers to demonstrate the system:
 
 AlwaysInterestingLabeller
-^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Marks all analyses as interesting:
 
@@ -191,7 +191,7 @@ Marks all analyses as interesting:
     register_labeller(AlwaysInterestingLabeller())
 
 PipelineInterestLabeller
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Marks specific pipeline types as interesting:
 
@@ -205,7 +205,7 @@ Marks specific pipeline types as interesting:
     register_labeller(labeller)
 
 FinishedAnalysisLabeller
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Only labels finished analyses as interesting:
 
@@ -217,7 +217,7 @@ Only labels finished analyses as interesting:
     register_labeller(FinishedAnalysisLabeller())
 
 ConditionalLabeller
-^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 Uses custom logic to determine interest:
 
@@ -236,7 +236,7 @@ Uses custom logic to determine interest:
     register_labeller(labeller)
 
 Factory Functions
-^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^
 
 Use factory functions for quick labeller creation:
 
@@ -265,7 +265,7 @@ Using Labels in Workflows
 Once labellers have been applied, the labels are stored in the analysis metadata and can be used throughout asimov:
 
 Dependency Logic
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
 
 Use labels in dependency specifications:
 
@@ -288,7 +288,7 @@ You can also use comparison operators:
       - label: quality==high
 
 Custom Workflows
-^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
 
 Access labels in your custom code:
 
@@ -302,15 +302,15 @@ Access labels in your custom code:
             # Perform special handling
 
 Monitoring Output
-^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^
 
 Labels are visible in monitor output and reports, allowing you to track which analyses have been flagged as interesting.
 
 Advanced Topics
---------------
+---------------
 
 Multiple Labellers
-^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
 
 Multiple labellers can be registered and will all run on each analysis. If multiple labellers set the same metadata key, the last one wins.
 
@@ -321,7 +321,7 @@ Multiple labellers can be registered and will all run on each analysis. If multi
     register_labeller(FinishedAnalysisLabeller())
 
 Error Handling
-^^^^^^^^^^^^^
+^^^^^^^^^^^^^^
 
 Labellers should handle errors gracefully. If a labeller raises an exception, it's logged but doesn't stop the monitoring process:
 
@@ -343,7 +343,7 @@ Labellers should handle errors gracefully. If a labeller raises an exception, it
                 return {}
 
 Performance Considerations
-^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Labellers run during every monitor cycle, so keep them lightweight:
 
@@ -353,7 +353,7 @@ Labellers run during every monitor cycle, so keep them lightweight:
 * Don't make external API calls unless necessary
 
 Testing Labellers
-^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^
 
 Write unit tests for your labellers:
 
@@ -384,7 +384,7 @@ Write unit tests for your labellers:
             self.assertFalse(labels["interesting"])
 
 Complete Plugin Example
-----------------------
+-----------------------
 
 Here's a complete example of creating a labeller plugin package:
 
@@ -484,10 +484,10 @@ Here's a complete example of creating a labeller plugin package:
     asimov monitor
 
 API Reference
-------------
+-------------
 
 Labeller
-^^^^^^^
+^^^^^^^^
 
 .. code-block:: python
 
@@ -520,7 +520,7 @@ Labeller
             return True
 
 Functions
-^^^^^^^^
+^^^^^^^^^
 
 .. code-block:: python
 

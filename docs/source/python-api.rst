@@ -217,6 +217,7 @@ Project Class
 ~~~~~~~~~~~~~
 
 .. autoclass:: asimov.project.Project
+   :no-index:
    :members:
    :undoc-members:
    :show-inheritance:

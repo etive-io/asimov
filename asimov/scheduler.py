@@ -190,10 +190,11 @@ class Scheduler(ABC):
         -------
         dict
             A dictionary containing job history with keys:
-            - end: completion date as a ``YYYY-MM-DD`` string
-            - cpus: number of CPUs provisioned
-            - gpus: number of GPUs provisioned
-            - runtime: effective wall-clock time in seconds
+
+            - ``end``: completion date as a ``YYYY-MM-DD`` string
+            - ``cpus``: number of CPUs provisioned
+            - ``gpus``: number of GPUs provisioned
+            - ``runtime``: effective wall-clock time in seconds
               (``RemoteWallClockTime`` minus ``CumulativeSuspensionTime``)
 
         Raises

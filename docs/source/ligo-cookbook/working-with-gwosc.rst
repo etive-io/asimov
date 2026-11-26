@@ -19,7 +19,7 @@ Getting the analysis environment
 LIGO analyses require a complicated software stack.
 Fortunately it's fairly easy to install this using the ``conda`` tool.
 
-Full instructions on using IGWN environments with conda are `available here <https://computing.docs.ligo.org/conda/usage/>`_, but normally the following steps will work.
+Full instructions on using IGWN environments with conda are `available here <https://computing.docs.ligo.org/conda/usage/>`__, but normally the following steps will work.
 
 First you'll need to install conda if you haven't already got it.
 
@@ -64,8 +64,8 @@ Getting htcondor
 
 When the results are prepared for LVK publications we make use of a large network of computing facilities which are coordinated using a tool called `htcondor <https://htcondor.readthedocs.io/en/latest/>`_ which distributes analyses around different computers.
 Unless you happen to have a computing cluster which uses this technology available, you'll need to install a mini version of ``htcondor`` which can run on a single machine.
-The instructions we outline here are derived from the ``htcondor`` documentation which you can find `here <https://htcondor-vault.readthedocs.io/en/latest/getting-htcondor/install-linux-as-root.html>`_, and assume you can run the ``sudo`` command on your machine to gain Administrator control.
-It's still possible to get things going without this, but you'll instead need to follow the instructions `here <https://htcondor-vault.readthedocs.io/en/latest/getting-htcondor/install-linux-as-user.html>`_.
+The instructions we outline here are derived from the ``htcondor`` documentation which you can find `here <https://htcondor-vault.readthedocs.io/en/latest/getting-htcondor/install-linux-as-root.html>`__, and assume you can run the ``sudo`` command on your machine to gain Administrator control.
+It's still possible to get things going without this, but you'll instead need to follow the instructions `here <https://htcondor-vault.readthedocs.io/en/latest/getting-htcondor/install-linux-as-user.html>`__.
 
 You can install the ``minicondor`` software by running
 
