@@ -328,6 +328,8 @@ To get a stuck analysis going again:
 #. Fix the problem.
 #. Make the analysis ready to run again (asimov will ask you to confirm):
 
+   .. tutorial-test: skip
+
    .. code-block:: bash
 
       $ asimov analysis rerun spring-1 fit-constant
