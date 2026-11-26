@@ -12,10 +12,10 @@ Manage and automate analyses with ``asimov``
 	</div>
 
 Asimov sets up, submits, monitors and reports on scientific analysis jobs, and records everything
-in a version-controlled ledger so that results can be reproduced. It is used in production for
-gravitational-wave parameter estimation by LIGO, Virgo and KAGRA, and works with any pipeline
+it does in a database so that results can be reproduced. It is used in production for
+gravitational-wave analysis by LIGO, Virgo and KAGRA, and works with any pipeline
 that can be described through its plugin interface, whether you are analysing one event or
-hundreds in a catalogue.
+hundreds.
 
 .. raw:: html
 
@@ -25,20 +25,20 @@ hundreds in a catalogue.
 	<p>Install asimov and run your first analysis in a few minutes.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
-	<h3><a class="stretched-link" href="ledger.html">Projects and the ledger</a></h3>
+	<h3><a class="stretched-link" href="ledger.html">Understanding projects</a></h3>
 	<p>How projects, events and analyses are recorded, versioned and shared.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
 	<h3><a class="stretched-link" href="pipelines.html">Pipelines</a></h3>
-	<p>One configuration, many pipelines: bilby, RIFT, BayesWave, LALInference and your own.</p>
+	<p>One configuration, many pipelines: bilby, RIFT, BayesWave, LALInference or your own.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
 	<h3><a class="stretched-link" href="user-guide/running.html">Run and monitor</a></h3>
 	<p>Submit jobs to HTCondor or Slurm, watch them, and recover from failures.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
-	<h3>Reference</h3>
-	<p>Look things up: <a href="rest-api.html">REST API</a>, <a href="python-api.html">Python API</a>, <a href="configuration.html">configuration</a> and the <a href="vocabulary.html">ledger vocabulary</a>.</p>
+	<h3>User Guide</h3>
+	<p>Explore the full documentation: <a href="rest-api.html">REST API</a>, <a href="python-api.html">Python API</a>, <a href="configuration.html">configuration</a> and the <a href="vocabulary.html">ledger vocabulary</a>.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
 	<h3><a class="stretched-link" href="tutorials/analysing-gw150914.html">Tutorials</a></h3>
