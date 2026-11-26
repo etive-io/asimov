@@ -623,8 +623,8 @@ class Pipeline:
         ...             "running": CustomRunningState(),
         ...         }
         
-        Note
-        ----
+        Notes
+        -----
         Pipeline-specific handlers take precedence over default handlers.
         If a state is not defined in the pipeline's handlers, the default
         handler will be used.

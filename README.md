@@ -15,7 +15,7 @@ Battle-tested in production by LIGO, Virgo, and KAGRA collaborations
 [![conda-forge version](https://anaconda.org/conda-forge/asimov/badges/version.svg)](https://anaconda.org/conda-forge/asimov/)
 ![pypi](https://img.shields.io/pypi/v/asimov.svg)
 ![tests](https://git.ligo.org/asimov/asimov/badges/master/pipeline.svg)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -174,7 +174,7 @@ git config --global user.email "you@example.com"
 git config --global user.name "Your Name"
 ```
 
-**Supported Python versions:** 3.8+
+**Supported Python versions:** 3.9+
 
 ---
 

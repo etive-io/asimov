@@ -8,9 +8,9 @@ Our CI system within the LIGO Scientific Collaboration will build documentation 
 Installing build requirements
 -----------------------------
 
-You can install the build requirements for the documentation using ``pip``::
+You can install asimov together with the documentation build requirements (the ``docs`` extra in ``pyproject.toml``) using ``pip``::
 
-  pip install -r docs-requirements.txt
+  pip install -e ".[docs]"
 
 Building docs for a single branch
 ---------------------------------

@@ -1,4 +1,5 @@
 .. _ligo_defaults:
+
 LIGO Analysis Defaults
 ======================
 

@@ -47,6 +47,10 @@ extensions = [
     "sphinxcontrib.autodoc_pydantic",
 ]
 
+# numpydoc would otherwise emit autosummary tables of class members which
+# need generated stubs; autodoc's ``:members:`` already documents them.
+numpydoc_show_class_members = False
+
 html_logo = "textmark.png"
 autodoc_mock_imports = ["htcondor", "git"]
 templates_path = ['_templates']
@@ -56,9 +60,7 @@ html_theme = 'kentigern'
 
 todo_include_todos = True
 
-html_theme_options = {
-    "theme_navbar_title": "Manual",
-}
+html_theme_options = {}
 
 # Multiversion
 smv_tag_whitelist = r'^v\d+\.\d+\.?\d*$'
