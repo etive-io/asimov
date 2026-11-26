@@ -1,129 +1,62 @@
 :page_template: homepage.html
 
-.. raw:: html
-
-	 <div class="px-4 py-5 my-5 text-center">
-	 <h1 class="display-5 fw-bold">
-	 Manage and automate analyses with <code>asimov</code>.
-	 </h1>
-	 <p class="lead mb-4">
-	 A powerful and extensible automation framework for scientific analysis workflows.
-	 </p>
-	 </div>
-
+Manage and automate analyses with ``asimov``
+============================================
 
 .. raw:: html
 
-	 <div class="d-flex flex-column flex-lg-row align-items-md-stretch justify-content-md-center gap-3 mb-4">
-	<div class="d-inline-block v-align-middle fs-5">
-	<div class="asimov-code">
-	<pre>$ pip install asimov</pre>
+	<p class="lead mb-4 text-center">Workflow orchestration for scientific analyses on HTCondor and Slurm clusters.</p>
+	<div class="d-flex flex-column flex-lg-row justify-content-center align-items-center gap-3 mb-4">
+	<div class="asimov-code"><pre>$ pip install asimov</pre></div>
+	<a class="btn btn-lg btn-primary fw-semibold" href="getting-started.html"><i class="bi bi-book"></i><span class="ps-2">Quickstart guide</span></a>
 	</div>
+
+Asimov sets up, submits, monitors and reports on scientific analysis jobs, and records everything
+in a version-controlled ledger so that results can be reproduced. It is used in production for
+gravitational-wave parameter estimation by LIGO, Virgo and KAGRA, and works with any pipeline
+that can be described through its plugin interface, whether you are analysing one event or
+hundreds in a catalogue.
+
+.. raw:: html
+
+	<div class="row g-3 row-cols-1 row-cols-md-2 row-cols-xl-3 my-4 home-cards">
+	<div class="col"><div class="home-card">
+	<h3><a class="stretched-link" href="getting-started.html">Get started</a></h3>
+	<p>Install asimov and run your first analysis in a few minutes.</p>
+	</div></div>
+	<div class="col"><div class="home-card">
+	<h3><a class="stretched-link" href="ledger.html">Projects and the ledger</a></h3>
+	<p>How projects, events and analyses are recorded, versioned and shared.</p>
+	</div></div>
+	<div class="col"><div class="home-card">
+	<h3><a class="stretched-link" href="pipelines.html">Pipelines</a></h3>
+	<p>One configuration, many pipelines: bilby, RIFT, BayesWave, LALInference and your own.</p>
+	</div></div>
+	<div class="col"><div class="home-card">
+	<h3><a class="stretched-link" href="user-guide/running.html">Run and monitor</a></h3>
+	<p>Submit jobs to HTCondor or Slurm, watch them, and recover from failures.</p>
+	</div></div>
+	<div class="col"><div class="home-card">
+	<h3>Reference</h3>
+	<p>Look things up: <a href="rest-api.html">REST API</a>, <a href="python-api.html">Python API</a>, <a href="configuration.html">configuration</a> and the <a href="vocabulary.html">ledger vocabulary</a>.</p>
+	</div></div>
+	<div class="col"><div class="home-card">
+	<h3><a class="stretched-link" href="tutorials/analysing-gw150914.html">Tutorials</a></h3>
+	<p>Worked examples, from analysing GW150914 to writing a new pipeline.</p>
+	</div></div>
 	</div>
-	 <a class="btn btn-lg btn-primary d-flex align-items-center justify-content-center fw-semibold"
-	    href="getting-started.html"
-	 >
-	 <i class="bi bi-book"></i><span>  </span><span style="padding-left: 1rem;">Quickstart Guide</span>
-	 </a>
-	 </div>
-
-`Asimov` is a python package to help with setting-up, automating, and monitoring scientific data analysis.
-It is designed to make organising a scientific project, simplifying your workflow, and making your analysis easier to reproduce.
-
-Asimov makes setting-up and running parameter estimation jobs easier.
-It can generate configuration files for several parameter estimation pipelines, and handle submitting these to a cluster.
-Whether you're setting-up a preliminary analysis for a single gravitational wave event, or analysing hundreds of events for a catalog, Asimov can help.
-
-.. raw:: html
-
-	 <div class="row g-4 py-5 row-cols-1 row-cols-lg-2">
-
-.. raw:: html
-
-	 <div class="feature col">
-	 <i class="bi bi-bar-chart"></i>
-
-Scientific analysis management
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Asimov is able to interact with high throughput job management tools, and can submit jobs to clusters, monitor them for problems, and initiate post-processing tasks.
-Once your analysis is completed asimov can manage the data products and results, and prepare them for publication and distribution.
-
-.. raw:: html
-
-	 </div>
-
-.. raw:: html
-
-	 <div class="feature col">
-	 <i class="bi bi-cpu-fill"></i>
-
-Uniform pipeline interface
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Asimov provides an API layer which allows a single configuration to be deployed to numerous different analysis pipelines.
-Gravitational wave pipelines are supported via optional plugin packages; see :doc:`pipelines` for the current list.
-
-.. raw:: html
-
-	 </div>
-	 </div>
-
-.. raw:: html
-
-	 <div class="row g-4 py-5 row-cols-1 row-cols-lg-2">
-
-.. raw:: html
-
-	 <div class="feature col">
-	 <i class="bi bi-briefcase"></i>
-
-Centralised configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Asimov records all ongoing, completed, and scheduled analyses, allowing jobs, configurations, and results to be found easily.
-
-.. raw:: html
-
-	 </div>
-
-
-.. raw:: html
-
-	 <div class="feature col">
-	 <i class="bi bi-briefcase"></i>
-
-
-Reporting overview
-~~~~~~~~~~~~~~~~~~
-
-Asimov can provide both machine-readible and human-friendly reports of all jobs it is monitoring, while collating relevant log files and outputs.
 
 .. figure:: screenshots/report-dashboard.png
    :alt: The asimov report's summary dashboard, showing live counts of analyses by status
+   :width: 70%
+   :align: center
 
-   A live-updating project dashboard is one click away — see the :doc:`reporting guide <user-guide/reporting>` for the full interactive report, including per-event workflow graphs.
+   The project report shows live counts of analyses by status. See the :doc:`reporting guide <user-guide/reporting>`.
 
-.. raw:: html
-
-	 </div>
-	 </div>
-
-Quick installation
-------------------
-
-Asimov is available on ``pypi`` and can be installed via ``pip install asimov``.
-
-Citing asimov
--------------
-
-If you use asimov in a publication please consider consulting our :ref:`citation-guide`.
-
-
-
-Users' guide
-------------
+If you use asimov in a publication, please see the :ref:`citation-guide`.
 
 .. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: 📚 Users' guide
 
@@ -138,16 +71,18 @@ Users' guide
    storage
    user-guide/review
    citing
-	     
+
 .. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: The Ledger
 
    ledger
    vocabulary
-      
-   
+
+
 .. toctree::
+   :hidden:
    :maxdepth: 1
    :caption: Pipeline Guides
 
@@ -159,10 +94,8 @@ Users' guide
    pipelines/pesummary
    pipelines/command
 
-Advanced topics
----------------
-
 .. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: Advanced topics
 
@@ -188,10 +121,8 @@ Advanced topics
    gracedb
    advanced/projects
 
-Developers' Guide
------------------
-
 .. toctree::
+   :hidden:
    :maxdepth: 1
    :caption: Development Guide
 
@@ -204,12 +135,10 @@ Developers' Guide
    hooks
    building-docs
 
-Tutorials
----------
-
 .. toctree::
+   :hidden:
    :maxdepth: 1
-   :Caption: Tutorials
+   :caption: Tutorials
 
    tutorials/analysing-gw150914
    tutorials/python-api-tutorial
@@ -217,19 +146,15 @@ Tutorials
    tutorials/remixing-analyses
 
 
-REST API
---------
-
 .. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: REST API
 
    rest-api
 
-Python API
-----------
-
 .. toctree::
+   :hidden:
    :maxdepth: 1
    :caption: Python API
 
@@ -249,22 +174,14 @@ Python API
    api/schedulers
    config
 
-LIGO Analysis Cookbook
-----------------------
-
 .. toctree::
+   :hidden:
    :maxdepth: 1
-   :Caption: LIGO Analysis Cookbook
+   :caption: LIGO Analysis Cookbook
 
    ligo-cookbook/bayeswave
    ligo-cookbook/bilby
    ligo-cookbook/defaults
    ligo-cookbook/working-with-gwosc
 
-Indices and tables
-------------------
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-* :ref:`routingtable`
