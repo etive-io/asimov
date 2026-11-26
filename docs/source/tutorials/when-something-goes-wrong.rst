@@ -324,9 +324,10 @@ If some analyses haven't started yet, and *should* use the new settings, use ``-
 Analyses which are waiting to run then pick up the change; those which have started or finished keep what they had.
 Choose when you make the change: once an analysis has been through a plain ``--update``, it keeps its old settings.
 
-.. note::
-   Project-wide defaults, set with ``kind: configuration`` blueprints, behave differently.
-   They aren't copied into each analysis, so if you change one, existing analyses show the new value too, even those which have finished, and may use it if they're run again.
+.. warning::
+   Project-wide defaults, set with ``kind: configuration`` blueprints, don't yet follow this rule.
+   Changing one can also change what existing analyses show, even those which have finished.
+   This is `a known bug <https://github.com/etive-io/asimov/issues/341>`_.
 
 .. rst-class:: procedural-step
 
