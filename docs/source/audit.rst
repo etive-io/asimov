@@ -123,6 +123,6 @@ API reference
 In an RO-Crate
 --------------
 
-An analysis's RO-Crate (``asimov provenance``) includes ``audit.json``: the records for
+An analysis's RO-Crate (``asimov package``) includes ``audit.json``: the records for
 the analysis and its subject, as W3C PROV, and the same nodes in the crate's own graph,
 so who changed it sits beside how it was produced.
