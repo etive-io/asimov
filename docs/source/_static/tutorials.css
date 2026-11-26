@@ -1,0 +1,73 @@
+/*
+ * Step-by-step tutorial layout.
+ *
+ * In a tutorial, put ``.. rst-class:: procedural-step`` directly above the
+ * heading of each step. Each marked section is then drawn with a numbered
+ * circle and a connecting line; the numbers come from a CSS counter, so
+ * steps can be added or reordered without renumbering anything.
+ *
+ * Put ``.. rst-class:: tutorial-intro`` above a field list to draw it as the
+ * "what you'll learn" box at the top of a tutorial.
+ *
+ * Colours use Bootstrap variables so both light and dark mode work.
+ */
+
+/* Each section that contains steps restarts the numbering. */
+section:has(> section.procedural-step) { counter-reset: tutorial-step; }
+
+section.procedural-step {
+  counter-increment: tutorial-step;
+  position: relative;
+  margin: 0 0 1.5rem;
+  padding-left: 3.5rem;
+}
+
+/* The numbered circle, drawn in front of the step's heading. */
+section.procedural-step > :is(h2, h3, h4)::before {
+  content: counter(tutorial-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--bs-primary);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* The line joining one step to the next. */
+section.procedural-step:has(~ section.procedural-step)::after {
+  content: "";
+  position: absolute;
+  left: calc(1.25rem - 1px);
+  top: 2.75rem;
+  bottom: -1.25rem;
+  width: 2px;
+  background: var(--bs-border-color);
+}
+
+section.procedural-step > :is(h2, h3, h4) {
+  margin-top: 0;
+  padding-top: .35rem;
+  font-size: 1.25rem;
+}
+
+/* The box at the top of a tutorial. */
+dl.tutorial-intro {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--bs-border-color);
+  border-left: .3rem solid var(--bs-primary);
+  border-radius: .5rem;
+  background: var(--bs-tertiary-bg);
+}
+dl.tutorial-intro dt { margin-top: .5rem; font-weight: 600; }
+dl.tutorial-intro dt:first-child { margin-top: 0; }
+dl.tutorial-intro dd { margin: 0 0 0 0; color: var(--bs-secondary-color); }
+dl.tutorial-intro dd p { margin: 0; }

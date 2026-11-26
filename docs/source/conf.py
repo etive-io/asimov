@@ -62,7 +62,7 @@ todo_include_todos = True
 
 html_theme_options = {}
 html_static_path = ['_static']
-html_css_files = ['home.css']
+html_css_files = ['home.css', 'tutorials.css']
 
 # Multiversion
 smv_tag_whitelist = r'^v\d+\.\d+\.?\d*$'
