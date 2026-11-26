@@ -21,6 +21,7 @@ Because the command comes from the ledger, what is allowed to run is up to the
 project's configuration (see :func:`command_allowed`).
 """
 import fnmatch
+import importlib.resources
 import os
 import re
 import shlex
@@ -144,6 +145,10 @@ class CommandPipeline(Pipeline):
     #: A command is not a gravitational-wave analysis: it has none of that domain's
     #: metadata, and no PSDs to resolve.
     analysis_type = "simple"
+
+    #: The template of the file which records that an analysis was built. A
+    #: subclass inherits it, so it needs no template of its own.
+    config_template = str(importlib.resources.files("asimov.configs").joinpath("command.ini"))
 
     #: Whether the command comes from the ledger, and so is subject to the
     #: project's configuration. A subclass which fixes the executable sets False.

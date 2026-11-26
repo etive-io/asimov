@@ -348,6 +348,20 @@ class BuildAndCompletionTests(CommandCase):
         open(pipeline.output_path("o"), "w").close()
         self.assertFalse(pipeline.detect_completion())
 
+    def test_a_subclass_with_no_template_of_its_own_can_be_configured(self):
+        class Named(CommandPipeline):
+            name = "named"
+            arbitrary_command = False
+
+            def command_template(self):
+                return ["true"]
+
+        with patch.dict(known_pipelines, {"named": Named}):
+            self.apply(self.command(pipeline="named"), subject="EvA")
+            self.analyses()["step"].make_config("step.ini")
+        with open("step.ini") as handle:
+            self.assertIn("analysis = step", handle.read())
+
     def test_resources_are_read_from_the_scheduler_block(self):
         pipeline = self.make("[true]", "scheduler:\n  request memory: 4GB\n  request_cpus: 2\n  accounting group: ligo.dev\n")
         self.assertEqual(
