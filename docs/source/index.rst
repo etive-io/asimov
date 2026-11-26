@@ -140,6 +140,7 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
    :maxdepth: 1
    :caption: Tutorials
 
+   tutorials/when-something-goes-wrong
    tutorials/analysing-gw150914
    tutorials/python-api-tutorial
    tutorials/adding-a-pipeline

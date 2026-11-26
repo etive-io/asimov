@@ -336,7 +336,7 @@ To get a stuck analysis going again:
 
 #. Run ``asimov monitor --chain --until-idle --interval 2`` again. Analyses which have already finished aren't repeated.
 
-Asimov can also retry failed analyses for you: see :ref:`retry policies<retry-policy>`.
+To try this out, and to learn what to do when a blueprint itself is wrong, see :doc:`tutorials/when-something-goes-wrong`.
 
 What's next?
 ------------
