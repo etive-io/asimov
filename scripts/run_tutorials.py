@@ -40,6 +40,7 @@ DEFAULT_PAGES = [
     DOCS / "getting-started.rst",
     DOCS / "tutorials" / "adding-a-pipeline.rst",
     DOCS / "tutorials" / "when-something-goes-wrong.rst",
+    DOCS / "tutorials" / "scaling-up.rst",
 ]
 
 #: Commands which set up the environment the tutorials are tested in.

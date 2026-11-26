@@ -289,6 +289,7 @@ For complete examples, see the plugins for `BayesWave <https://github.com/etive-
 What's next?
 ------------
 
+* :doc:`scaling-up` uses your pipeline to analyse many subjects at once.
 * :ref:`The command pipeline<command-pipeline>` describes the placeholders, and the other methods a subclass can change.
 * :doc:`The vocabulary guide <../vocabulary>` explains how to choose names for settings.
 * Add tests, publish your package, and other people can add your pipeline to their projects with ``pip``.
