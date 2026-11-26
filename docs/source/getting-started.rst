@@ -3,209 +3,344 @@
 Getting started with asimov
 ===========================
 
-Quick Start
------------
+This guide takes you from nothing to a finished workflow on your own computer.
+You'll fit two models to some simulated measurements of a stretched spring, and work out which one describes them better.
+The science is deliberately simple, so that you can concentrate on how asimov works.
 
-You can get started with an analysis-ready gravitational wave project in just a few quick steps.
-You'll need to have asimov installed first; you can find information about doing this in the :ref:`installation-guide`.
+.. rst-class:: tutorial-intro
 
-1. **Create a new asimov project**
-   Asimov projects are used to keep all of the data required to construct analyses, and all of the results they produce, together in one organised place.
-   Any directory can be turned into an asimov project, but it's always best to start in a new, empty directory for simplicity.
+:What you'll learn: How to create a project, describe a workflow of dependent analyses, let asimov run it, and look at what happened.
+:Time required: About 10 minutes.
+:Prerequisites: A Linux computer (Windows Subsystem for Linux is fine) with Python 3.10 or newer. You don't need a computing cluster.
 
-   .. code-block:: console
+.. note::
+   If you've come here to analyse gravitational wave data, this guide is still a good introduction to asimov.
+   When you've finished it, continue with :doc:`tutorials/analysing-gw150914`.
 
-		   $ mkdir new-project
-		   $ cd new-project
-		   $ asimov init "my first project"
+.. rst-class:: procedural-step
 
-		   ● New project created successfully!
+Install asimov
+--------------
 
-   You'll see that asimov creates some new directories and data files in this directory, which are used for storing results, ongoing analyses, and analysis configurations.
+Make a directory to work in, and install asimov into a new virtual environment inside it:
 
-2. **Download analysis defaults**
-   When the project is created asimov doesn't know anything about how to construct a gravitational wave analysis, but we can fetch a sensible set of defaults which have been used in previous analyses.
+.. code-block:: bash
 
-   Asimov has a single command called ``asimov apply`` which can be used to fetch settings files and add them to the "ledger".
-   The ledger is the database which asimov maintains for a project to keep track of settings and the status of all the analyses it knows about.
+   $ mkdir asimov-tutorial
+   $ cd asimov-tutorial
+   $ python3 -m venv environment
+   $ source environment/bin/activate
+   $ pip install "asimov>=0.9.0a1"
 
-   First let's fetch the default settings for the analysis pipelines.
-   We'll use the settings which are curated for "production" parameter estimation by the LIGO Compact Binaries group.
+This guide needs asimov 0.9 or newer, which is currently a pre-release, so the version number in that command matters.
+For other ways to install asimov see the :ref:`installation guide<installation-guide>`.
 
-   .. code-block:: console
+.. rst-class:: procedural-step
 
-		   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml
+Create a project
+----------------
 
-		   ● Successfully applied a configuration update
+Asimov keeps everything about a piece of work in a *project*: its settings, the analyses it contains, and their results.
+Turn your directory into a project with ``asimov init``, giving it a name:
 
-   The analyses which we'll use in this quick start guide are all Bayesian analyses, or analyses which are built on Bayesian principles.
-   This means that we also need to have a set of default priors which can be applied to all events.
-   Again we can download a set of these which are curated for production analyses.
+.. code-block:: bash
 
-   .. code-block:: console
+   $ asimov init "My first project"
 
-		   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml
+Asimov adds a few directories of its own.
+The most important is ``.asimov``, which holds the project's configuration and its *ledger*: the database in which asimov records every analysis and its status.
+You won't need to edit either of them by hand.
 
-		   ● Successfully applied a configuration update
+Asimov normally sends jobs to a cluster scheduler (HTCondor, unless you say otherwise).
+Tell this project to run them as ordinary processes on your computer instead:
 
-   We can always over-write the default priors with values which are specific to an individual event or even an individual analysis, but these project-wide defaults
-   are useful so that we don't need to re-specify quantities which will be the same in most or even all of the analyses (for example, we might normally want the luminosity distance prior to be the same for all analyses except in a small number of cases where we expect an event to lie outwith those default ranges).
-   These project-wide defaults also help to maintain consistency across a large number of analyses, which can be helpful when assembling something like a catalogue publication.
+.. code-block:: bash
 
-3. **Adding an event**
-   Events are the primary subjects for analysis in asimov.
-   A good example of an event is a compact binary coalescence signal, such as GW150914, which was the first gravitational wave to be detected, in 2015.
-   For the purposes of this guide we'll use the same set of priors and additional information which were used to analyse this event in the GWTC-2.1 gravitational wave catalogue, however you can also set the entire event up manually by following the instructions in the :ref:`event guide<event-guide>`.
+   $ asimov configuration update scheduler/type local
 
-   We can download the curated GWTC-2.1 settings by running
+.. rst-class:: procedural-step
 
-   .. code-block:: console
+Add a subject
+-------------
 
-		   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml
+Every analysis in this guide studies one *subject*, the thing you want to find something out about.
+In gravitational wave astronomy a subject is usually an event, such as a black hole merger; here it's a spring.
 
-		   ● Successfully applied GW150914_095045
+You tell asimov about new things using *blueprints*, which are short YAML files.
+Save this one as ``subject.yaml``:
 
-   This will add ``GW150914_095045`` to the project's ledger.
-   You can see that it's in the ledger by running
+.. code-block:: yaml
+   :caption: subject.yaml
 
-   .. code-block:: console
+   kind: subject
+   name: spring-1
 
-		   $ asimov report status
+and add it to the project's ledger with ``asimov apply``:
 
-		   GW150914_095045
+.. code-block:: bash
 
-   In the next step we'll add some analyses to the event, but initially there are none, as reported here.
+   $ asimov apply -f subject.yaml
 
-4. **Adding some analyses**
-   Now that we've told asimov about the event we want to analyse, we need to tell it *how* to analyse it.
-   The specification for an individual, self-contained analysis will specify the pipeline which should be used for the analysis, and any other settings which are specific to this analysis.
-   For this guide we'll set up two analyses which were used in the production of the GWTC-2.1 catalogue paper, but not change any of the settings beyond this.
-   The two pipelines we'll use are ``bayeswave``, to produce the on-source PSD estimates, and ``bilby`` to perform the parameter estimation.
+.. rst-class:: procedural-step
 
-   The ``bilby`` job requires an analysis product from the ``bayeswave`` job (namely, the PSDs), and so asimov won't allow it to start until after the ``bayeswave`` job has completed.
+Write the programs
+------------------
 
-   We can add these analyses by downloading the curated settings.
+Asimov doesn't do any analysis itself: it runs your programs, in the right order, and keeps track of them.
+Here you need three small ones, which use only Python's standard library.
+Make a directory for them:
 
-   .. code-block:: console
+.. code-block:: bash
 
-		   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/analyses/production-default.yaml -e GW150914_095045
+   $ mkdir scripts
 
-		   ● Successfully applied Prod0 to GW150914_095045
-		   ● Successfully applied Prod1 to GW150914_095045
+The first simulates the measurements, the extension of the spring under twenty different loads, with some random noise added:
 
-   Again, it is also possible to set up an analysis from scratch, or to alter the settings for a given analysis before it's started.
-   Details on how you can do this can be found in the :ref:`analysis guide<analysis-guide>`.
+.. code-block:: python
+   :caption: scripts/make_data.py
 
-   If we now look at the project again we can see that two new analyses are listed for GW150914:
+   #!/usr/bin/env python3
+   """Simulate noisy measurements of a spring: load and extension."""
+   import random
+   import sys
 
-   .. code-block:: console
+   output = sys.argv[1]
 
-		   $ asimov report status
+   random.seed(1)
+   with open(output, "w") as handle:
+       for load in range(1, 21):
+           extension = 2.0 + 0.5 * load + random.gauss(0, 0.3)
+           handle.write(f"{load} {extension:.3f}\n")
 
-		   GW150914_095045
-		   Analyses
-		   - Prod0 bayeswave ready
-		   - Prod1 bilby ready
-		   Analyses waiting:
-		   Prod0
+The second fits a model to the measurements, either a constant or a straight line, and records the typical distance between the data and the model:
 
-   Notice how the ``bilby`` analysis is listed as "waiting", as it requires the ``bayeswave`` job to complete before it can be allowed to run.
+.. code-block:: python
+   :caption: scripts/fit.py
 
-5. **Building the pipeline and submitting to the cluster**
-   The final steps in getting your analysis are, you'll probably be pleased to learn, almost entirely automatic.
-   There are two steps which ``asimov`` needs to complete to do this (though as we'll see later they can be combined into a single step).
+   #!/usr/bin/env python3
+   """Fit a model to the data, and record how far the data lie from it."""
+   import statistics
+   import sys
 
-   First is the ``build`` step, which creates the configuration file for the pipeline, and then creates the files necessary for submitting the analyses onto a computing cluster.
+   model, data, output = sys.argv[1:]
 
-   .. code-block:: console
+   with open(data) as handle:
+       loads, extensions = zip(*(map(float, line.split()) for line in handle))
 
-		   $ asimov manage build
+   if model == "constant":
+       predicted = [statistics.mean(extensions)] * len(extensions)
+   else:
+       slope, intercept = statistics.linear_regression(loads, extensions)
+       predicted = [slope * load + intercept for load in loads]
 
-		   ● Working on GW150914_095045
-		      Working on production Prod0
-		   Production config Prod0 created.
+   scatter = statistics.pstdev([e - p for e, p in zip(extensions, predicted)])
 
-   If the pipeline which you're building uses a configuration file to describe its settings, this step will produce that configuration file, and will save it in the event repository.
-   You can find the event (git) repositories in the ``checkouts`` directory of the current project, but their location can be changed.
-   Details on doing that are in the :ref:`projects guide<project-guide>`.
-   Configuration files are produced by taking the settings stored in asimov's project ledger, and combining them with a template configuration file for the pipeline.
-   This step also creates all of the files which are required to submit the analysis to an ``htcondor``-based computing scheduler.
-   You can find these files inside the ``working`` directory of the current project.
-   The exact files produced will vary depending on the pipeline which you're creating.
+   with open(output, "w") as handle:
+       handle.write(f"{model} {scatter:.3f}\n")
 
-   The final step to get everything running is the ``submit`` step, which communicates with the scheduling system and submits the pipeline to it.
-   You can run this with the ``asimov manage submit`` command.
+The third compares any number of fits, and lists the best one first:
 
-   .. code-block:: console
+.. code-block:: python
+   :caption: scripts/compare.py
 
-		   $ asimov manage submit
+   #!/usr/bin/env python3
+   """List the fitted models, best first."""
+   import sys
 
-		   ● Submitted GW150914_095045/Prod0
+   output, *fits = sys.argv[1:]
 
-   Once the job has been submitted asimov will record the ID number for the job, and record it in the project ledger so that it can check on its status.
+   results = []
+   for fit in fits:
+       with open(fit) as handle:
+           results.append(handle.read().split())
 
-6. **Monitoring your analyses**
-   Once the job is running you'll want to check on it to see if it's finished (or if something's gone wrong).
-   The simplest way to do this is with the ``asimov monitor`` command.
-   You'll need to run this in the main project directory, and not in one of its subdirectories.
+   with open(output, "w") as handle:
+       for model, scatter in sorted(results, key=lambda result: float(result[1])):
+           handle.write(f"{model}: scatter {scatter}\n")
 
-   .. code-block:: console
+Make the programs executable, and add their directory to your ``PATH`` so that they can be found by name:
 
-		   $ asimov monitor
+.. code-block:: bash
 
-		   GW150914_095045
-		   - Prod0[bayeswave]
-		     ● Prod0 is running (condor id: 84047997)
-		   - Prod1[bilby]
-		     ● ready
+   $ chmod +x scripts/*.py
+   $ export PATH="$PWD/scripts:$PATH"
 
-   When you run this, asimov will do a few different things.
-   First, it checks with the compute scheduler if the job is still running.
-   If it is, then it will report that to you, and continue checking any other analyses it knows about.
-   Otherwise it will try and work out why it's no longer running.
-   If it's because the job has finished it will find the results files, and start running any post-processing which the pipeline requires.
-   If something's gone wrong, asimov will first try to rescue the analysis (this can be helpful if the cluster was shut down for maintenance, for example, and the job got lost).
-   If it can't rescue the analysis, asimov will mark the job as "stuck", and will tell you that it can no longer complete the analysis without further intervention.
+.. note::
+   If you open a new terminal part-way through, go back to the ``asimov-tutorial`` directory, activate the environment, and run the ``export`` command again.
 
-   It can be useful to automate this process so that it runs regularly.
-   The ``asimov start`` command can be used to set up a process which will keep running ``asimov monitor`` and a few other commands every 15 minutes.
+.. rst-class:: procedural-step
 
-   .. code-block:: console
+Describe the workflow
+---------------------
 
-		   $ asimov start
+Next, tell asimov how the programs fit together.
+Each run of a program is an *analysis*, described by its own blueprint.
+Save the following into a file called ``workflow.yaml``:
 
-		   ● Asimov is running (84048002)
+.. code-block:: yaml
+   :caption: workflow.yaml
 
-   In addition to monitoring jobs, this will also automatically build and submit any jobs which are ready to start.
-   For example, in this project we have a bilby job which is waiting for the completion of a bayeswave job in order to start.
-   ``asimov start`` will automatically build and submit this bilby analysis once the bayeswave job is complete.
+   kind: analysis
+   name: make-data
+   command: [make_data.py, "{outputs.data}"]
+   outputs:
+     data: data.txt
+   ---
+   kind: analysis
+   name: fit-constant
+   command: [fit.py, constant, "{inputs.data}", "{outputs.fit}"]
+   outputs:
+     fit: fit.txt
+   needs:
+     - make-data
+   ---
+   kind: analysis
+   name: fit-line
+   command: [fit.py, line, "{inputs.data}", "{outputs.fit}"]
+   outputs:
+     fit: fit.txt
+   needs:
+     - make-data
+   ---
+   kind: analysis
+   name: compare
+   command: [compare.py, "{outputs.summary}", "{inputs.fit}"]
+   outputs:
+     summary: summary.txt
+   needs:
+     - fit-constant
+     - fit-line
 
-   Eventually, once all of the analyses have completed you can run ``asimov stop`` to end the automatic monitoring.
-   ``asimov stop`` does not stop analyses from running, and only stops their routine monitoring via asimov, so can always be safely restarted by running ``asimov start`` later.
+This file holds four blueprints, separated by lines containing three hyphens.
+In each of them:
 
-And that's it! We now have a working analysis on GW150914.
-chances are if you're looking at asimov you'll want to do something a little more complicated, so let's look at some next steps.
+* ``command`` is the program to run and its arguments, written as a list.
+* ``outputs`` names the files the program will write. An analysis has only succeeded if they all exist when it finishes.
+* ``needs`` lists the analyses which must finish before this one can start.
+
+The words in curly brackets are filled in by asimov.
+``{outputs.data}`` is the path where this analysis should write its ``data`` output, and ``{inputs.data}`` is the path to the ``data`` output of an analysis it needs.
+The ``compare`` analysis needs two analyses which each have a ``fit`` output, so ``{inputs.fit}`` becomes both paths.
+
+Apply the workflow to your spring.
+The ``-e`` option says which subject the analyses belong to:
+
+.. code-block:: bash
+
+   $ asimov apply -f workflow.yaml -e spring-1
+
+.. tip::
+   Asimov can run any program in this way. For everything the ``command`` blueprint can do, see :ref:`the command pipeline<command-pipeline>`.
+
+Now ask asimov what it knows about:
+
+.. code-block:: bash
+
+   $ asimov report status
+
+.. code-block:: text
+
+   spring-1
+        Analyses
+        - make-data command ready
+        - fit-constant command ready
+        - fit-line command ready
+        - compare command ready
+        Analyses waiting:
+   make-data
+
+All four analyses are ``ready``, which means that they haven't been run yet.
+The list at the end shows which of them can start now: only ``make-data``, because the others are still waiting for the analyses they need.
+
+.. rst-class:: procedural-step
+
+Run the workflow
+----------------
+
+One command runs the whole workflow:
+
+.. code-block:: bash
+
+   $ asimov monitor --chain --until-idle --interval 2
+
+Asimov repeats a cycle until there's nothing left to do:
+
+#. **Build** each analysis whose needs have been met, by working out the exact command to run.
+#. **Submit** it to the scheduler, which here means starting it on your computer.
+#. **Monitor** the running analyses, and check whether each has produced its outputs.
+
+``--chain`` asks for all three of these, ``--until-idle`` keeps going until nothing is running and nothing else can start, and ``--interval 2`` waits two seconds between cycles.
+It takes a few seconds, and ends with
+
+.. code-block:: text
+
+   ● Idle after 4 passes: everything finished
+
+Notice that ``fit-constant`` and ``fit-line`` were submitted together, as neither depends on the other, while ``compare`` waited for both of them.
+
+.. note::
+   With the local scheduler, asimov only keeps track of jobs which were started by the command that's currently running.
+   Use the command above, rather than building, submitting and monitoring in separate steps.
+
+.. rst-class:: procedural-step
+
+Look at the results
+-------------------
+
+Each analysis ran in its own directory inside ``working``, which holds the exact command that was run (``command.sh``), what the program printed, and the files it made.
+Read the result of the comparison:
+
+.. code-block:: bash
+
+   $ cat working/spring-1/compare/summary.txt
+
+.. code-block:: text
+
+   line: scatter 0.286
+   constant: scatter 2.918
+
+The data lie far closer to a straight line than to a constant, as you'd expect for a spring.
+
+Asimov can also write a web page which summarises the whole project:
+
+.. code-block:: bash
+
+   $ asimov report html
+
+Open ``pages/index.html`` in a web browser to see it.
+
+Finally, asimov records who changed the project, and when:
+
+.. code-block:: bash
+
+   $ asimov audit show
+
+When an analysis fails
+----------------------
+
+If a program exits with an error, or doesn't produce its outputs, asimov marks the analysis as ``stuck``.
+Analyses which don't depend on it still run; those which do will wait.
+
+To get a stuck analysis going again:
+
+#. Find it with ``asimov report status``.
+#. Read its error log, for example ``working/spring-1/fit-constant/fit-constant.err``.
+#. Fix the problem.
+#. Make the analysis ready to run again (asimov will ask you to confirm):
+
+   .. code-block:: bash
+
+      $ asimov analysis rerun spring-1 fit-constant
+
+#. Run ``asimov monitor --chain --until-idle --interval 2`` again. Analyses which have already finished aren't repeated.
+
+Asimov can also retry failed analyses for you: see :ref:`retry policies<retry-policy>`.
 
 What's next?
 ------------
 
-+ **Adding more events**
-  If you want to add new events, or download event information from GraceDB you should read the :ref:`event guide<event-guide>`.
-
-+ **Adding more analyses**
-  You can also add additional analyses, and change the settings used; you can find more information in the :ref:`analysis guide<analysis-guide>`.
-
-+ **Creating overview pages**
-  Chances are you don't want to spend all of your time checking the status of jobs on the terminal.
-  Asimov can produce clear and tidy web page reports showing the status of all of the analyses it's running which are regularly updated.
-  You can find more information about setting this up in the :ref:`reporting guide<reporting-guide>`.
-
-+ **Advanced project configuration**
-  For most analyses the default project setup should be sufficient, but if you need to run an extremely large set of analyses, and are sharing the job with lots of other people, it might be convenient to be able to change things.
-  You can find more details about doing that in the :ref:`project guide<project-guide>`.
-
-+ **Auto-updating combined results**
-  Rather than manually re-running a summary job every time a new analysis finishes, you can mark it ``refreshable: true`` and asimov will keep it up to date on its own — see :ref:`subject analyses<subject-analysis>` in the analyses guide.
-
-+ **Running parameter sweeps**
-  If you want to run the same analysis with several waveforms, samplers, or other settings, a single blueprint with a ``strategy`` section can expand into all of the combinations for you, rather than writing out each blueprint by hand — see :ref:`strategies<strategies>` in the blueprints guide.
+* **Analyse real data.** :doc:`tutorials/analysing-gw150914` uses the same ideas to analyse the first gravitational wave to be detected, on a computing cluster.
+* **Write more complex workflows.** The :ref:`analysis guide<analysis-guide>` explains more about analyses, and :ref:`subject analyses<subject-analysis>` can combine results, updating themselves as new ones arrive.
+* **Try many variations at once.** A blueprint with a ``strategy`` expands into one analysis for each combination of settings: see :ref:`strategies<strategies>`.
+* **Share progress.** The :ref:`reporting guide<reporting-guide>` explains the web report.
+* **Configure your project.** The :ref:`project guide<project-guide>` covers the project's layout and settings.
