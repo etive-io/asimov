@@ -1,0 +1,26 @@
+/*
+ * Admonition colours that work in both light and dark mode.
+ *
+ * The theme only defines colours for ``.. note::``. Every other admonition
+ * (tip, hint, important, warning, caution, danger, ...) fell back to a fixed
+ * light-grey background, which left light text on a light box in dark mode.
+ *
+ * Bootstrap's "subtle" and "emphasis" variables change with data-bs-theme, so
+ * nothing here needs a separate dark-mode rule.
+ */
+.admonition:is(.note, .tip, .hint, .warning, .caution, .attention, .important, .danger, .error, .seealso) {
+  background-color: var(--bs-callout-bg);
+  color: var(--bs-callout-text);
+  border-left-color: var(--bs-callout-border);
+}
+
+/* The colour family for each admonition type. */
+.admonition { --bs-callout-bg: var(--bs-secondary-bg-subtle); --bs-callout-text: var(--bs-secondary-text-emphasis); --bs-callout-border: var(--bs-secondary-border-subtle); }
+.admonition.note                                  { --bs-callout-bg: var(--bs-info-bg-subtle);      --bs-callout-text: var(--bs-info-text-emphasis);      --bs-callout-border: var(--bs-info-border-subtle); }
+.admonition:is(.tip, .hint)                       { --bs-callout-bg: var(--bs-success-bg-subtle);   --bs-callout-text: var(--bs-success-text-emphasis);   --bs-callout-border: var(--bs-success-border-subtle); }
+.admonition:is(.warning, .caution, .attention)    { --bs-callout-bg: var(--bs-warning-bg-subtle);   --bs-callout-text: var(--bs-warning-text-emphasis);   --bs-callout-border: var(--bs-warning-border-subtle); }
+.admonition:is(.important, .danger, .error)       { --bs-callout-bg: var(--bs-danger-bg-subtle);    --bs-callout-text: var(--bs-danger-text-emphasis);    --bs-callout-border: var(--bs-danger-border-subtle); }
+
+/* Inline code and links keep the box's text colour so they stay readable on it. */
+.admonition code, .admonition a { color: inherit; }
+.admonition a { text-decoration: underline; }
