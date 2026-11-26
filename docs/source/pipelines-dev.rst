@@ -107,7 +107,7 @@ Hooks should take no arguments.
 
 ``Pipeline.after_completion``
     This method is called by asimov after completion of a job has been detected, and can be used to begin post-processing.
-    For example, the bilby interface uses this hook to start PESummary post-processing.
+    For example, a pipeline might use this hook to start its own post-processing.
 
 ``Pipeline.after_processing``
     This method is run by asimov after the completion of the post-processing for a job has been completed.

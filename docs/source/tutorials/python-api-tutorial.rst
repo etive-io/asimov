@@ -5,8 +5,8 @@ Using the Python API
 
 This tutorial drives the same GW150914 workflow as :doc:`analysing-gw150914`
 — ``gwdata`` fetches data products, ``bayeswave`` estimates the noise PSD,
-and ``bilby`` performs parameter estimation — but from Python instead of the
-command line. It reuses exactly the same blueprints and real pipelines as
+``bilby`` performs parameter estimation, and ``PESummary`` summarises the
+results — but from Python instead of the command line. It reuses exactly the same blueprints and real pipelines as
 that tutorial; nothing here is a toy or CI-only substitute. Driving asimov
 from Python is useful for notebooks, for scripting the same workflow across
 many events, and for custom automation that the CLI doesn't cover directly.
@@ -16,28 +16,16 @@ By the end you will know how to:
 * Create and load a project from Python
 * Apply blueprints programmatically with :func:`~asimov.cli.application.apply_page`
 * Inspect analysis status from Python
-* Run the monitor loop from a script, and scale a workflow across several events
+* Build, submit and monitor analyses from a script, and scale a workflow across several events
 
 Prerequisites
 -------------
 
-Same as :doc:`analysing-gw150914`: a conda environment with asimov and the
-pipelines it will call installed, and access to a computing environment
-running the ``htcondor`` scheduler.
+The same software and computing environment as :doc:`analysing-gw150914`:
+follow its first step to install everything.
 
-If you don't already have an environment for this, create a fresh one from
-asimov's own environment specification (see :doc:`/installation` for other
-install methods) and install this tutorial's pipelines into it:
-
-.. code-block:: console
-
-   $ conda create --name asimov-tutorial --file https://git.ligo.org/asimov/asimov/-/raw/master/conda/environment.txt
-   $ conda activate asimov-tutorial
-   $ conda install conda-forge::bilby conda-forge::bayeswave conda-forge::asimov-gwdata
-
-If you haven't already, it's worth reading :doc:`analysing-gw150914` first —
-this tutorial assumes the same setup and doesn't re-explain what each
-pipeline does.
+It's worth reading that tutorial first — this one assumes the same setup and
+doesn't re-explain what each pipeline does.
 
 Step 1 — Create a project
 --------------------------
@@ -60,7 +48,7 @@ This creates the same directory structure as ``asimov init``:
    /tmp/api-tutorial/
    ├── .asimov/
    │   ├── asimov.conf
-   │   └── ledger.yml
+   │   └── ledger.db
    ├── working/
    ├── checkouts/
    ├── results/
@@ -90,7 +78,7 @@ project-wide defaults and the same GW150914 event blueprint as
 
    with project:
        apply_page(
-           "https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml",
+           "https://git.ligo.org/asimov/data/-/raw/gwosc/defaults/production-pe.yaml",
            ledger=project.ledger,
        )
        apply_page(
@@ -98,7 +86,7 @@ project-wide defaults and the same GW150914 event blueprint as
            ledger=project.ledger,
        )
        apply_page(
-           "https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml",
+           "https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml",
            ledger=project.ledger,
        )
 
@@ -115,10 +103,11 @@ project-wide defaults and the same GW150914 event blueprint as
 Step 3 — Apply the analysis workflow
 --------------------------------------
 
-Write the same three-stage workflow blueprint as :doc:`analysing-gw150914`
-(``get-data`` → ``generate-psd`` → ``bilby-IMRPhenomXPHM-cosmo``, chained with
-``needs``) and apply it with :func:`~asimov.cli.application.apply_page`,
-passing ``event=`` the way you'd pass ``-e`` on the command line:
+Write the same four-stage workflow blueprint as :doc:`analysing-gw150914`
+(``get-data`` → ``generate-psd`` → ``bilby-IMRPhenomXPHM`` →
+``summary-pages``) and apply it with
+:func:`~asimov.cli.application.apply_page`, passing ``event=`` the way you'd
+pass ``-e`` on the command line:
 
 .. code-block:: python
 
@@ -135,6 +124,7 @@ passing ``event=`` the way you'd pass ``-e`` on the command line:
      accounting group: ligo.dev.o4.cbc.pe.bilby
      request memory: 1024
      request post memory: 16384
+     request disk: 2048MB
    ---
    kind: analysis
    name: generate-psd
@@ -144,13 +134,21 @@ passing ``event=`` the way you'd pass ``-e`` on the command line:
      - get-data
    ---
    kind: analysis
-   name: bilby-IMRPhenomXPHM-cosmo
+   name: bilby-IMRPhenomXPHM
    pipeline: bilby
    waveform:
      approximant: IMRPhenomXPHM
    comment: PE job using IMRPhenomXPHM and bilby
    needs:
      - generate-psd
+   ---
+   kind: analysis
+   name: summary-pages
+   pipeline: pesummary
+   comment: Summary pages for the bilby results
+   analyses:
+     - pipeline: bilby
+   refreshable: true
    """
 
    workflow_file = os.path.join(project.location, "workflow.yaml")
@@ -184,42 +182,56 @@ Typical output::
    GW150914_095045
      get-data                   pipeline=gwdata      status=ready
      generate-psd               pipeline=bayeswave   status=ready
-     bilby-IMRPhenomXPHM-cosmo  pipeline=bilby       status=ready
+     bilby-IMRPhenomXPHM        pipeline=bilby       status=ready
+     summary-pages              pipeline=pesummary   status=ready
 
-All three start as ``ready`` — asimov's dependency system decides *when* a
-production is actually eligible to build and submit based on its ``needs``,
-it doesn't pre-block the stored status.
+All four start as ``ready`` — asimov's dependency system decides *when* an
+analysis is actually eligible to be submitted based on its ``needs`` (or, for
+``summary-pages``, its ``analyses``), it doesn't pre-block the stored status.
 
-Step 5 — Run the monitor
--------------------------
+Step 5 — Build, submit and monitor
+-----------------------------------
 
-The monitor loop checks analysis status, submits ready analyses whose
-dependencies are satisfied, and collects finished results. From the project
-directory you can run it once from the CLI:
+The Python equivalents of ``asimov manage build`` and ``asimov manage submit``
+are :func:`~asimov.cli.manage.build_analyses` and
+:func:`~asimov.cli.manage.submit_analyses`. Call them inside ``with project:``
+blocks to start whatever is ready:
+
+.. code-block:: python
+
+   from asimov.cli.manage import build_analyses, submit_analyses
+
+   with project:
+       build_analyses()
+
+   with project:
+       submit_analyses()
+
+To check on the jobs which have been submitted, use
+:func:`~asimov.monitor_api.run_monitor`:
+
+.. code-block:: python
+
+   from asimov.monitor_api import run_monitor
+
+   with project:
+       results = run_monitor(verbose=True)
+
+``run_monitor()`` only monitors: it doesn't build or submit the analyses which
+become ready as others finish. Run the three calls again to move the workflow
+on, or let asimov do it for you by running ``asimov start`` in the project
+directory:
 
 .. code-block:: console
 
    $ cd /tmp/api-tutorial
-   $ asimov monitor
-
-or from Python using :func:`~asimov.monitor_api.run_monitor`:
-
-.. code-block:: python
-
-   import os
-   os.chdir("/tmp/api-tutorial")
-
-   from asimov.monitor_api import run_monitor
-   results = run_monitor(verbose=True)
+   $ asimov start
 
 .. note::
-   ``run_monitor()`` needs the same real HTCondor scheduler access as the
-   CLI's ``asimov monitor`` — it performs the same operations, just callable
-   from a script. As with :doc:`analysing-gw150914`, expect the full
-   ``bilby`` parameter-estimation stage to take on the order of a day; you
-   don't need to keep the script running for that — call ``run_monitor()``
-   (or run ``asimov monitor`` / ``asimov start``) periodically, or use
-   ``asimov start`` for the CLI's own automatic polling loop.
+   Submitting and monitoring need the same real HTCondor scheduler access as
+   the command line. As with :doc:`analysing-gw150914`, expect the ``bilby``
+   parameter-estimation stage to take on the order of a day; you don't need to
+   keep a script running for that.
 
 Step 6 — Scaling to multiple events
 --------------------------------------
