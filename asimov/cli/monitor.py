@@ -16,7 +16,7 @@ from asimov.principal import Principal, acting_as
 from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES, manage, report
 from asimov.scheduler_utils import get_configured_scheduler, create_job_from_dict, get_job_list
-from asimov.monitor_helpers import monitor_analysis
+from asimov.monitor_helpers import monitor_analysis, label_subject
 from asimov.throttle import ACTIVE_STATES as RUNNING_STATES, per_pass_limit
 from asimov.strategies import extend_group
 from asimov.telemetry import initialize_telemetry_sinks
@@ -705,6 +705,7 @@ def monitor(ctx, event, update, dry_run, chain, until_idle, interval, max_passes
 
     for event in sorted(ledger.get_event(event), key=lambda e: e.name):
         click.secho(f"{event.name}", bold=True)
+        label_subject(event)
         on_deck = [
             production
             for production in event.productions

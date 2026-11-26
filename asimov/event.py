@@ -3,6 +3,7 @@ Trigger handling code.
 """
 
 import html
+from copy import deepcopy
 import os
 import subprocess
 import sys
@@ -567,6 +568,25 @@ class Event:
                 f"Unable to fetch {gfile} from GraceDB. {e}"
             )
             raise
+
+    @property
+    def labels(self):
+        """
+        The labels on this subject, by name (a copy: change them with
+        :func:`asimov.actions.add_label` and :func:`asimov.actions.remove_label`).
+
+        These aren't inherited by the subject's analyses, which have their own
+        labels in ``analysis.meta["labels"]``. An analysis reads its subject's
+        with ``analysis.subject.labels``.
+        """
+        labels = self.meta.get("labels")
+        return deepcopy(labels) if isinstance(labels, dict) else {}
+
+    @property
+    def manual_labels(self):
+        """The names of the labels which were set by hand, and so stay put."""
+        manual = self.meta.get("manual labels")
+        return list(manual) if isinstance(manual, list) else []
 
     def to_dict(self, productions=True):
         data = {}

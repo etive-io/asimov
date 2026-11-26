@@ -381,6 +381,36 @@ class TestChanging(McpTestCase):
             close()
 
 
+    def test_subject_label_is_on_the_subject_not_its_analyses(self):
+        self.data("add_label", subject=self.subject, label="ready", value=True)
+        listed = self.data("list_labels", subject=self.subject)
+        self.assertEqual(listed["subjects"], [{"subject": self.subject, "labels": {"ready": True}}])
+        self.assertEqual(listed["analyses"], [])
+        records = self.audit("label")
+        self.assertEqual(records[-1].target, self.subject)
+
+    def test_subject_label_survives_a_reload_and_is_not_inherited(self):
+        self.data("add_label", subject=self.subject, label="ready", value=2)
+        ctx = ProjectContext.from_directory(self.root)
+        with ctx.activate():
+            event = ctx.ledger.get_event(self.subject)[0]
+            self.assertEqual(event.labels, {"ready": 2})
+            self.assertEqual(event.manual_labels, ["ready"])
+            for analysis in event.productions:
+                self.assertNotIn("ready", analysis.meta.get("labels", {}))
+                self.assertEqual(analysis.subject.labels, {"ready": 2})
+        close = getattr(ctx.ledger, "close", None)
+        if close:
+            close()
+
+    def test_subject_label_can_be_removed(self):
+        self.data("add_label", subject=self.subject, label="ready")
+        self.data("remove_label", subject=self.subject, label="ready")
+        self.assertEqual(self.data("list_labels", subject=self.subject)["subjects"], [])
+        result = self.call("remove_label", subject=self.subject, label="ready")
+        self.assertTrue(result.is_error)
+
+
 class TestChangingSqlite(TestChanging):
     engine = "sqlite"
 

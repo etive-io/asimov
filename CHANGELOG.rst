@@ -67,6 +67,15 @@ The fixes and improvements from the 0.7.1 release are listed under 0.7.1 below.
 New Features
 ------------
 
+**Labels on Subjects**
+  Subjects can now be labelled as well as analyses. ``actions.add_label`` and
+  ``actions.remove_label`` (and the MCP ``add_label`` and ``remove_label`` tools, when no
+  ``analysis`` is given) take a subject, and labellers can opt in to labelling subjects by
+  setting ``targets = ("analysis", "subject")`` and implementing ``label_subject``. A subject's
+  labels are read with ``subject.labels`` (``analysis.subject.labels`` from an analysis); they
+  are not inherited into the analyses' own labels, and they don't take part in ``needs:``
+  label dependencies.
+
 **Ledger Migration**
   ``asimov migrate-ledger --to sqlite`` (or ``--to yamlfile``) converts a project's ledger between the
   YAML and SQL formats. It never runs automatically. The existing ledger is left in place, the new one is

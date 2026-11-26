@@ -101,6 +101,24 @@ class Labeller(ABC):
         """
         pass
     
+    #: What this labeller labels. Plugins which also label subjects set this to
+    #: ``("analysis", "subject")`` and implement :meth:`label_subject`.
+    targets = ("analysis",)
+
+    def label_subject(self, subject, context=None):
+        """
+        Determine labels for a subject (an :class:`~asimov.event.Event`).
+
+        Only called if ``"subject"`` is in :attr:`targets`. Return a dictionary
+        of labels, as :meth:`label` does for an analysis. They're stored in
+        ``subject.meta["labels"]``, and read with ``subject.labels``.
+        """
+        return {}
+
+    def should_label_subject(self, subject, context=None):
+        """Whether this labeller should run for the subject (default: always)."""
+        return True
+
     def should_label(self, analysis, context=None):
         """
         Determine if this labeller should run for the given analysis.
@@ -323,6 +341,50 @@ def load_labellers_from_ledger(ledger):
             )
 
 
+def _apply(target, context, kind):
+    """Run the labellers which label ``kind`` ("analysis" or "subject") on ``target``."""
+    all_labels = {}
+
+    if not hasattr(target, 'meta'):
+        target.meta = {}
+    if not isinstance(target.meta.get('labels'), dict):
+        target.meta['labels'] = {}
+
+    for labeller_name, labeller in LABELLER_REGISTRY.items():
+        if kind not in getattr(labeller, "targets", ("analysis",)):
+            continue
+        try:
+            should, make = (
+                (labeller.should_label, labeller.label)
+                if kind == "analysis"
+                else (labeller.should_label_subject, labeller.label_subject)
+            )
+            if not should(target, context):
+                logger.debug(f"Labeller '{labeller_name}' skipped for {target.name}")
+                continue
+
+            labels = make(target, context)
+
+            if labels:
+                logger.debug(
+                    f"Labeller '{labeller_name}' returned labels for {target.name}: {labels}"
+                )
+                manual = target.meta.get('manual labels', [])
+                for key, value in labels.items():
+                    if key in manual:
+                        # Set by hand: it stays until it is removed.
+                        continue
+                    target.meta['labels'][key] = value
+                    all_labels[key] = value
+
+        except Exception as e:
+            logger.warning(
+                f"Error applying labeller '{labeller_name}' to {target.name}: {e}"
+            )
+
+    return all_labels
+
+
 def apply_labellers(analysis, context=None):
     """
     Apply all registered labellers to an analysis.
@@ -358,46 +420,22 @@ def apply_labellers(analysis, context=None):
     >>> if analysis.meta.get('labels', {}).get('interesting'):
     ...     print("This analysis is labelled as interesting")
     """
-    all_labels = {}
-    
-    # Initialize labels dict if it doesn't exist
-    if not hasattr(analysis, 'meta'):
-        analysis.meta = {}
-    if 'labels' not in analysis.meta:
-        analysis.meta['labels'] = {}
-    
-    for labeller_name, labeller in LABELLER_REGISTRY.items():
-        try:
-            # Check if labeller should run
-            if not labeller.should_label(analysis, context):
-                logger.debug(
-                    f"Labeller '{labeller_name}' skipped for {analysis.name}"
-                )
-                continue
-            
-            # Get labels from the labeller
-            labels = labeller.label(analysis, context)
-            
-            if labels:
-                logger.debug(
-                    f"Labeller '{labeller_name}' returned labels for {analysis.name}: {labels}"
-                )
-                
-                # Merge labels into the labels dict
-                manual = analysis.meta.get('manual labels', [])
-                for key, value in labels.items():
-                    if key in manual:
-                        # Set by hand: it stays until it is removed.
-                        continue
-                    analysis.meta['labels'][key] = value
-                    all_labels[key] = value
-                    
-        except Exception as e:
-            logger.warning(
-                f"Error applying labeller '{labeller_name}' to {analysis.name}: {e}"
-            )
-    
-    return all_labels
+    return _apply(analysis, context, "analysis")
+
+
+def apply_subject_labellers(subject, context=None):
+    """
+    Apply the labellers which label subjects to a subject.
+
+    Labels go in ``subject.meta['labels']`` (read them as ``subject.labels``)
+    and aren't inherited by the subject's analyses. Labels set by hand stay.
+
+    Returns
+    -------
+    dict
+        The labels which were applied.
+    """
+    return _apply(subject, context, "subject")
 
 
 def get_labellers():

@@ -11,7 +11,7 @@ from asimov.cli import ACTIVE_STATES
 from asimov.monitor_states import get_state_handler
 from asimov.monitor_context import MonitorContext
 from asimov.telemetry import emit_event
-from asimov.labellers import apply_labellers, load_labellers_from_ledger
+from asimov.labellers import apply_labellers, apply_subject_labellers, load_labellers_from_ledger
 
 logger = logger.getChild("monitor_helpers")
 logger.setLevel(LOGGER_LEVEL)
@@ -41,6 +41,21 @@ def initialize_labellers(ledger):
         # Then load ledger-configured labellers
         load_labellers_from_ledger(ledger)
         _labellers_initialized = True
+
+
+def label_subject(subject):
+    """
+    Apply the labellers which label subjects to a subject, once per monitor pass.
+
+    The caller saves the subject afterwards (``ledger.update_event``), as it
+    already does once the subject's analyses have been monitored.
+    """
+    try:
+        labels = apply_subject_labellers(subject)
+        if labels:
+            logger.debug(f"Applied labels to subject {subject.name}: {labels}")
+    except Exception as e:
+        logger.warning(f"Error applying labellers to subject {subject.name}: {e}")
 
 
 def monitor_analysis(analysis, job_list, ledger, dry_run=False, analysis_path=None):
