@@ -335,6 +335,7 @@ Next steps
 ----------
 
 * Run more events: apply another event's blueprint, then apply ``workflow.yaml`` to it with ``-e``.
+* Analyse something which isn't in a catalogue: :doc:`your-own-event`.
 * Try different settings: copy the ``bilby`` blueprint into a new file, change it (for example the waveform ``approximant``), give it a new ``name``, and apply it. Asimov won't accept a second analysis with the same name for an event. Once it finishes, ``summary-pages`` is updated to include it.
 * Try many variations at once: a blueprint with a ``strategy`` expands into one analysis for each combination of settings. See :ref:`strategies<strategies>`.
 * Reuse published results in a new analysis: :doc:`remixing-analyses`.

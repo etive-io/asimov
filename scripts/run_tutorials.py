@@ -42,6 +42,7 @@ DEFAULT_PAGES = [
     DOCS / "tutorials" / "when-something-goes-wrong.rst",
     DOCS / "tutorials" / "scaling-up.rst",
     DOCS / "tutorials" / "results-to-release.rst",
+    DOCS / "tutorials" / "your-own-event.rst",
 ]
 
 #: Commands which set up the environment the tutorials are tested in.
