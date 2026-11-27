@@ -57,7 +57,8 @@ The web report, from ``asimov report html``, shows them too.
 
 .. note::
    In a project of your own you can approve your own work.
-   A shared project can insist that someone else does it: see :doc:`the project registry <../registry>`.
+   A shared service can insist that someone else does it, for reviews made through its :doc:`MCP server <../mcp>`: see :doc:`the project registry <../registry>`.
+   ``asimov review add`` doesn't check this.
 
 .. rst-class:: procedural-step
 
@@ -86,11 +87,15 @@ Rather than naming the analyses it uses, the blueprint asks for every analysis w
 
    kind: analysis
    name: release
+   strict needs: true
    command: [collect.py, "{outputs.table}", "{inputs.fit}"]
    outputs:
      table: release.txt
    needs:
      - review: approved
+
+``strict needs: true`` makes the release wait until at least one analysis matches ``review: approved``.
+Don't leave it out: by default asimov warns about a condition which matches nothing, and then carries on without it, even if nothing has been approved.
 
 Apply it and run it:
 
@@ -106,10 +111,6 @@ Apply it and run it:
    line 0.286
 
 Only the approved fit is included.
-
-.. note::
-   Review something before you apply an analysis like this.
-   While nothing matches, asimov can't build it, and reports an error each time it tries.
 
 .. rst-class:: procedural-step
 
