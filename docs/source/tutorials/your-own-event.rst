@@ -114,7 +114,8 @@ It would accept the misspelt setting without complaint, and the analyses would n
 
 .. warning::
    The check covers the names of settings, and the types of their values.
-   It can't tell you whether a number is sensible, and it doesn't check anything inside ``priors``, so read those carefully.
+   It can't tell you whether a number is sensible, and it doesn't check anything inside ``priors``.
+   Neither does ``asimov apply``, `for now <https://github.com/etive-io/asimov/issues/353>`__, so read those carefully.
 
 .. rst-class:: procedural-step
 
@@ -159,7 +160,7 @@ Using it means that you don't need any real pipelines installed; in your own wor
 
 .. warning::
    Don't put the same setting both at the top and under ``pipelines``.
-   The one at the top currently wins, although you might expect the more specific one to.
+   The one at the top wins, although the more specific one is meant to: this is `a known bug <https://github.com/etive-io/asimov/issues/351>`__.
 
 Add the defaults and the event to the project:
 
@@ -344,6 +345,7 @@ With ``--update`` alone, the event changes but existing analyses don't: see :doc
 .. warning::
    An analysis keeps a setting of its own only if it differed from the event's when the analysis was added.
    If the two were the same, asimov treats the analysis as following the event, and ``--update-unstarted`` changes it too.
+   This is `a known bug <https://github.com/etive-io/asimov/issues/352>`__.
 
 Using this for real
 -------------------
