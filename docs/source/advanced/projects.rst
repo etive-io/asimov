@@ -32,7 +32,14 @@ As with ``--results``, these can also be edited after project creation via ``.as
 Choosing a ledger backend
 ----------------------------
 
-By default a project's ledger is a single YAML file. For projects tracking a very large number of
-subjects and analyses, a document-database-backed ledger is also available; see :doc:`/ledger` for the
-current state of that option and its limitations.
+By default a project's ledger is an SQLite database, ``.asimov/ledger.db``.
+To use a different backend, name it with ``--engine`` when you create the project.
+For example, this keeps the ledger in a YAML file, ``.asimov/ledger.yml``:
+
+.. code-block:: console
+
+   $ asimov init my-project --engine yamlfile
+
+Projects created before asimov 0.8 may still use a YAML file.
+See :doc:`/ledger` for the backends, their limitations, and how to convert a project from one to another.
 

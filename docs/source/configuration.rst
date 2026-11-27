@@ -25,11 +25,11 @@ General project settings.
 Selects and configures the ledger backend. See :doc:`ledger` for the full comparison between backends.
 
 ``engine``
-   ``yamlfile`` (the default), ``tinydb``, or ``mongodb``.
+   ``sqlite`` (the default), ``yamlfile``, ``postgresql``, ``mysql``, ``sqlalchemy`` or ``tinydb``.
 
 ``location``
-   Path to the ledger file/database, relative to the project root. Defaults to ``.asimov/ledger.yml`` for
-   the ``yamlfile`` engine.
+   The path to the ledger file, relative to the project root, or a database URL.
+   ``asimov init`` sets it to ``.asimov/ledger.db``, or to ``.asimov/ledger.yml`` for the ``yamlfile`` engine.
 
 ``[storage]``
 --------------

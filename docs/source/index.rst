@@ -125,6 +125,7 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
    :caption: Clusters and monitoring
 
    build-process
+   config
    clusters
    scheduler-integration
    dag-translation-examples
@@ -200,7 +201,6 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
    api/olivaw
    api/pipeline
    api/schedulers
-   config
 
 .. toctree::
    :hidden:
