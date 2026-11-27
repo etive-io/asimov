@@ -1,3 +1,4 @@
+========
 Analyses
 ========
 
@@ -30,7 +31,7 @@ An analysis is defined as a series of configuration variables in an asimov proje
 .. _states:
 
 Analysis state
---------------
+==============
 
 In order to track each of the jobs asimov monitors it employs a simple state machine on each production.
 This state is tracked within :ref:`the production ledger<ledger>` for each production with the value of ``status``.

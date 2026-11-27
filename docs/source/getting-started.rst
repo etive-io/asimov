@@ -346,3 +346,4 @@ What's next?
 * **Try many variations at once.** A blueprint with a ``strategy`` expands into one analysis for each combination of settings: see :ref:`strategies<strategies>`.
 * **Share progress.** The :ref:`reporting guide<reporting-guide>` explains the web report.
 * **Configure your project.** The :ref:`project guide<project-guide>` covers the project's layout and settings.
+* **Follow another tutorial.** :doc:`tutorials/index` lists them all, with what you need for each.

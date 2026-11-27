@@ -41,7 +41,7 @@ hundreds.
 	<p>Explore the full documentation: <a href="rest-api.html">REST API</a>, <a href="python-api.html">Python API</a>, <a href="configuration.html">configuration</a> and the <a href="vocabulary.html">ledger vocabulary</a>.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
-	<h3><a class="stretched-link" href="tutorials/analysing-gw150914.html">Tutorials</a></h3>
+	<h3><a class="stretched-link" href="tutorials/index.html">Tutorials</a></h3>
 	<p>Worked examples, from analysing GW150914 to writing a new pipeline.</p>
 	</div></div>
 	</div>
@@ -74,6 +74,31 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
 .. toctree::
    :hidden:
+   :maxdepth: 1
+   :caption: Tutorials
+
+   Overview <tutorials/index>
+   tutorials/adding-a-pipeline
+   tutorials/when-something-goes-wrong
+   tutorials/scaling-up
+   tutorials/results-to-release
+   tutorials/analysing-gw150914
+   tutorials/your-own-event
+   tutorials/remixing-analyses
+   tutorials/python-api-tutorial
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Describing analyses
+
+   blueprints
+   analyses
+   priors
+   gracedb
+
+.. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: The Ledger
 
@@ -96,30 +121,46 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
 .. toctree::
    :hidden:
-   :maxdepth: 2
-   :caption: Advanced topics
+   :maxdepth: 1
+   :caption: Clusters and monitoring
 
-   analyses
-   analysis-types
-   blueprints
-   priors
-   environment-reproducibility
-   provenance
-   principals
-   audit
-   mcp
-   registry
    build-process
+   clusters
    scheduler-integration
    dag-translation-examples
-   monitor-state-machine
-   labeller-plugins
    monitor-api
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Projects and services
+
    configuration
-   test-interface
-   clusters
-   gracedb
    advanced/projects
+   registry
+   mcp
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Records and reproducibility
+
+   provenance
+   environment-reproducibility
+   audit
+   principals
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Plugins and extensions
+
+   pipelines-dev
+   hooks
+   analysis-types
+   labeller-plugins
+   monitor-state-machine
+   test-interface
 
 .. toctree::
    :hidden:
@@ -131,24 +172,7 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
    asimov-repository
    code-overview
-   pipelines-dev
-   hooks
    building-docs
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: Tutorials
-
-   tutorials/when-something-goes-wrong
-   tutorials/scaling-up
-   tutorials/results-to-release
-   tutorials/analysing-gw150914
-   tutorials/your-own-event
-   tutorials/python-api-tutorial
-   tutorials/adding-a-pipeline
-   tutorials/remixing-analyses
-
 
 .. toctree::
    :hidden:
