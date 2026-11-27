@@ -54,6 +54,7 @@ What's in the crate
    ├── ro-crate-metadata.json   # RO-Crate metadata, embedding the PROV-O graph
    ├── provenance.json          # the same PROV-O graph, standalone
    ├── config.json              # the analysis's configuration
+   ├── audit.json               # who changed the analysis and its subject (see :doc:`audit`)
    └── environment/
        ├── environment.json
        ├── environment-pip.txt
@@ -97,7 +98,6 @@ Limitations
 -----------
 
 - **Import isn't implemented yet.** A crate can be produced, but not (yet) fed back into ``asimov apply`` to recreate the analysis it describes.
-- **No record of who applied a blueprint.** Asimov doesn't yet track *who* (or what) changed an analysis's configuration in the ledger, so the provenance graph can't attribute the configuration to a specific person or agent - only to the analysis itself. Once that's tracked, it can be added here as an additional agent/activity without changing the shape of anything already emitted.
 - **Pipeline version is best-effort.** It's parsed by looking for the pipeline's own package name in the captured ``pip freeze`` output, which won't resolve it for every pipeline (e.g. one installed under a different package name, or run outside a Python environment asimov can inspect).
 
 See Also

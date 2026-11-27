@@ -20,7 +20,8 @@ Asimov supports multiple storage backends for the ledger, each with different ch
 YAML File Backend
 ~~~~~~~~~~~~~~~~~
 
-The YAML file backend stores the ledger as a human-readable YAML file. This is the default backend and is suitable for single-user scenarios or small projects.
+The YAML file backend stores the ledger as a human-readable YAML file. It is suitable for single-user scenarios or small projects.
+It was the default before asimov 0.8; to use it for a new project, run ``asimov init`` with ``--engine yamlfile``.
 
 **Configuration:**
 
@@ -45,15 +46,16 @@ The YAML file backend stores the ledger as a human-readable YAML file. This is t
 Database Backend (SQLAlchemy)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The database backend uses SQLAlchemy to provide robust, transactional storage with support for concurrent access. This is recommended for production environments and multi-user scenarios.
+The database backend uses SQLAlchemy to provide robust, transactional storage with support for concurrent access.
+It is the default: a new project uses an SQLite database in its own directory.
 
 **Configuration:**
 
 .. code-block:: ini
 
    [ledger]
-   engine = sqlalchemy
-   location = /path/to/ledger.db
+   engine = sqlite
+   location = .asimov/ledger.db
 
 **Supported Databases:**
 

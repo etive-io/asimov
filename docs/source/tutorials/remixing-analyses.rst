@@ -4,71 +4,83 @@ Remixing published analyses
 ===========================
 
 .. note::
-   Tutorial by Daniel Williams, using ``asimov 0.5.9`` and ``asimov-gwdata 0.6.0``.
+   Tutorial by Daniel Williams.
 
 One of the core goals of asimov is to make it easier to reproduce gravitational wave analyses.
 However, often it is helpful to be able to take a published analysis as the basis of a new analysis without needing to complete all of the steps required.
 
-In this guide I will demonstrate how asimov makes it very easy to take an analysis published as part of the GWTC-2.1 catalogue, and "remix" it, using all of the same settings, but a different waveform.
+In this guide I will demonstrate how asimov makes it very easy to take an analysis published as part of the GWTC-2.1 catalogue, and "remix" it, using the published settings, noise estimates, and calibration uncertainties, but a different waveform.
 
 Prerequisites
 -------------
 
 .. note::
-   If this is your first time encountering asimov then you should read the :ref:`getting started guide <Getting Started>` first.
+   If this is your first time encountering asimov then you should start with :doc:`analysing-gw150914`.
+
+You'll need the same software and the same kind of computing environment as in :doc:`analysing-gw150914`.
+Follow its first step to install everything.
 
 In order to create our new analysis we need to create a new asimov project, and add some default settings to it.
-This requires a couple of commands:
+This requires a few commands.
+We'll use the settings for the public data from GWOSC:
 
-.. code-block :: bash
+.. code-block:: console
 
-   mkdir project
-   cd project
-   asimov init "GW150914 Remix"
-   asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe.yaml
-   asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml
+   $ mkdir project
+   $ cd project
+   $ asimov init "GW150914 Remix"
+   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/defaults/production-pe.yaml
+   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/defaults/production-pe-priors.yaml
 
 We should also add information about the event itself to the project, which we can find from the `curated settings repository <https://git.ligo.org/asimov/data/>`_ provided by the LVK.
 
 .. code-block:: console
 
-   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/main/events/gwtc-2-1/GW150914_095045.yaml
+   $ asimov apply -f https://git.ligo.org/asimov/data/-/raw/gwosc/events/gwtc-2-1/GW150914_095045.yaml
 
 Getting published data
 ----------------------
 
 While the last command collected all of the settings required to recreate an analysis on GW150914, it doesn't collect all of the data required.
-These data fall into two categories: calibration uncertainty envelopes, and power spectral density (noise) estimates.
+As well as the strain data, which are available from GWOSC, we need calibration uncertainty envelopes, and power spectral density (noise) estimates.
 Fortunately these were both provided in the LVK's data release which you can find on Zenodo `here <https://zenodo.org/records/6513631>`_.
 
 .. warning::
    Asimov cannot (currently!) download the data release automatically, so you'll need to have a local copy of it on the machine which you're using.
    You don't need to download the entire data set, you can restrict the downloads to the files for the events you're actually reanalysing.
+   For this tutorial you need ``IGWN-GWTC2p1-v2-GW150914_095045_PEDataRelease_mixed_cosmo.h5``, which is about 130 MB.
 
 We can tell asimov to extract the data from the data release using the ``asimov-gwdata`` pipeline, which asimov will run as if it's an analysis (even though it doesn't actually analyse anything!).
 We do this by writing a simple blueprint for the ``gwdata`` step, which points asimov to the data release file.
 Note that here I've used the special variable syntax ``<event>`` in the filepath. The data release calls this event GW150914_095045, as does the curated event blueprint.
-If you've rename the event in your project you'll not be able to use this, as ``<event>`` gets replaced by the event name when asimov runs the pipeline.
+If you've renamed the event in your project you'll not be able to use this, as ``<event>`` gets replaced by the event name when asimov runs the pipeline.
 
 .. code-block:: yaml
 
-    kind: analysis
-    name: get-data
-    pipeline: gwdata
-    source:
-      type: pesummary
-      location: /home/daniel/tmp/asimov-tmp/data/IGWN-GWTC2p1-v2-<event>_PEDataRelease_mixed_cosmo.h5
-    download:
-    - frames
-    - calibration
-    - psds
+   kind: analysis
+   name: get-data
+   pipeline: gwdata
+   file length: 4096
+   source:
+     type: pesummary
+     location: /path/to/data-release/IGWN-GWTC2p1-v2-<event>_PEDataRelease_mixed_cosmo.h5
+     analysis: C01:IMRPhenomXPHM
+   download:
+     - frames
+     - calibration
+     - psds
+   scheduler:
+     request disk: 2048MB
+
+Replace ``/path/to/data-release`` with the directory which holds your copy of the file.
+The ``analysis`` setting chooses which of the published analyses in that file to take the noise estimates and calibration uncertainties from.
 
 Save this blueprint data to a new file called ``get-data.yaml``.
 You can now get asimov to add this to the project by running
 
 .. code-block:: console
 
-    $ asimov apply -f get-data.yaml -e GW150914_095045
+   $ asimov apply -f get-data.yaml -e GW150914_095045
 
 Designing the remixed analysis
 ------------------------------
@@ -77,29 +89,38 @@ For this example I'm going to make a rather trivial change to the original analy
 In the published analysis the LVK used the ``IMRPhenomXPHM`` waveform, but my remix will use ``IMRPhenomPv2``.
 Chances are you'll want to do something more interesting, after all, this is in fact an older waveform than the one which got used!
 
-To set this up we need another (quite short!) blueprint to configure the ``bilby`` analysis.
+To set this up we need another (quite short!) pair of blueprints: one to configure the ``bilby`` analysis, and one to make summary pages from its results.
 
 .. code-block:: yaml
 
-    kind: analysis
-    name: bilby-IMRPhenomPv2
-    pipeline: bilby
-    waveform:
-    approximant: IMRPhenomPv2
-
-    comment: PE job using IMRPhenomPv2 and bilby
-    needs:
-        - get-data
+   kind: analysis
+   name: bilby-IMRPhenomPv2
+   pipeline: bilby
+   waveform:
+     approximant: IMRPhenomPv2
+   comment: PE job using IMRPhenomPv2 and bilby
+   needs:
+     - get-data
+   ---
+   kind: analysis
+   name: summary-pages
+   pipeline: pesummary
+   comment: Summary pages for the remixed analysis
+   analyses:
+     - pipeline: bilby
+   refreshable: true
 
 Two things are worth highlighting here: first I've changed the value of ``approximant`` compared to the `XPHM blueprint <https://git.ligo.org/asimov/data/-/blob/main/analyses/bilby-bbh/analysis_bilby_IMRPhenomXPHM.yaml?ref_type=heads>`_.
 Second, I've added ``get-data`` as an explicit requirement; in the full end-to-end workflow the ``generate-psd`` step has this as a requirement, not the bilby job.
 However we're skipping that by reusing the published PSDs, so we need to make ``get-data`` a direct prerequisite for the ``bilby`` analysis.
 
-Save this blueprint as ``bilby-IMRPhenomPv2.yaml`` and apply it to your project:
+The second blueprint runs :doc:`PESummary <../pipelines/pesummary>` once the ``bilby`` analysis has finished.
 
-.. code-block :: console
+Save these blueprints as ``remix.yaml`` and apply them to your project:
 
-    $ asimov apply -f bilby-IMRPhenomPv2.yaml -e GW150914_095045
+.. code-block:: console
+
+   $ asimov apply -f remix.yaml -e GW150914_095045
 
 Run your remixed analysis
 -------------------------
@@ -111,6 +132,8 @@ Run
 
 .. code-block:: console
 
-    $ asimov start
+   $ asimov start
 
 and asimov will launch each part of the analysis workflow in turn without you needing to further intervene.
+When everything has finished, open ``pages/GW150914_095045/summary-pages/pesummary/home.html`` in a web browser to see your results.
+Run ``asimov stop`` to turn the automatic monitoring off again.

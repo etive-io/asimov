@@ -1,3 +1,4 @@
+========
 Analyses
 ========
 
@@ -30,7 +31,7 @@ An analysis is defined as a series of configuration variables in an asimov proje
 .. _states:
 
 Analysis state
---------------
+==============
 
 In order to track each of the jobs asimov monitors it employs a simple state machine on each production.
 This state is tracked within :ref:`the production ledger<ledger>` for each production with the value of ``status``.
@@ -49,7 +50,7 @@ A number of additional states are also possible which interupt the normal flow o
 + ``uploaded`` : This event has been uploaded to the event repository.
 + ``restart`` : This job should be restarted by Olivaw. Must be applied manually.
 + ``finished`` : This job has finished running and the results are ready to be processed on the next bot check.
-+ ``processing`` : The results of this job are currently being processed by ``PESummary``.
++ ``processing`` : The results of this job are currently being post-processed.
 + ``uploaded`` : This job has been uploaded to the data store.
 
 

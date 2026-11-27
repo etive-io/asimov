@@ -8,12 +8,12 @@ Previously, creating these configuration files could be a tedious manual process
 The production ledger
 ---------------------
 
-Each gravitational wave event which ``asimov`` handles has an assosciated production ledger.
-By default this is a YAML file, ``.asimov/ledger.yml``, within the project directory; older versions of asimov
+Each gravitational wave event which ``asimov`` handles has its settings recorded in the project's ledger.
+By default this is an SQLite database, ``.asimov/ledger.db``, within the project directory; older versions of asimov
 stored this in the text of GitLab issues, but that interface has since been removed. See
 :doc:`ledger` for the other storage backends asimov supports.
 
-Details of the metadata stored in the production ledger can be found in :doc:`ledger`, but an example is included below:
+Details of the metadata stored in the production ledger can be found in :doc:`ledger`, but an example for one event, written as YAML, is included below:
 
 .. code-block:: yaml
 

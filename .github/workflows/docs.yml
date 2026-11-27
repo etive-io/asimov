@@ -41,6 +41,28 @@ jobs:
       - name: Lint tutorial CLI/API usage against the live asimov
         run: python scripts/lint_tutorial_commands.py
 
+  run-tutorials:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The full history gives asimov its real version, which the
+          # tutorials' packages require.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install asimov
+        run: |
+          python -m pip install --upgrade pip setuptools
+          pip install -e .
+
+      - name: Run the tutorials which work on a single computer
+        run: python scripts/run_tutorials.py
+
   build:
     runs-on: ubuntu-latest
     steps:

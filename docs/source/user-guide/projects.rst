@@ -34,8 +34,9 @@ The structure of a project
 
 When you run ``asimov init`` in a directory it will create a few files and directories which allow it to track information about the project and all of the analyses which you'll add to it.
 
-``.asimov/ledger.yml``
+``.asimov/ledger.db``
     This file is the *ledger*, which is a database of all of the analyses in the project.
+    A project which uses the :doc:`YAML ledger <../ledger>` has ``.asimov/ledger.yml`` instead.
 
 ``.asimov/asimov.conf``
     This file is the configuration file for asimov, and contains information about the project itself and the computing environment.

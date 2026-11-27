@@ -12,10 +12,10 @@ Manage and automate analyses with ``asimov``
 	</div>
 
 Asimov sets up, submits, monitors and reports on scientific analysis jobs, and records everything
-in a version-controlled ledger so that results can be reproduced. It is used in production for
-gravitational-wave parameter estimation by LIGO, Virgo and KAGRA, and works with any pipeline
+it does in a database so that results can be reproduced. It is used in production for
+gravitational-wave analysis by LIGO, Virgo and KAGRA, and works with any pipeline
 that can be described through its plugin interface, whether you are analysing one event or
-hundreds in a catalogue.
+hundreds.
 
 .. raw:: html
 
@@ -25,23 +25,23 @@ hundreds in a catalogue.
 	<p>Install asimov and run your first analysis in a few minutes.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
-	<h3><a class="stretched-link" href="ledger.html">Projects and the ledger</a></h3>
+	<h3><a class="stretched-link" href="ledger.html">Understanding projects</a></h3>
 	<p>How projects, events and analyses are recorded, versioned and shared.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
 	<h3><a class="stretched-link" href="pipelines.html">Pipelines</a></h3>
-	<p>One configuration, many pipelines: bilby, RIFT, BayesWave, LALInference and your own.</p>
+	<p>One configuration, many pipelines: bilby, RIFT, BayesWave, LALInference or your own.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
 	<h3><a class="stretched-link" href="user-guide/running.html">Run and monitor</a></h3>
 	<p>Submit jobs to HTCondor or Slurm, watch them, and recover from failures.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
-	<h3>Reference</h3>
-	<p>Look things up: <a href="rest-api.html">REST API</a>, <a href="python-api.html">Python API</a>, <a href="configuration.html">configuration</a> and the <a href="vocabulary.html">ledger vocabulary</a>.</p>
+	<h3>User Guide</h3>
+	<p>Explore the full documentation: <a href="rest-api.html">REST API</a>, <a href="python-api.html">Python API</a>, <a href="configuration.html">configuration</a> and the <a href="vocabulary.html">ledger vocabulary</a>.</p>
 	</div></div>
 	<div class="col"><div class="home-card">
-	<h3><a class="stretched-link" href="tutorials/analysing-gw150914.html">Tutorials</a></h3>
+	<h3><a class="stretched-link" href="tutorials/index.html">Tutorials</a></h3>
 	<p>Worked examples, from analysing GW150914 to writing a new pipeline.</p>
 	</div></div>
 	</div>
@@ -74,6 +74,31 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
 .. toctree::
    :hidden:
+   :maxdepth: 1
+   :caption: Tutorials
+
+   Overview <tutorials/index>
+   tutorials/adding-a-pipeline
+   tutorials/when-something-goes-wrong
+   tutorials/scaling-up
+   tutorials/results-to-release
+   tutorials/analysing-gw150914
+   tutorials/your-own-event
+   tutorials/remixing-analyses
+   tutorials/python-api-tutorial
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Describing analyses
+
+   blueprints
+   analyses
+   priors
+   gracedb
+
+.. toctree::
+   :hidden:
    :maxdepth: 2
    :caption: The Ledger
 
@@ -96,30 +121,47 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
 .. toctree::
    :hidden:
-   :maxdepth: 2
-   :caption: Advanced topics
+   :maxdepth: 1
+   :caption: Clusters and monitoring
 
-   analyses
-   analysis-types
-   blueprints
-   priors
-   environment-reproducibility
-   provenance
-   principals
-   audit
-   mcp
-   registry
    build-process
+   config
+   clusters
    scheduler-integration
    dag-translation-examples
-   monitor-state-machine
-   labeller-plugins
    monitor-api
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Projects and services
+
    configuration
-   test-interface
-   clusters
-   gracedb
    advanced/projects
+   registry
+   mcp
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Records and reproducibility
+
+   provenance
+   environment-reproducibility
+   audit
+   principals
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Plugins and extensions
+
+   pipelines-dev
+   hooks
+   analysis-types
+   labeller-plugins
+   monitor-state-machine
+   test-interface
 
 .. toctree::
    :hidden:
@@ -131,20 +173,7 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
 
    asimov-repository
    code-overview
-   pipelines-dev
-   hooks
    building-docs
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-   :caption: Tutorials
-
-   tutorials/analysing-gw150914
-   tutorials/python-api-tutorial
-   tutorials/adding-a-pipeline
-   tutorials/remixing-analyses
-
 
 .. toctree::
    :hidden:
@@ -172,7 +201,6 @@ If you use asimov in a publication, please see the :ref:`citation-guide`.
    api/olivaw
    api/pipeline
    api/schedulers
-   config
 
 .. toctree::
    :hidden:
