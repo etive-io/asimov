@@ -78,6 +78,9 @@ review_map = {
 # would otherwise exceed the 255-character filename limit).
 MAX_SUBJECTS_DIRNAME = 100
 
+#: Metadata a subject keeps for itself: its analyses do not inherit it.
+SUBJECT_ONLY_KEYS = ("labels", "manual labels")
+
 
 def subjects_dirname(subjects):
     """Directory name for a project analysis's subjects: their names joined
@@ -1552,6 +1555,10 @@ class SimpleAnalysis(Analysis):
         self.meta = update(self.meta, deepcopy(self.subject.meta))
         if "productions" in self.meta:
             self.meta.pop("productions")
+        # The subject's labels are the subject's: they're read as
+        # ``analysis.subject.labels``, not mixed into the analysis's own.
+        for subject_only in SUBJECT_ONLY_KEYS:
+            self.meta.pop(subject_only, None)
         self.meta = update(self.meta, deepcopy(kwargs))
 
         self.pipeline = pipeline.lower()
@@ -1664,7 +1671,7 @@ class SubjectAnalysis(Analysis):
         
         self.meta = update(self.meta, deepcopy(self.subject.meta))
         # Avoid inheriting full productions/analyses blobs from the subject; they bloat the ledger
-        for noisy_key in ["productions", "analyses"]:
+        for noisy_key in ["productions", "analyses", *SUBJECT_ONLY_KEYS]:
             if noisy_key in self.meta:
                 self.meta.pop(noisy_key)
         self.meta = update(self.meta, deepcopy(kwargs))

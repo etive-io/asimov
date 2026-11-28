@@ -54,12 +54,20 @@ def applied_by(ledger, analysis, identifier):
     return bool(ledger.audit_log(target=_target(analysis), action="apply", principal=identifier))
 
 
-def _target(analysis):
-    return f"{analysis.event.name}/{analysis.name}"
+def _event(target):
+    """The subject a label target belongs to: a subject is its own."""
+    return getattr(target, "event", target)
 
 
-def _save(ledger, analysis):
-    ledger.update_event(analysis.event)
+def _target(target):
+    """``subject/analysis`` for an analysis, and just ``subject`` for a subject."""
+    if hasattr(target, "event"):
+        return f"{target.event.name}/{target.name}"
+    return target.name
+
+
+def _save(ledger, target):
+    ledger.update_event(_event(target))
 
 
 def _review(ledger, analysis, message, status, action, extra=None):
@@ -160,7 +168,11 @@ def _labels(analysis):
 
 def add_label(ledger, analysis, name, value=True):
     """
-    Set a label on an analysis, which stays until it is removed.
+    Set a label on an analysis or a subject, which stays until it is removed.
+
+    ``analysis`` can be a subject (an :class:`~asimov.event.Event`), in which
+    case the label is on the subject, and the audit record's target is just the
+    subject's name.
 
     Labellers don't change or remove a label set this way, even if they would
     set a label with the same name.
@@ -200,7 +212,7 @@ def add_label(ledger, analysis, name, value=True):
 
 def remove_label(ledger, analysis, name):
     """
-    Remove a label from an analysis, whoever set it.
+    Remove a label from an analysis or a subject, whoever set it.
 
     A label a labeller sets can come back the next time the labeller runs.
 

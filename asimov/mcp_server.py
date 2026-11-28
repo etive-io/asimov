@@ -547,12 +547,20 @@ def create_server(project, acting_for=None, read_only=False):
         offset: Offset = 0,
         project: Project = None,
     ) -> dict[str, Any]:
-        """List the labels on analyses (only analyses which have some)."""
+        """
+        List the labels on analyses (only analyses which have some). A subject's
+        own labels are listed under ``subjects``, and aren't on its analyses.
+        """
         with session(ctx, project, access.READ) as ledger:
             names = [subject] if subject else reading.subject_names(ledger)
             rows = []
+            subject_rows = []
             for name in names:
-                for analysis in subject_of(ledger, name).productions:
+                found_subject = subject_of(ledger, name)
+                own = reading.subject_labels(found_subject)
+                if own and not (label and label not in own):
+                    subject_rows.append({"subject": name, "labels": own})
+                for analysis in found_subject.productions:
                     found = reading.labels(analysis)
                     if not found or (label and label not in found):
                         continue
@@ -565,6 +573,7 @@ def create_server(project, acting_for=None, read_only=False):
                 "offset": offset,
                 "limit": limit,
                 "analyses": rows[offset : offset + limit],
+                "subjects": subject_rows,
             }
 
     def job_view(job, log=True):
@@ -840,9 +849,16 @@ def create_server(project, acting_for=None, read_only=False):
         return trigger(ctx, "submit", subject, dryrun, max_submit, project=project)
 
     def act(ctx, project, subject, analysis, change, *args, action=access.WRITE):
-        """Make a change to an analysis and say what record was made of it."""
+        """
+        Make a change to an analysis, or to the subject if no analysis is named,
+        and say what record was made of it.
+        """
         with session(ctx, project, action) as ledger:
-            found = analysis_of(ledger, subject, analysis)
+            found = (
+                analysis_of(ledger, subject, analysis)
+                if analysis is not None
+                else subject_of(ledger, subject)
+            )
             try:
                 record = change(ledger, found, *args)
             except actions.ActionError as error:
@@ -959,21 +975,25 @@ def create_server(project, acting_for=None, read_only=False):
             action=(access.WRITE, access.REVIEW),
         )
 
-    @server.tool(annotations=_ADD, title="Label an analysis")
+    @server.tool(annotations=_ADD, title="Label an analysis or subject")
     def add_label(
         ctx: Context,
         subject: str,
-        analysis: str,
         label: Annotated[str, Field(min_length=1, max_length=200)],
         value: Annotated[
             Optional[str | int | float | bool],
             Field(description="The label's value (default: true)."),
         ] = True,
+        analysis: Annotated[
+            Optional[str],
+            Field(description="The analysis to label. Leave it out to label the subject."),
+        ] = None,
         project: Project = None,
     ) -> dict[str, Any]:
         """
-        Set a label on an analysis. It stays until it is removed with
-        remove_label: labellers will not change or remove it.
+        Set a label on an analysis, or on the subject if no analysis is given. It
+        stays until it is removed with remove_label: labellers will not change
+        or remove it.
         """
         return act(
             ctx, project, subject, analysis, actions.add_label, label, True if value is None else value
@@ -983,11 +1003,14 @@ def create_server(project, acting_for=None, read_only=False):
     def remove_label(
         ctx: Context,
         subject: str,
-        analysis: str,
         label: Annotated[str, Field(min_length=1, max_length=200)],
+        analysis: Annotated[
+            Optional[str],
+            Field(description="The analysis to remove it from. Leave it out for the subject."),
+        ] = None,
         project: Project = None,
     ) -> dict[str, Any]:
-        """Remove a label from an analysis, whoever set it."""
+        """Remove a label from an analysis, or from the subject if no analysis is given."""
         return act(ctx, project, subject, analysis, actions.remove_label, label)
 
     return server

@@ -259,6 +259,36 @@ Use factory functions for quick labeller creation:
     )
     register_labeller(labeller2)
 
+Labelling Subjects
+------------------
+
+Subjects (events) can have labels too. A labeller only labels analyses unless it
+opts in:
+
+.. code-block:: python
+
+    class ReadyLabeller(Labeller):
+        targets = ("analysis", "subject")
+
+        @property
+        def name(self):
+            return "ready"
+
+        def label(self, analysis, context=None):
+            return {}
+
+        def label_subject(self, subject, context=None):
+            done = all(a.status == "finished" for a in subject.productions)
+            return {"ready": done}
+
+``label_subject`` runs once per subject on every monitor pass (``should_label_subject``
+works like ``should_label``). Labels set by hand, with ``actions.add_label`` or the MCP
+``add_label`` tool without an ``analysis``, are kept, just as for analyses.
+
+A subject's labels are in ``subject.labels`` (a copy: change them with the actions).
+They are *not* copied into the labels of the subject's analyses, but an analysis can read
+them with ``analysis.subject.labels``. They can't be used in ``needs:`` label dependencies.
+
 Using Labels in Workflows
 -------------------------
 

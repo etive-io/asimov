@@ -34,6 +34,7 @@ __all__ = [
     "read_telemetry",
     "review_summary",
     "subject_detail",
+    "subject_labels",
     "subject_summary",
 ]
 
@@ -155,6 +156,11 @@ def review_summary(analysis):
 def labels(analysis):
     """The labels on an analysis, by name."""
     return plain(getattr(analysis, "meta", {}).get("labels", {}) or {})
+
+
+def subject_labels(subject):
+    """The labels on a subject (not its analyses), by name."""
+    return plain(getattr(subject, "labels", {}) or {})
 
 
 def read_logs(analysis, max_bytes=20_000, max_files=20):

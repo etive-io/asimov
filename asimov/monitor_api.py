@@ -11,7 +11,7 @@ from typing import Optional, List
 from asimov import condor, logger, LOGGER_LEVEL
 from asimov.context import active_ledger as ledger
 from asimov.cli import ACTIVE_STATES
-from asimov.monitor_helpers import monitor_analysis
+from asimov.monitor_helpers import monitor_analysis, label_subject
 
 logger = logger.getChild("monitor_api")
 logger.setLevel(LOGGER_LEVEL)
@@ -134,6 +134,7 @@ def run_monitor(
     
     # Monitor event analyses
     for event in ledger.get_event(event_filter):
+        label_subject(event)
         on_deck = [
             production
             for production in event.productions
